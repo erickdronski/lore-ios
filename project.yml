@@ -34,6 +34,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.lore.lore
         PRODUCT_NAME: Lore
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon # Sources/Lore/Resources/Assets.xcassets/AppIcon.appiconset (1024px, no alpha)
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"
         TARGETED_DEVICE_FAMILY: "1" # iPhone only — Wi-Fi-only iPads can never localize (docs/10 §1)
