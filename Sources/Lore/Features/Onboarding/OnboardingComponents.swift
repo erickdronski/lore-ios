@@ -6,7 +6,16 @@ import SwiftUI
 /// duskscape with an Amber horizon glow) plus a soft bottom `grad.horizon`
 /// city-glow. Every gradient stop is inside the brand family (ELEVATION §2:
 /// "all gradients stay inside the brand family").
+///
+/// The cinematic layer (LUXURY-MOTION §6, §7 "the arrival gets the slow
+/// treatment — grain + Amber horizon glow rising"): a fine film grain sits over
+/// the sky, and the Amber horizon glow *rises* once, slowly, on first appear
+/// (`spring.slow`). Reduce Motion holds the glow at its risen rest — no rise, no
+/// shimmer — so the still image is identical, just without the motion.
 struct OnboardingBackground: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var glowRisen = false
+
     var body: some View {
         ZStack {
             // grad.dusk — linear(180°, #0A0F1D → #0F1626 → #1B2A4A → amber 16%)
@@ -21,16 +30,65 @@ struct OnboardingBackground: View {
                 endPoint: .bottom
             )
             // grad.horizon — radial Amber city-glow rising from the bottom edge.
+            // On first appear it swells up from a low ember to full glow over a
+            // slow spring, so arrival reads cinematic (the "wow" beat, §6).
             RadialGradient(
                 colors: [LoreColor.amber.opacity(0.22), .clear],
                 center: .init(x: 0.5, y: 1.0),
                 startRadius: 0,
-                endRadius: 420
+                endRadius: glowRisen ? 420 : 240
             )
+            .opacity(glowRisen ? 1 : 0.55)
             .blendMode(.screen)
             .allowsHitTesting(false)
+
+            // Film grain — a fine, static Ink/Bone speckle at low opacity so the
+            // sky has photographic texture, not a flat digital fill. Static by
+            // design (grain that moves is noise); safe under Reduce Motion.
+            FilmGrain()
+                .opacity(0.05)
+                .blendMode(.overlay)
+                .allowsHitTesting(false)
         }
         .ignoresSafeArea()
+        .onAppear {
+            if reduceMotion {
+                glowRisen = true
+            } else {
+                withAnimation(LoreSpring.slow) { glowRisen = true }
+            }
+        }
+    }
+}
+
+/// A cheap, deterministic film-grain texture: a Canvas of many tiny Bone specks
+/// at fixed pseudo-random positions. Drawn once (no per-frame work), it gives
+/// the dusk sky a subtle photographic tooth. Kept in the Bone family so it never
+/// tints the sky, only textures it.
+struct FilmGrain: View {
+    /// Speck count — dense enough to read as grain, sparse enough to stay cheap.
+    var count: Int = 900
+
+    var body: some View {
+        Canvas { context, size in
+            for i in 0..<count {
+                let x = Double(pseudo(i, 1)) * size.width
+                let y = Double(pseudo(i, 2)) * size.height
+                let s = 0.5 + Double(pseudo(i, 3)) * 1.0
+                let rect = CGRect(x: x, y: y, width: s, height: s)
+                context.fill(
+                    Path(ellipseIn: rect),
+                    with: .color(LoreColor.bone.opacity(0.6))
+                )
+            }
+        }
+        .accessibilityHidden(true)
+    }
+
+    /// Deterministic 0…1 hash from an index + salt (stable across renders).
+    private func pseudo(_ i: Int, _ salt: Int) -> Float {
+        let x = sin(Double(i) * 12.9898 + Double(salt) * 78.233) * 43758.5453
+        return Float(x - floor(x))
     }
 }
 
@@ -183,8 +241,8 @@ struct InterestChip: View {
                 )
             )
         }
-        .buttonStyle(.plain)
-        .animation(LoreMotion.tap, value: isSelected)
+        .buttonStyle(.pressable)
+        .animation(LoreSpring.snappy, value: isSelected)
         .accessibilityLabel(interest.label)
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
     }
@@ -198,6 +256,8 @@ struct PersonaChip: View {
     let preset: OnboardingContent.Preset
     let isSelected: Bool
     let action: () -> Void
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Button(action: action) {
@@ -223,8 +283,8 @@ struct PersonaChip: View {
                     )
             )
         }
-        .buttonStyle(.plain)
-        .animation(LoreMotion.bloom, value: isSelected)
+        .buttonStyle(.pressable)
+        .animation(LoreSpring.bounce(reduceMotion: reduceMotion), value: isSelected)
         .accessibilityLabel("\(preset.label). \(preset.tagline)")
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
     }

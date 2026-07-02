@@ -31,6 +31,7 @@ struct MapScreen: View {
     var onNeedsSignIn: () -> Void = {}
 
     @Environment(MapFilterStore.self) private var filters
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var model = MapScreenModel()
     @State private var position: MapCameraPosition = .automatic
     @State private var selectedPlaceID: String?
@@ -46,20 +47,37 @@ struct MapScreen: View {
         relevance.arrange(model.places).filter { filters.allows($0) }
     }
 
+    /// True while a place sheet is presented — drives the map's recede (dim +
+    /// blur) so the focused surface floats above it (LUXURY-MOTION §4).
+    private var cardOpen: Bool { selectedPlaceID != nil }
+
     var body: some View {
         NavigationStack {
             Map(position: $position, selection: $selectedPlaceID) {
-                ForEach(visiblePlaces) { place in
+                ForEach(Array(visiblePlaces.enumerated()), id: \.element.id) { index, place in
                     Annotation(place.name, coordinate: place.coordinate) {
                         PlacePinBadge(
                             place: place,
-                            weighting: relevance.weighting(for: place)
+                            weighting: relevance.weighting(for: place),
+                            index: index,
+                            isSelected: selectedPlaceID == place.id
                         )
                     }
                     .tag(place.id)
                 }
             }
             .mapStyle(.standard(pointsOfInterest: .excludingAll))
+            // Depth behind an open card (LUXURY-MOTION §4): the map recedes —
+            // dims to a scrim + a soft blur — so the focused place sheet floats.
+            // Reduce Motion keeps the dim (a still tint is safe) but drops blur.
+            .blur(radius: cardOpen && !reduceMotion ? 2 : 0)
+            .overlay {
+                Rectangle()
+                    .fill(LoreColor.ink950.opacity(cardOpen ? 0.45 : 0))
+                    .ignoresSafeArea()
+                    .allowsHitTesting(false)
+            }
+            .animation(LoreSpring.smooth(reduceMotion: reduceMotion), value: cardOpen)
             .onChange(of: selectedPlaceID) { _, newValue in
                 // Pin tap — light impact (brand/ELEVATION.md §4).
                 if newValue != nil { Haptics.play(.pinTap) }
@@ -101,7 +119,11 @@ struct MapScreen: View {
             .task(id: city) { await model.load(city: city) }
             .onChange(of: model.cameraTarget) { _, target in
                 guard let target else { return }
-                withAnimation(LoreMotion.unfurl) { position = .region(target) }
+                // The fly-to eases on `spring.smooth` — a settled camera glide,
+                // no overshoot (LUXURY-MOTION §2, §7 "flyTo eases").
+                withAnimation(LoreSpring.smooth(reduceMotion: reduceMotion)) {
+                    position = .region(target)
+                }
             }
         }
     }
@@ -263,8 +285,15 @@ struct PlacePinBadge: View {
     var weighting: PinWeighting = PinWeighting(
         opacity: 1, scale: 1, zPriority: 1, isRelevant: true
     )
+    /// This pin's position in the for-you-first arrangement — drives the
+    /// near→far landing cascade on a city switch (LUXURY-MOTION §6).
+    var index: Int = 0
+    /// True while this pin's place sheet is open — the selected pin lifts with a
+    /// spring so a tap reads as "this one" (LUXURY-MOTION §5 pin scale).
+    var isSelected: Bool = false
 
     @Environment(VisitStore.self) private var visits
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var bloomed = false
 
     var body: some View {
@@ -289,14 +318,35 @@ struct PlacePinBadge: View {
                     .offset(x: 4, y: -4)
             }
         }
-        .scaleEffect(bloomed ? 1.0 : 0.6)
+        // Landing: scale 0.6→1 on `spring.bounce` with a near→far stagger. The
+        // selected pin then springs up to 1.18× so a tapped pin lifts out of the
+        // field. Reduce Motion drops both transforms (a crossfade only).
+        .scaleEffect(pinScale)
         .opacity(bloomed ? 1.0 : 0.0)
         .relevanceWeighted(weighting)
+        // Selection re-runs on its own spring so it never fights the landing.
+        .animation(LoreSpring.bounce(reduceMotion: reduceMotion), value: isSelected)
+        // A city switch tears down these pins (keyed by place id) and remounts
+        // the new city's set, so `.onAppear` is the fresh-field landing: each pin
+        // blooms 0.6→1 on `spring.bounce`, staggered near→far (LUXURY-MOTION §6).
         .onAppear {
-            withAnimation(LoreMotion.bloom) { bloomed = true }
+            if reduceMotion {
+                bloomed = true
+            } else {
+                withAnimation(LoreSpring.bounce.delay(LoreMotion.staggerDelay(index: index))) {
+                    bloomed = true
+                }
+            }
         }
         .accessibilityLabel(Text(place.name))
         .accessibilityValue(Text(visits.hasVisited(place.id) ? "Visited" : ""))
+    }
+
+    /// Rest 0.6 → landed 1.0 → selected 1.18 (Reduce Motion: no scale, always 1).
+    private var pinScale: CGFloat {
+        if reduceMotion { return 1 }
+        if !bloomed { return 0.6 }
+        return isSelected ? 1.18 : 1.0
     }
 }
 

@@ -129,10 +129,9 @@ struct UnlockCelebration: View {
         Haptics.play(.badgeEarned)
         bloom = false
         burst = false
-        // Bloom the medallion + copy in.
-        withAnimation(reduceMotion
-            ? .easeInOut(duration: LoreMotion.reducedDuration)
-            : .interpolatingSpring(stiffness: 380, damping: 22)) {
+        // Bloom the medallion + copy in on `spring.bounce` — the reward arrival
+        // (LUXURY-MOTION §6: unlock uses .bounce + Haptics.success).
+        withAnimation(LoreSpring.bounce(reduceMotion: reduceMotion)) {
             bloom = true
         }
         // Kick the confetti a hair later so it reads as *from* the badge.

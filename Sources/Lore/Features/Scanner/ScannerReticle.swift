@@ -56,7 +56,9 @@ struct ScannerReticle: View {
             .position(x: rect.midX, y: rect.midY)
             .scaleEffect(breathe && !reduceMotion ? 1.02 : 1.0)
             .shadow(color: LoreColor.ink.opacity(0.35), radius: 3, x: 0, y: 1)
-            .animation(LoreMotion.unfurl, value: isLocked)
+            // The frame firms up on a settled spring when a lock lands — one
+            // confident settle, no overshoot on chrome (LUXURY-MOTION §2, §7).
+            .animation(LoreSpring.smooth(reduceMotion: reduceMotion), value: isLocked)
     }
 
     // MARK: Scanline

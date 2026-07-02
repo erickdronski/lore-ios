@@ -35,6 +35,7 @@ struct ScannerScreen: View {
     /// `nil` ⇒ the neutral traveler lens.
     let prefs: UserPrefs?
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var model = ScannerModel()
 
     init(city: String = Config.defaultCity, prefs: UserPrefs? = nil) {
@@ -53,7 +54,20 @@ struct ScannerScreen: View {
                     .ignoresSafeArea()
 
                 lockedPin(size: proxy.size)
+                    // A lock is an arrival — the pin blooms in with `spring.bounce`
+                    // (its `.rigid` haptic fires in the model). Reduce Motion
+                    // crossfades. Keyed on identity so only a *new* lock animates.
+                    .animation(
+                        LoreSpring.bounce(reduceMotion: reduceMotion),
+                        value: model.lockedPlace?.id
+                    )
                 bearingChips(size: proxy.size)
+                    // Chips enter/leave and re-cluster on a settled spring so the
+                    // field never snaps or jitters as the scan updates.
+                    .animation(
+                        LoreSpring.smooth(reduceMotion: reduceMotion),
+                        value: model.inViewClusters.map(\.id)
+                    )
                 storyMarkers(size: proxy.size)
 
                 VStack(spacing: 0) {
@@ -106,11 +120,21 @@ struct ScannerScreen: View {
                     x: chipX(fraction: locked.projected.screenFraction, width: size.width),
                     y: size.height * 0.42
                 )
+                // The pin glides to its new bearing on an interruptible spring so
+                // the 5 Hz reprojection reads as smooth tracking, never jitter
+                // (LUXURY-MOTION §5). Reduce Motion snaps (no interpolation).
+                .animation(
+                    reduceMotion ? nil : LoreSpring.smoothInteractive,
+                    value: locked.projected.screenFraction
+                )
                 .onTapGesture {
                     Haptics.play(.dossierOpen)
                     model.select(locked.place)
                 }
+                // Lands with `spring.bounce` (a lock is an arrival) and leaves on
+                // a crossfade; the `.rigid` lock haptic fires in the model.
                 .transition(.scale(scale: 0.6).combined(with: .opacity))
+                .id(locked.place.id)
         }
     }
 
@@ -137,6 +161,12 @@ struct ScannerScreen: View {
                 x: chipX(fraction: cluster.screenFraction, width: size.width),
                 y: size.height * 0.24 + CGFloat(index) * 56
             )
+            // Track the bearing on an interruptible spring — a chip slides to its
+            // new position rather than teleporting each reprojection frame.
+            .animation(
+                reduceMotion ? nil : LoreSpring.smoothInteractive,
+                value: cluster.screenFraction
+            )
             .transition(.opacity.combined(with: .scale(scale: 0.85)))
         }
     }
@@ -152,6 +182,10 @@ struct ScannerScreen: View {
             .position(
                 x: chipX(fraction: projected.screenFraction, width: size.width),
                 y: size.height * 0.62
+            )
+            .animation(
+                reduceMotion ? nil : LoreSpring.smoothInteractive,
+                value: projected.screenFraction
             )
         }
     }

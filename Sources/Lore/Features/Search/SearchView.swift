@@ -64,8 +64,7 @@ struct SearchView: View {
                     + "a local saying, or a curated walk.")
             )
         case .searching where model.groups.isEmpty:
-            ProgressView("Searching…")
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            searchingSkeleton
         case .failed(let message):
             ContentUnavailableView(
                 "Search unavailable",
@@ -77,6 +76,22 @@ struct SearchView: View {
         case .searching, .loaded:
             resultsList
         }
+    }
+
+    /// Content-shaped searching state (LUXURY-MOTION §3): result-row skeletons
+    /// cascading in — no spinner. The rows are shaped like `SearchResultRow`.
+    private var searchingSkeleton: some View {
+        ScrollView {
+            StaggeredReveal(spacing: 8) {
+                ForEach(0..<6, id: \.self) { i in
+                    SkeletonRow().staggerChild(index: i)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+        }
+        .scrollDismissesKeyboard(.immediately)
+        .accessibilityLabel("Searching")
     }
 
     private var resultsList: some View {

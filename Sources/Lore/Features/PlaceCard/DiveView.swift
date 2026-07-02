@@ -6,15 +6,22 @@ import SwiftUI
 /// CC-BY-SA prose may only render where these source links do, docs/04 §2.2).
 struct DiveView: View {
     let place: Place
+    /// The shared-element morph namespace (LUXURY-MOTION §6): when the dossier is
+    /// grown from a Layer-1 card, the pin/emoji medallion morphs from the card
+    /// header into this header via `matchedGeometryEffect`. `nil` when the
+    /// dossier is presented standalone (scanner, tours) — the medallion then just
+    /// appears, no morph, which is correct: nothing to morph *from*.
+    var morphNamespace: Namespace.ID? = nil
+    /// The shared id the medallion morphs across (unique per place).
+    var medallionID: String = ""
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var model = DiveModel()
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                Text(place.name)
-                    .font(LoreType.displayXL)
-                    .foregroundStyle(LoreColor.bone)
-                    .fixedSize(horizontal: false, vertical: true)
+                header
 
                 switch model.state {
                 case .loading:
@@ -34,12 +41,45 @@ struct DiveView: View {
                 linksSection
             }
             .padding(16)
+            // Clear the dismiss chevron the host overlays top-left.
+            .padding(.top, 44)
         }
-        .background(LoreColor.ink950)
-        .navigationTitle("")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbarColorScheme(.dark, for: .navigationBar)
+        .background(LoreColor.ink950.ignoresSafeArea())
         .task { await model.load(placeID: place.id) }
+    }
+
+    // MARK: Header (morph target)
+
+    /// The dossier header: the emoji medallion (the morph *target* — it grows
+    /// from the Layer-1 card's medallion) beside the place name in display XL.
+    private var header: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 14) {
+            medallion
+            Text(place.name)
+                .font(LoreType.displayXL)
+                .foregroundStyle(LoreColor.bone)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// The emoji disc that participates in the shared-element morph. When a
+    /// namespace is supplied it carries the same `matchedGeometryEffect` id the
+    /// Layer-1 card's medallion did, so it *is* that disc, grown to dossier size.
+    @ViewBuilder
+    private var medallion: some View {
+        let disc = Text(place.displayEmoji)
+            .font(.system(size: 32))
+            .frame(width: 60, height: 60)
+            .background(Circle().fill(LoreColor.ink800))
+            .overlay(Circle().strokeBorder(LoreColor.amber.opacity(0.4), lineWidth: 1))
+        if let morphNamespace {
+            // Non-source: the Layer-1 card header medallion is the geometry
+            // source; this disc *receives* that geometry, so the emoji appears to
+            // grow from the card into the dossier rather than two discs fighting.
+            disc.matchedGeometryEffect(id: medallionID, in: morphNamespace, isSource: false)
+        } else {
+            disc
+        }
     }
 
     // MARK: Dossier body
@@ -52,6 +92,11 @@ struct DiveView: View {
                 .lineSpacing(7)
                 .foregroundStyle(LoreColor.bone)
                 .fixedSize(horizontal: false, vertical: true)
+        }
+
+        let photos = dive.media.filter { ($0.kind ?? "image") != "audio" }
+        if !photos.isEmpty {
+            DiveGallery(media: photos)
         }
 
         if !dive.timeline.isEmpty {
@@ -73,6 +118,7 @@ struct DiveView: View {
                 Link(destination: mapsURL) {
                     LinkRow(icon: "map", title: "Open in Maps", subtitle: "Walk there")
                 }
+                .buttonStyle(.pressable)
             }
 
             if case .loaded(let dive) = model.state {
@@ -85,6 +131,7 @@ struct DiveView: View {
                                 subtitle: URL(string: link.url)?.host()
                             )
                         }
+                        .buttonStyle(.pressable)
                     }
                 }
             }
@@ -102,15 +149,32 @@ struct DiveView: View {
         return components?.url
     }
 
+    /// Content-shaped dossier skeleton (LUXURY-MOTION §3): shimmer bars sized
+    /// like the narrative paragraph, then a row of timeline-node tiles — so the
+    /// swap to the real dossier is a cross-fade with no layout jump. Bars sit on
+    /// the Ink ramp (this surface is dark), not the default Bone.
     private var loadingSkeleton: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            ForEach(0..<5, id: \.self) { _ in
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(LoreColor.ink800)
-                    .frame(height: 14)
+        VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(0..<5, id: \.self) { i in
+                    ShimmerBlock(
+                        width: i == 4 ? 220 : nil,
+                        height: 14,
+                        cornerRadius: 5,
+                        fill: LoreColor.ink800
+                    )
+                }
+            }
+            HStack(spacing: 12) {
+                ForEach(0..<2, id: \.self) { _ in
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(LoreColor.ink800)
+                        .frame(width: 200, height: 120)
+                        .shimmer()
+                }
             }
         }
-        .redacted(reason: .placeholder)
+        .accessibilityLabel("Loading the dossier")
     }
 }
 
@@ -150,6 +214,7 @@ struct TimelineStrip: View {
     let events: [TimelineEvent]
     /// The event currently snapped into view — drives the selection tick.
     @State private var snappedEventID: TimelineEvent.ID?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -160,7 +225,7 @@ struct TimelineStrip: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(alignment: .top, spacing: 12) {
                     ForEach(events) { event in
-                        TimelineNode(event: event)
+                        TimelineNode(event: event, isSnapped: snappedEventID == event.id)
                             .containerRelativeFrame(
                                 .horizontal,
                                 count: 5,
@@ -180,12 +245,19 @@ struct TimelineStrip: View {
                     Haptics.play(.timelineSnap)
                 }
             }
+            // The snapped node pops with `spring.bounce` (LUXURY-MOTION §6:
+            // "timeline nodes pop with .bounce on snap"); Reduce Motion crossfades.
+            .animation(LoreSpring.bounce(reduceMotion: reduceMotion), value: snappedEventID)
         }
     }
 }
 
 struct TimelineNode: View {
     let event: TimelineEvent
+    /// True when this node is the one snapped into view — it pops forward.
+    var isSnapped: Bool = false
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -195,6 +267,8 @@ struct TimelineNode: View {
                     .fill(LoreColor.amber)
                     .strokeBorder(LoreColor.ink, lineWidth: 1.5)
                     .frame(width: 14, height: 14)
+                    // The snapped dot swells a touch — the "pop" landing.
+                    .scaleEffect(isSnapped && !reduceMotion ? 1.25 : 1.0)
                 Rectangle()
                     .fill(LoreColor.ink700)
                     .frame(height: 2)
@@ -204,9 +278,12 @@ struct TimelineNode: View {
                 if let emoji = event.emoji {
                     Text(emoji)
                 }
-                Text(String(event.year))
-                    .font(LoreType.display(size: 22, weight: .semibold))
-                    .foregroundStyle(LoreColor.amber)
+                // The year rolls up on first view (LUXURY-MOTION §5 tickers).
+                CountUpText.integer(
+                    event.year,
+                    font: LoreType.display(size: 22, weight: .semibold)
+                )
+                .foregroundStyle(LoreColor.amber)
             }
 
             Text(event.title)
@@ -223,6 +300,55 @@ struct TimelineNode: View {
         }
         .padding(12)
         .background(LoreColor.ink800, in: RoundedRectangle(cornerRadius: 14))
+        // The whole snapped node lifts (scale + elevation) so the focused decade
+        // reads forward of its neighbors (LUXURY-MOTION §6 pop on snap).
+        .scaleEffect(isSnapped && !reduceMotion ? 1.03 : 1.0)
+        .loreElevation(isSnapped ? .elev2 : .elev1)
+    }
+}
+
+// MARK: - Gallery
+
+/// The dossier photo gallery: a horizontal shelf of blur-up tiles. Each image
+/// loads through `BlurUpAsyncImage` (shimmer placeholder → cross-fade to sharp,
+/// no pop-in, LUXURY-MOTION §3) and the tiles cascade in with the shared 40 ms
+/// fade+rise. Photographs breathe, so the lead tile gets a slow Ken-Burns drift.
+struct DiveGallery: View {
+    let media: [DiveMedia]
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var appeared = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Gallery")
+                .font(LoreType.displayM)
+                .foregroundStyle(LoreColor.bone)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 12) {
+                    ForEach(Array(media.enumerated()), id: \.element.id) { index, item in
+                        BlurUpAsyncImage(url: URL(string: item.url))
+                            .frame(width: 240, height: 160)
+                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .loreElevation(.elev1)
+                            .modifier(StaggerChild(
+                                index: index,
+                                appeared: appeared,
+                                reduceMotion: reduceMotion
+                            ))
+                            .accessibilityLabel(Text(item.caption ?? "Photo"))
+                    }
+                }
+            }
+        }
+        .onAppear {
+            if reduceMotion {
+                appeared = true
+            } else {
+                withAnimation { appeared = true }
+            }
+        }
     }
 }
 

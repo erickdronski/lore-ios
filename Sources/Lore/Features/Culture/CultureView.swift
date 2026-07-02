@@ -16,7 +16,11 @@ import SwiftUI
 struct CultureView: View {
     let city: String
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var model = CultureModel()
+    /// Rises once on load so the Amber horizon glow swells — the meet-the-city
+    /// cinematic beat (LUXURY-MOTION §6, §7).
+    @State private var glowRisen = false
 
     init(city: String = Config.defaultCity) {
         self.city = city
@@ -24,14 +28,11 @@ struct CultureView: View {
 
     var body: some View {
         ZStack {
-            LoreColor.ink900.ignoresSafeArea()
+            cinematicSky
 
             switch model.state {
             case .loading:
-                ProgressView("Meeting the city\u{2026}")
-                    .tint(LoreColor.amber)
-                    .foregroundStyle(LoreColor.bone)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                loadingSkeleton
             case .failed(let message):
                 ContentUnavailableView {
                     Label("Can't load the culture", systemImage: "quote.bubble")
@@ -51,21 +52,83 @@ struct CultureView: View {
         .toolbarBackground(LoreColor.ink900, for: .navigationBar)
         .toolbarColorScheme(.dark, for: .navigationBar)
         .task { await model.load(city: city) }
+        .onAppear {
+            if reduceMotion {
+                glowRisen = true
+            } else {
+                withAnimation(LoreSpring.slow) { glowRisen = true }
+            }
+        }
         .sheet(item: $model.selectedPerson) { person in
             PersonBioSheet(person: person)
         }
+    }
+
+    // MARK: - Cinematic sky
+
+    /// The Ink surface with an Amber horizon glow that rises on load — the same
+    /// cinematic "meet-the-city" treatment as the arrival (LUXURY-MOTION §6).
+    private var cinematicSky: some View {
+        ZStack {
+            LoreColor.ink900
+            RadialGradient(
+                colors: [LoreColor.amber.opacity(0.14), .clear],
+                center: .init(x: 0.5, y: 1.0),
+                startRadius: 0,
+                endRadius: glowRisen ? 380 : 200
+            )
+            .opacity(glowRisen ? 1 : 0.4)
+            .blendMode(.screen)
+        }
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
+    }
+
+    // MARK: - Loading
+
+    /// Content-shaped skeleton (LUXURY-MOTION §3): a quote-card block over a row
+    /// of portrait discs — no spinner.
+    private var loadingSkeleton: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 32) {
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .fill(LoreColor.ink800)
+                    .frame(height: 150)
+                    .shimmer()
+                    .padding(.horizontal, 16)
+
+                HStack(spacing: 16) {
+                    ForEach(0..<4, id: \.self) { _ in
+                        VStack(spacing: 8) {
+                            Circle()
+                                .fill(LoreColor.ink800)
+                                .frame(width: 76, height: 76)
+                                .shimmer()
+                            ShimmerBlock(width: 60, height: 12, cornerRadius: 5, fill: LoreColor.ink800)
+                        }
+                    }
+                }
+                .padding(.horizontal, 16)
+            }
+            .padding(.top, 12)
+        }
+        .accessibilityLabel("Meeting the city")
     }
 
     // MARK: - Loaded content
 
     private var content: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 32) {
-                header
+            // The sections cascade in with the shared 40 ms fade+rise so the
+            // surface assembles itself (LUXURY-MOTION §6). Conditional sections
+            // make static indices awkward, so we cascade the ones that exist.
+            StaggeredReveal(spacing: 32) {
+                header.staggerChild(index: 0)
 
                 if !model.quotes.isEmpty {
                     CultureQuoteCard(quotes: model.quotes)
                         .padding(.horizontal, 16)
+                        .staggerChild(index: 1)
                 }
 
                 if !model.people.isEmpty {
@@ -76,6 +139,7 @@ struct CultureView: View {
                             model.selectedPerson = person
                         }
                     }
+                    .staggerChild(index: 2)
                 }
 
                 if !model.lingo.isEmpty {
@@ -84,6 +148,7 @@ struct CultureView: View {
                             .padding(.horizontal, 16)
                         lingoGrid
                     }
+                    .staggerChild(index: 3)
                 }
 
                 if !model.sayings.isEmpty {
@@ -92,6 +157,7 @@ struct CultureView: View {
                             .padding(.horizontal, 16)
                         sayingsRow
                     }
+                    .staggerChild(index: 4)
                 }
 
                 Color.clear.frame(height: 24)

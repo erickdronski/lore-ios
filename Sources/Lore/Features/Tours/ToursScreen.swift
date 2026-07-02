@@ -10,8 +10,7 @@ struct ToursScreen: View {
             Group {
                 switch model.state {
                 case .loading:
-                    ProgressView("Loading tours…")
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    loadingList
                 case .failed(let message):
                     ContentUnavailableView(
                         "Can't load tours",
@@ -35,6 +34,21 @@ struct ToursScreen: View {
             .navigationTitle("Tours")
             .task { await model.load() }
         }
+    }
+
+    /// Content-shaped loading list (LUXURY-MOTION §3): shimmer rows shaped like
+    /// tour rows, cascading in — no spinner.
+    private var loadingList: some View {
+        ScrollView {
+            StaggeredReveal(spacing: 8) {
+                ForEach(0..<6, id: \.self) { i in
+                    SkeletonRow().staggerChild(index: i)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+        }
+        .accessibilityLabel("Loading tours")
     }
 
     private var tourList: some View {

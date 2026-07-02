@@ -67,6 +67,7 @@ struct OnboardingView: View {
 
 private struct ArrivalStep: View {
     let store: OnboardingStore
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var appeared = false
 
     var body: some View {
@@ -100,7 +101,8 @@ private struct ArrivalStep: View {
             }
             .opacity(appeared ? 1 : 0)
             .offset(y: appeared ? 0 : 16)
-            .animation(LoreMotion.unfurl, value: appeared)
+            // Arrival is the cinematic beat — the headline rises on `spring.slow`.
+            .animation(LoreSpring.slow(reduceMotion: reduceMotion), value: appeared)
             .onAppear { appeared = true }
         }
     }

@@ -26,7 +26,9 @@ struct StackChip: View {
                 candidateList
             }
         }
-        .animation(reduceMotion ? .easeInOut(duration: 0.16) : LoreMotion.bloom, value: isOpen)
+        // The stack expands as a settled panel — `spring.smooth`, no jaunty
+        // overshoot on a decision UI (LUXURY-MOTION §2, §7).
+        .animation(LoreSpring.smooth(reduceMotion: reduceMotion), value: isOpen)
     }
 
     // MARK: Collapsed — the count chip
@@ -34,7 +36,7 @@ struct StackChip: View {
     private var collapsedChip: some View {
         Button {
             Haptics.play(.chipTap)
-            withAnimation(reduceMotion ? .easeInOut(duration: 0.16) : LoreMotion.bloom) {
+            withAnimation(LoreSpring.smooth(reduceMotion: reduceMotion)) {
                 isOpen.toggle()
             }
         } label: {
@@ -88,9 +90,11 @@ struct StackChip: View {
                 }
                 .buttonStyle(.plain)
                 .transition(.opacity.combined(with: .move(edge: .top)))
+                // Rows cascade in with a 30 ms stagger on a settled spring.
                 .animation(
-                    reduceMotion ? .easeInOut(duration: 0.16)
-                        : LoreMotion.bloom.delay(Double(min(index, 6)) * 0.03),
+                    reduceMotion
+                        ? LoreSpring.reducedCrossfade
+                        : LoreSpring.smooth.delay(Double(min(index, 6)) * 0.03),
                     value: isOpen
                 )
             }

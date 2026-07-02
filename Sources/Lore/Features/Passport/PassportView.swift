@@ -23,9 +23,7 @@ struct PassportView: View {
 
                 switch model.state {
                 case .loading:
-                    ProgressView("Loading your passport…")
-                        .tint(LoreColor.amber)
-                        .foregroundStyle(LoreColor.bone.opacity(0.8))
+                    loadingWall
                 case .failed(let message):
                     ContentUnavailableView {
                         Label("Can't load the passport", systemImage: "seal")
@@ -87,6 +85,51 @@ struct PassportView: View {
         .scrollContentBackground(.hidden)
     }
 
+    /// Content-shaped loading wall (LUXURY-MOTION §3, "delete every spinner"): a
+    /// dim summary block over a grid of shimmering medallion discs, so the swap
+    /// to the real wall is a cross-fade with no layout jump.
+    private var loadingWall: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 28) {
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .fill(LoreColor.ink800)
+                    .frame(height: 116)
+                    .shimmer()
+                    .padding(.horizontal, 16)
+                    .padding(.top, 4)
+
+                ForEach(0..<2, id: \.self) { _ in
+                    VStack(alignment: .leading, spacing: 14) {
+                        ShimmerBlock(width: 140, height: 20, cornerRadius: 6, fill: LoreColor.ink800)
+                            .padding(.horizontal, 16)
+                        LazyVGrid(
+                            columns: [
+                                GridItem(.flexible(), spacing: 12),
+                                GridItem(.flexible(), spacing: 12),
+                                GridItem(.flexible(), spacing: 12),
+                            ],
+                            spacing: 20
+                        ) {
+                            ForEach(0..<6, id: \.self) { _ in
+                                VStack(spacing: 8) {
+                                    Circle()
+                                        .fill(LoreColor.ink800)
+                                        .frame(width: 72, height: 72)
+                                        .shimmer()
+                                    ShimmerBlock(width: 60, height: 12, cornerRadius: 5, fill: LoreColor.ink800)
+                                }
+                            }
+                        }
+                        .padding(.horizontal, 16)
+                    }
+                }
+            }
+            .padding(.bottom, 40)
+        }
+        .scrollContentBackground(.hidden)
+        .accessibilityLabel("Loading your passport")
+    }
+
     private var signedOutNote: some View {
         HStack(spacing: 10) {
             Image(systemName: "person.crop.circle.badge.plus")
@@ -126,17 +169,27 @@ struct PassportSummary: View {
                 .foregroundStyle(LoreColor.bone)
 
             HStack(spacing: 12) {
-                stat(
-                    value: "\(unlockedCount)/\(totalCount)",
-                    caption: "Badges",
-                    tint: LoreColor.amber
-                )
+                stat(caption: "Badges") {
+                    // "n / total" — n counts up on first view; the total is fixed.
+                    HStack(spacing: 0) {
+                        CountUpText.integer(
+                            unlockedCount,
+                            font: LoreType.display(size: 26, weight: .semibold)
+                        )
+                        Text("/\(totalCount)")
+                            .font(LoreType.display(size: 26, weight: .semibold))
+                    }
+                    .foregroundStyle(LoreColor.amber)
+                }
                 divider
-                stat(
-                    value: "\(insightPoints)",
-                    caption: "Insight",
-                    tint: LoreColor.brass300
-                )
+                stat(caption: "Insight") {
+                    // Insight points roll up — the ledger tallying (LUXURY-MOTION §5).
+                    CountUpText.integer(
+                        insightPoints,
+                        font: LoreType.display(size: 26, weight: .semibold)
+                    )
+                    .foregroundStyle(LoreColor.brass300)
+                }
             }
         }
         .padding(18)
@@ -151,11 +204,12 @@ struct PassportSummary: View {
         )
     }
 
-    private func stat(value: String, caption: String, tint: Color) -> some View {
+    private func stat<Value: View>(
+        caption: String,
+        @ViewBuilder value: () -> Value
+    ) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(value)
-                .font(LoreType.display(size: 26, weight: .semibold))
-                .foregroundStyle(tint)
+            value()
             Text(caption.uppercased())
                 .loreLabelStyle()
                 .tracking(0.8)
@@ -177,6 +231,10 @@ struct PassportSummary: View {
 /// glyph + human title; the grid flows three-up and never dumps text.
 struct CategorySection: View {
     let section: PassportSection
+
+    /// Flips on appear so the badges bloom in a stagger rather than being born
+    /// already-landed (LUXURY-MOTION §6 "badges StaggeredReveal in").
+    @State private var appeared = false
 
     private let columns = [
         GridItem(.flexible(), spacing: 12),
@@ -205,13 +263,16 @@ struct CategorySection: View {
                     AchievementBadge(
                         achievement: pair.element.achievement,
                         progress: pair.element.progress,
-                        appeared: true,
+                        appeared: appeared,
                         revealDelay: LoreMotion.staggerDelay(index: pair.offset)
                     )
                 }
             }
             .padding(.horizontal, 16)
         }
+        // Flip on appear so RevealBounce runs its entrance (a stagger under
+        // motion, a crossfade under Reduce Motion — handled inside RevealBounce).
+        .onAppear { appeared = true }
     }
 }
 

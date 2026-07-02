@@ -59,8 +59,7 @@ struct CitySwitcherView: View {
     private var content: some View {
         switch model.state {
         case .loading:
-            ProgressView("Loading cities…")
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            loadingSkeleton
         case .failed(let message):
             ContentUnavailableView(
                 "Can't load cities",
@@ -80,6 +79,21 @@ struct CitySwitcherView: View {
                 cityList
             }
         }
+    }
+
+    /// Content-shaped loading state (LUXURY-MOTION §3): city-row skeletons
+    /// cascading in — no spinner.
+    private var loadingSkeleton: some View {
+        ScrollView {
+            StaggeredReveal(spacing: 8) {
+                ForEach(0..<7, id: \.self) { i in
+                    SkeletonRow().staggerChild(index: i)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+        }
+        .accessibilityLabel("Loading cities")
     }
 
     private var cityList: some View {

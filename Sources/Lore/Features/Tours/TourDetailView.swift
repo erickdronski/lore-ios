@@ -4,6 +4,7 @@ import SwiftUI
 /// content + curator note, previous/next controls.
 struct TourDetailView: View {
     let tour: Tour
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var model = TourDetailModel()
     @State private var stopIndex = 0
 
@@ -21,6 +22,11 @@ struct TourDetailView: View {
                 } else {
                     progressRail
                     stopCard
+                        // The stop card slides+fades to the next stop rather than
+                        // hot-swapping its text (LUXURY-MOTION §6 continuity).
+                        .id(stopIndex)
+                        .transition(stopTransition)
+                        .animation(LoreSpring.smooth(reduceMotion: reduceMotion), value: stopIndex)
                     stepperControls
                 }
             }
@@ -66,7 +72,9 @@ struct TourDetailView: View {
         }
     }
 
-    /// Amber node rail — one dot per stop, filled up to the current one.
+    /// Amber node rail — one dot per stop, filled up to the current one. The
+    /// current dot swells (a spring pop) so the route reads its position; tapping
+    /// a dot springs the stepper to that stop (LUXURY-MOTION §6 tour stepper).
     private var progressRail: some View {
         HStack(spacing: 6) {
             ForEach(Array(tour.stops.enumerated()), id: \.element.id) { index, _ in
@@ -77,8 +85,11 @@ struct TourDetailView: View {
                         lineWidth: 1
                     )
                     .frame(width: 12, height: 12)
+                    .scaleEffect(index == stopIndex && !reduceMotion ? 1.35 : 1.0)
                     .onTapGesture {
-                        withAnimation(LoreMotion.tap) { stopIndex = index }
+                        withAnimation(LoreSpring.bounce(reduceMotion: reduceMotion)) {
+                            stopIndex = index
+                        }
                     }
             }
             Spacer()
@@ -86,6 +97,8 @@ struct TourDetailView: View {
                 .font(LoreType.caption)
                 .foregroundStyle(LoreColor.ink600)
         }
+        // Dot fills + the current-dot swell settle on one spring, no cut.
+        .animation(LoreSpring.smooth(reduceMotion: reduceMotion), value: stopIndex)
     }
 
     @ViewBuilder
@@ -109,7 +122,7 @@ struct TourDetailView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             } else if model.isLoading {
-                ProgressView()
+                SkeletonRow()
             } else if let stop = currentStop {
                 Text("Place \(stop.placeID)")
                     .font(LoreType.body)
@@ -137,29 +150,41 @@ struct TourDetailView: View {
     private var stepperControls: some View {
         HStack(spacing: 12) {
             Button {
-                withAnimation(LoreMotion.unfurl) { stopIndex -= 1 }
+                withAnimation(LoreSpring.smooth(reduceMotion: reduceMotion)) { stopIndex -= 1 }
             } label: {
                 Label("Previous", systemImage: "chevron.left")
                     .font(LoreType.button)
                     .frame(maxWidth: .infinity)
                     .frame(height: 44)
+                    .background(LoreColor.bone200, in: Capsule())
+                    .foregroundStyle(LoreColor.ink)
             }
-            .background(LoreColor.bone200, in: Capsule())
-            .foregroundStyle(LoreColor.ink)
+            .buttonStyle(.pressable)
             .disabled(stopIndex == 0)
 
             Button {
-                withAnimation(LoreMotion.unfurl) { stopIndex += 1 }
+                withAnimation(LoreSpring.smooth(reduceMotion: reduceMotion)) { stopIndex += 1 }
             } label: {
                 Label("Next stop", systemImage: "chevron.right")
                     .font(LoreType.button)
                     .frame(maxWidth: .infinity)
                     .frame(height: 44)
+                    .background(LoreColor.ink, in: Capsule())
+                    .foregroundStyle(LoreColor.bone)
             }
-            .background(LoreColor.ink, in: Capsule())
-            .foregroundStyle(LoreColor.bone)
+            .buttonStyle(.pressable)
             .disabled(stopIndex >= tour.stops.count - 1)
         }
+    }
+
+    /// Directional slide: advancing pushes the new stop in from the trailing
+    /// edge; going back pulls it from the leading edge. Reduce Motion → crossfade.
+    private var stopTransition: AnyTransition {
+        if reduceMotion { return .opacity }
+        return .asymmetric(
+            insertion: .move(edge: .trailing).combined(with: .opacity),
+            removal: .move(edge: .leading).combined(with: .opacity)
+        )
     }
 }
 

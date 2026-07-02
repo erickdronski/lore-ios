@@ -58,7 +58,7 @@ struct MapFilterChips: View {
             .opacity(on ? 1 : 0.7)
             .contentShape(Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressableSilent)
         .accessibilityLabel(Text(category.label))
         .accessibilityValue(Text(on ? "Showing" : "Hidden"))
         .accessibilityHint(Text(on ? "Tap to hide from the map." : "Tap to show on the map."))
@@ -81,7 +81,7 @@ struct MapFilterChips: View {
             .foregroundStyle(LoreColor.bone)
             .contentShape(Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressableSilent)
         .accessibilityLabel(Text("Show all places"))
         .accessibilityHint(Text("Clears every filter and restores the full map."))
     }

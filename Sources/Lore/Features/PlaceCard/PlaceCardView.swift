@@ -11,7 +11,38 @@ struct PlaceCardView: View {
     var onMeetCity: (String) -> Void = { _ in }
     @State private var showDive = false
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// The shared-element morph namespace (LUXURY-MOTION §6): the medallion + the
+    /// card surface morph between the Layer-1 card and the full dossier.
+    @Namespace private var morph
+
+    /// One shared id per place so the medallion morphs across the two headers.
+    private var medallionID: String { "medallion-\(place.id)" }
+
     var body: some View {
+        ZStack {
+            // Layer-1 card — the surface the dossier *grows from*. It stays
+            // mounted (scaled/faded back) beneath the dossier so the morph reads
+            // as one continuous surface, not a cut to a new screen.
+            layerOneCard
+                .opacity(showDive ? 0 : 1)
+                .scaleEffect(cardRestScale)
+                .allowsHitTesting(!showDive)
+
+            // The dossier, grown from the card. Same namespace ⇒ the medallion
+            // morphs; the whole panel springs up on `spring.smooth`.
+            if showDive {
+                dossier
+                    .transition(dossierTransition)
+                    .zIndex(1)
+            }
+        }
+        .animation(LoreSpring.smooth(reduceMotion: reduceMotion), value: showDive)
+    }
+
+    // MARK: Layer-1 card
+
+    private var layerOneCard: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
@@ -27,8 +58,12 @@ struct PlaceCardView: View {
                     factChips
 
                     Button {
+                        Haptics.play(.dossierOpen)
                         showDive = true
                     } label: {
+                        // Background + tint live *inside* the label so the press
+                        // scale (PressableStyle) lifts the whole capsule, not just
+                        // the text sitting on a static pill.
                         HStack {
                             Image(systemName: "book.pages")
                             Text("Go deeper")
@@ -38,9 +73,10 @@ struct PlaceCardView: View {
                         }
                         .padding(.horizontal, 16)
                         .frame(height: 50)
+                        .background(LoreColor.ink, in: Capsule())
+                        .foregroundStyle(LoreColor.bone)
                     }
-                    .background(LoreColor.ink, in: Capsule())
-                    .foregroundStyle(LoreColor.bone)
+                    .buttonStyle(.pressable)
 
                     // Meet-the-City entry (task: expose from PlaceCard). Routes
                     // out to the culture surface for this place's city.
@@ -57,23 +93,61 @@ struct PlaceCardView: View {
                         }
                         .padding(.horizontal, 16)
                         .frame(height: 50)
+                        .overlay(Capsule().strokeBorder(LoreColor.ink, lineWidth: 1.5))
+                        .foregroundStyle(LoreColor.ink)
                     }
-                    .overlay(Capsule().strokeBorder(LoreColor.ink, lineWidth: 1.5))
-                    .foregroundStyle(LoreColor.ink)
+                    .buttonStyle(.pressable)
                 }
                 .padding(16)
             }
             .background(LoreColor.bone100)
-            .navigationDestination(isPresented: $showDive) {
-                DiveView(place: place)
-            }
         }
+    }
+
+    // MARK: Dossier (morph target)
+
+    private var dossier: some View {
+        ZStack(alignment: .topLeading) {
+            DiveView(place: place, morphNamespace: morph, medallionID: medallionID)
+
+            // Dismiss affordance — springs the dossier back down into the card.
+            Button {
+                showDive = false
+            } label: {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(LoreColor.bone)
+                    .frame(width: 40, height: 40)
+                    .background(.ultraThinMaterial, in: Circle())
+            }
+            .buttonStyle(.pressable)
+            .padding(.leading, 16)
+            .padding(.top, 8)
+            .accessibilityLabel(Text("Close dossier"))
+        }
+    }
+
+    /// The card rests slightly shrunk while the dossier is up, so the two
+    /// surfaces read as depth (the card sits *behind*). No transform under
+    /// Reduce Motion.
+    private var cardRestScale: CGFloat {
+        if reduceMotion { return 1 }
+        return showDive ? 0.96 : 1
+    }
+
+    /// The dossier grows in from the card's scale; Reduce Motion is a crossfade.
+    private var dossierTransition: AnyTransition {
+        if reduceMotion { return .opacity }
+        return .scale(scale: 0.94).combined(with: .opacity)
     }
 
     private var header: some View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
+            // The morph *source* medallion — carries the shared id so it becomes
+            // the dossier header disc. Sized to the Layer-1 card's 34pt emoji.
             Text(place.displayEmoji)
                 .font(.system(size: 34))
+                .matchedGeometryEffect(id: medallionID, in: morph)
             VStack(alignment: .leading, spacing: 4) {
                 Text(place.name)
                     .font(LoreType.displayL)
@@ -99,8 +173,30 @@ struct PlaceCardView: View {
                 FactRow(label: "Style", value: style)
             }
             if let heightM = place.heightM {
-                FactRow(label: "Height", value: "\(Int(heightM)) m")
+                // Height rolls up on first view (LUXURY-MOTION §5 tickers).
+                NumericFactRow(label: "Height", value: Int(heightM), suffix: " m")
             }
+        }
+    }
+}
+
+/// A `FactRow` whose value is a number that counts up on first view — the
+/// height/measurement ticker (LUXURY-MOTION §5). Same layout as `FactRow` so it
+/// sits flush in the fact list. Reduce Motion shows the final value (no roll,
+/// handled inside `CountUpText`).
+struct NumericFactRow: View {
+    let label: String
+    let value: Int
+    var suffix: String = ""
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(label.uppercased())
+                .loreLabelStyle()
+                .foregroundStyle(LoreColor.ink600)
+                .frame(width: 88, alignment: .leading)
+            CountUpText.integer(value, suffix: suffix, font: LoreType.body)
+                .foregroundStyle(LoreColor.ink)
         }
     }
 }

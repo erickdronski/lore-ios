@@ -29,6 +29,9 @@ struct NearMeShelf: View {
     var maxCount: Int = 8
 
     @State private var provider = NearMeLocationProvider()
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Flips once per shelf population so the cards cascade in (LUXURY-MOTION §6).
+    @State private var appeared = false
 
     private var ranked: [RankedPlace] {
         NearMe.nearest(
@@ -75,16 +78,31 @@ struct NearMeShelf: View {
     private var shelf: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 12) {
-                ForEach(ranked) { ranked in
+                // Cards cascade in with the shared 40 ms fade+rise (LUXURY-MOTION
+                // §6). A horizontal shelf can't use the VStack `StaggeredReveal`
+                // container, so we drive `StaggerChild` per card off a local flag.
+                ForEach(Array(ranked.enumerated()), id: \.element.id) { index, ranked in
                     NearMeCard(
                         ranked: ranked,
                         onSelect: { onSelect(ranked.place) },
                         onNeedsSignIn: onNeedsSignIn
                     )
+                    .modifier(StaggerChild(
+                        index: index,
+                        appeared: appeared,
+                        reduceMotion: reduceMotion
+                    ))
                 }
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 4)
+        }
+        .onAppear {
+            if reduceMotion {
+                appeared = true
+            } else {
+                withAnimation { appeared = true }
+            }
         }
     }
 
