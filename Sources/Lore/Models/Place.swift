@@ -60,9 +60,13 @@ struct Layer1: Codable, Hashable {
     let yearBuilt: Int?
     let architect: String?
     let style: String?
+    /// Where the name comes from ("Named for the boat marina at its base…") —
+    /// the live `place_explore.layer1` carries this; safe (CC0/PD) to render.
+    let nameMeaning: String?
 
     enum CodingKeys: String, CodingKey {
         case hook, architect, style
         case yearBuilt = "year_built"
+        case nameMeaning = "name_meaning"
     }
 }

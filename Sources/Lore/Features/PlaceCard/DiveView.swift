@@ -148,6 +148,8 @@ final class DiveModel {
 /// (Fraunces-ready) face.
 struct TimelineStrip: View {
     let events: [TimelineEvent]
+    /// The event currently snapped into view — drives the selection tick.
+    @State private var snappedEventID: TimelineEvent.ID?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -170,6 +172,14 @@ struct TimelineStrip: View {
                 .scrollTargetLayout()
             }
             .scrollTargetBehavior(.viewAligned)
+            .scrollPosition(id: $snappedEventID)
+            .onChange(of: snappedEventID) { oldValue, newValue in
+                // Decade snap — one selection tick per snap
+                // (brand/ELEVATION.md §4); silent on first settle.
+                if oldValue != nil, newValue != nil, oldValue != newValue {
+                    Haptics.play(.timelineSnap)
+                }
+            }
         }
     }
 }

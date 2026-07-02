@@ -5,6 +5,10 @@ import SwiftUI
 /// Renders from chunk-cached data only — identical online and offline.
 struct PlaceCardView: View {
     let place: Place
+    /// Open "Meet {City}" (the culture surface) for this place's city. Injected
+    /// so the card never imports the tab structure; a no-op default keeps
+    /// previews / standalone hosts working.
+    var onMeetCity: (String) -> Void = { _ in }
     @State private var showDive = false
 
     var body: some View {
@@ -37,6 +41,25 @@ struct PlaceCardView: View {
                     }
                     .background(LoreColor.ink, in: Capsule())
                     .foregroundStyle(LoreColor.bone)
+
+                    // Meet-the-City entry (task: expose from PlaceCard). Routes
+                    // out to the culture surface for this place's city.
+                    Button {
+                        Haptics.play(.chipTap)
+                        onMeetCity(place.city)
+                    } label: {
+                        HStack {
+                            Image(systemName: "quote.bubble")
+                            Text("Meet this city")
+                                .font(LoreType.button)
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                        }
+                        .padding(.horizontal, 16)
+                        .frame(height: 50)
+                    }
+                    .overlay(Capsule().strokeBorder(LoreColor.ink, lineWidth: 1.5))
+                    .foregroundStyle(LoreColor.ink)
                 }
                 .padding(16)
             }

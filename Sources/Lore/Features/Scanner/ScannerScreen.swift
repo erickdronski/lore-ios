@@ -1,18 +1,46 @@
 import CoreLocation
 import SwiftUI
 
-/// The scanner viewfinder — **GPS + compass coarse mode**, rung 2 of the
-/// degraded-modes ladder (docs/05 §5), matching the web scanner's behavior:
-/// live camera preview with bearing-projected overlay chips.
+/// The scanner viewfinder — **v2**, the intelligence layer over the coarse
+/// GPS + compass pose (docs/12-SCANNER-INTELLIGENCE.md, on top of the docs/05
+/// §5 rung-2 geometry). What v1 did with flat bearing chips, v2 does with the
+/// full contract:
 ///
-/// The honesty contract from docs/05 §4 applies verbatim: at ±10–30 m /
-/// ±10–25° we never make an on-building claim. Chips are *directional
-/// labels* — name + arrow + distance — positioned by bearing within the
-/// camera's FOV, with off-screen candidates pinned to the edges. Full VPS
-/// (ARCore Geospatial + Streetscape Geometry, exact pins, occlusion, stack
-/// UI) replaces this at P1; see `GeoScoutingService` for the hook.
+/// - **§3 ranking** — persona-weighted (`InterestMap.relevanceScore`) +
+///   distance + gaze + novelty + context, only the top few rendered
+///   (`ScannerRanking.rank`).
+/// - **§2 confidence tiers, honest** — Tier A locked pin *only* when the
+///   geometry earns it, Tier B floating bearing chip, Tier C directional
+///   cluster with no on-building claim (`ScannerRanking.tier`).
+/// - **§3.1 meanwhile-nearby stories** — moments floated at their real spot,
+///   *"On this spot, 1934…"* (`StoryMarker`).
+/// - **§2.1 disambiguation stack** — clustered candidates collapse into one
+///   "one of these three" chip (`StackChip`).
+/// - **reticle** — Amber corner-frame + scanline + breathing compass ring
+///   (`ScannerReticle`, `CompassRing`).
+/// - **§3.2 audio auto-offer** — a Tier-A lock offers the narrated hook
+///   (`NarrationService`), hands-free docent mode.
+/// - **haptics** — `.rigid` on lock, `.selection` as chips pass center
+///   (brand/ELEVATION §4).
+///
+/// The honesty contract (docs/12 §2, docs/05 §4.2) is enforced in the ranking
+/// layer, not here: this view only *renders* the tier a candidate earned. Full
+/// VPS (ARCore Geospatial + Streetscape, exact pins + occlusion) replaces the
+/// coarse pose at P1; the `GeoScoutingService` probe below is the tier hook.
 struct ScannerScreen: View {
+    /// The active city the scanner scopes its place/story load to. Defaults to
+    /// the pilot so the scanner works before the city switcher is ever opened.
+    let city: String
+    /// The shared curation prefs (persona lens for ranking + voice register).
+    /// `nil` ⇒ the neutral traveler lens.
+    let prefs: UserPrefs?
+
     @State private var model = ScannerModel()
+
+    init(city: String = Config.defaultCity, prefs: UserPrefs? = nil) {
+        self.city = city
+        self.prefs = prefs
+    }
 
     var body: some View {
         GeometryReader { proxy in
@@ -20,13 +48,24 @@ struct ScannerScreen: View {
                 CameraPreviewView(session: model.camera.session)
                     .ignoresSafeArea()
 
-                overlayChips(width: proxy.size.width)
+                // Reticle underlays the content so pins/chips sit on top of it.
+                ScannerReticle(isLocked: model.lockedPlace != nil)
+                    .ignoresSafeArea()
 
-                VStack {
+                lockedPin(size: proxy.size)
+                bearingChips(size: proxy.size)
+                storyMarkers(size: proxy.size)
+
+                VStack(spacing: 0) {
                     StatusChip(text: model.statusLine)
                         .padding(.top, 8)
                     Spacer()
-                    nearbyRail
+                    if let offered = model.narration.offered {
+                        audioOffer(for: offered)
+                            .padding(.bottom, 8)
+                    }
+                    directionalRail
+                    bottomBar
                 }
             }
         }
@@ -37,63 +76,223 @@ struct ScannerScreen: View {
                 .presentationBackground(.regularMaterial)
                 .presentationCornerRadius(24)
         }
-        .task { await model.start() }
+        .sheet(item: $model.selectedStory) { story in
+            StorySheet(story: story)
+                .presentationDetents([.medium, .large])
+                .presentationBackground(.regularMaterial)
+                .presentationCornerRadius(24)
+        }
+        .task {
+            model.apply(prefs: prefs)
+            await model.start(city: city)
+        }
+        .onChange(of: prefs) { _, newValue in model.apply(prefs: newValue) }
+        .onChange(of: city) { _, newValue in
+            Task { await model.reload(city: newValue) }
+        }
         .onDisappear { model.stopSensors() }
     }
 
-    // MARK: In-view chips
+    // MARK: Tier A — the locked pin
 
-    /// Chips for places inside the camera FOV, horizontally positioned by
-    /// bearing delta. Capped at 6 — clutter control per brand rules
-    /// (≤ 35% viewfinder coverage).
+    /// The single Tier-A resolve: a solid Amber pin anchored where the building
+    /// sits in the FOV, name below (docs/12 §2 Tier A). Only one at a time —
+    /// the scanner commits to one lock, not a field of confident claims.
     @ViewBuilder
-    private func overlayChips(width: CGFloat) -> some View {
-        let inView = Array(model.projected.filter(\.isInView).prefix(6))
-        ForEach(Array(inView.enumerated()), id: \.element.id) { index, projected in
-            PlaceChip(projected: projected, showArrow: false)
+    private func lockedPin(size: CGSize) -> some View {
+        if let locked = model.lockedRanked {
+            LockedPin(ranked: locked)
                 .position(
-                    x: chipX(fraction: projected.screenFraction, width: width),
-                    y: 140 + CGFloat(index) * 54
+                    x: chipX(fraction: locked.projected.screenFraction, width: size.width),
+                    y: size.height * 0.42
                 )
-                .transition(.opacity.combined(with: .scale(scale: 0.85)))
                 .onTapGesture {
-                    model.selectedPlace = projected.place
+                    Haptics.play(.dossierOpen)
+                    model.select(locked.place)
                 }
+                .transition(.scale(scale: 0.6).combined(with: .opacity))
         }
     }
 
-    private func chipX(fraction: Double, width: CGFloat) -> CGFloat {
-        let clamped = min(max(fraction, 0.08), 0.92)
-        return CGFloat(clamped) * width
+    // MARK: Tier B — bearing chips + stacks
+
+    /// Tier-B candidates inside the FOV, positioned by bearing. Clustered
+    /// candidates render as a stack chip ("one of these three"); singletons as
+    /// a plain bearing chip. Capped for clutter control (≤ 35% viewfinder,
+    /// brand/DESIGN §4).
+    @ViewBuilder
+    private func bearingChips(size: CGSize) -> some View {
+        ForEach(Array(model.inViewClusters.enumerated()), id: \.element.id) { index, cluster in
+            Group {
+                if cluster.isStack {
+                    StackChip(cluster: cluster) { confirmed in
+                        model.confirmFromStack(confirmed)
+                    }
+                } else {
+                    BearingChip(ranked: cluster.lead, showArrow: false)
+                        .onTapGesture { model.select(cluster.lead.place) }
+                }
+            }
+            .position(
+                x: chipX(fraction: cluster.screenFraction, width: size.width),
+                y: size.height * 0.24 + CGFloat(index) * 56
+            )
+            .transition(.opacity.combined(with: .scale(scale: 0.85)))
+        }
     }
 
-    // MARK: Edge rail
+    // MARK: §3.1 — meanwhile-nearby story markers
 
-    /// Bottom rail of off-screen candidates, sorted by distance — the
-    /// "Willis Tower ↖ 600 m" chips from docs/05 §5 rung 2.
-    private var nearbyRail: some View {
+    @ViewBuilder
+    private func storyMarkers(size: CGSize) -> some View {
+        ForEach(model.inViewStories) { projected in
+            StoryMarker(projected: projected) {
+                model.selectedStory = projected.story
+            }
+            .position(
+                x: chipX(fraction: projected.screenFraction, width: size.width),
+                y: size.height * 0.62
+            )
+        }
+    }
+
+    // MARK: Tier C + off-screen — the directional rail
+
+    /// Off-screen and Tier-C candidates as a distance-sorted bottom rail: the
+    /// "Willis Tower ↖ 600 m" chips (docs/05 §5 rung 2) plus the Tier-C
+    /// "that way →" hints that never claim a façade (docs/12 §2 Tier C).
+    private var directionalRail: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                ForEach(Array(model.projected.filter { !$0.isInView }.prefix(10))) { projected in
-                    PlaceChip(projected: projected, showArrow: true)
-                        .onTapGesture {
-                            model.selectedPlace = projected.place
-                        }
+                ForEach(model.directionalCandidates) { ranked in
+                    BearingChip(ranked: ranked, showArrow: true)
+                        .onTapGesture { model.select(ranked.place) }
                 }
             }
             .padding(.horizontal, 16)
         }
-        .padding(.bottom, 12)
+        .padding(.bottom, 8)
+    }
+
+    // MARK: Bottom bar — compass + haunted toggle + mode
+
+    private var bottomBar: some View {
+        HStack {
+            CompassRing(headingDegrees: model.pose.headingDegrees)
+            Spacer()
+            if model.hasHauntedNearby {
+                Button {
+                    Haptics.play(.chipTap)
+                    model.toggleHaunted()
+                } label: {
+                    HStack(spacing: 4) {
+                        Text("👻").font(.system(size: 13))
+                        Text(model.hauntedOnly ? "Spooky on" : "Spooky nearby")
+                            .font(LoreType.button)
+                    }
+                    .foregroundStyle(LoreColor.bone)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(
+                        model.hauntedOnly ? LoreColor.scrimSky : LoreColor.scrimFacade,
+                        in: Capsule()
+                    )
+                    .overlay(
+                        Capsule().strokeBorder(LoreColor.amber.opacity(0.5), lineWidth: 1)
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.bottom, 16)
+    }
+
+    // MARK: §3.2 — the audio auto-offer
+
+    /// "Keep walking, I'll tell you" — the hands-free offer that appears on a
+    /// Tier-A lock (docs/12 §3.2). We offer, never auto-play (open Q4 etiquette).
+    private func audioOffer(for place: Place) -> some View {
+        Button {
+            model.playNarration(for: place)
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "headphones")
+                Text("Keep walking, I'll tell you")
+                    .font(LoreType.button)
+                Spacer(minLength: 8)
+                Image(systemName: "xmark")
+                    .font(.system(size: 11, weight: .semibold))
+                    .onTapGesture { model.narration.dismissOffer() }
+            }
+            .foregroundStyle(LoreColor.bone)
+            .padding(.horizontal, 14)
+            .frame(height: 44)
+            .background(.ultraThinMaterial, in: Capsule())
+            .overlay(
+                Capsule().strokeBorder(LoreColor.amber.opacity(0.55), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 16)
+        .transition(.move(edge: .bottom).combined(with: .opacity))
+    }
+
+    // MARK: Layout
+
+    /// Clamp a screen fraction into the safe band so a chip never clips the
+    /// edge; off-screen candidates live in the rail, not here.
+    private func chipX(fraction: Double, width: CGFloat) -> CGFloat {
+        CGFloat(min(max(fraction, 0.10), 0.90)) * width
     }
 }
 
-// MARK: - Chip
+// MARK: - Tier A pin
 
-/// A scanner label chip: scrim-backed (never raw text on camera —
-/// brand/DESIGN.md §4), emoji + name + arrow/distance caption.
-struct PlaceChip: View {
-    let projected: ProjectedPlace
+/// The Tier-A locked pin: compound Amber teardrop (Amber fill + Ink stroke +
+/// Ink shadow, brand/DESIGN §4) with the name on a scrim below. The one
+/// on-building claim the scanner is willing to make.
+struct LockedPin: View {
+    let ranked: ScannerRanking.Ranked
+
+    var body: some View {
+        VStack(spacing: 6) {
+            ZStack {
+                Image(systemName: "mappin.circle.fill")
+                    .font(.system(size: 34))
+                    .foregroundStyle(LoreColor.amber)
+                    .background(Circle().fill(LoreColor.ink).padding(6))
+                    .shadow(color: LoreColor.ink.opacity(0.35), radius: 3, x: 0, y: 1)
+                Text(ranked.place.displayEmoji)
+                    .font(.system(size: 14))
+            }
+            Text(ranked.place.name)
+                .font(LoreType.button)
+                .foregroundStyle(LoreColor.bone)
+                .lineLimit(1)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(LoreColor.scrimSky, in: Capsule())
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Text(
+            "\(ranked.place.name), locked, \(ranked.projected.distanceLabel) ahead"
+        ))
+        .accessibilityAddTraits(.isButton)
+    }
+}
+
+// MARK: - Bearing chip (Tier B / directional)
+
+/// A scanner label chip: scrim-backed (never raw text on camera,
+/// brand/DESIGN §4), emoji + name + arrow/distance. Matched-interest places
+/// carry a brighter Amber edge so the "for you" nudge is visible (docs/12 §3).
+struct BearingChip: View {
+    let ranked: ScannerRanking.Ranked
     let showArrow: Bool
+
+    private var projected: ProjectedPlace { ranked.projected }
+    private var isForYou: Bool { !ranked.matchedInterests.isEmpty }
 
     var body: some View {
         HStack(spacing: 6) {
@@ -111,18 +310,18 @@ struct PlaceChip: View {
         .padding(.vertical, 8)
         .background(LoreColor.scrimSky, in: Capsule())
         .overlay(
-            Capsule().strokeBorder(LoreColor.amber.opacity(0.55), lineWidth: 1)
+            Capsule().strokeBorder(
+                LoreColor.amber.opacity(isForYou ? 0.9 : 0.55),
+                lineWidth: isForYou ? 1.5 : 1
+            )
         )
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(Text(
-            "\(projected.place.name), \(projected.distanceLabel) away"
-        ))
+        .accessibilityLabel(Text("\(projected.place.name), \(projected.distanceLabel) away"))
+        .accessibilityAddTraits(.isButton)
     }
 
     private var caption: String {
-        showArrow
-            ? "\(projected.arrow) \(projected.distanceLabel)"
-            : projected.distanceLabel
+        showArrow ? "\(projected.arrow) \(projected.distanceLabel)" : projected.distanceLabel
     }
 }
 
@@ -134,37 +333,118 @@ final class ScannerModel {
     let camera = ScannerCameraService()
     let pose = LocationHeadingProvider()
     let scouting = GeoScoutingService()
+    let narration = NarrationService()
 
     private(set) var places: [Place] = []
-    private(set) var projected: [ProjectedPlace] = []
+    private(set) var stories: [Story] = []
+    private(set) var prefs: UserPrefs?
+
+    /// The current frame, resolved into tiers and clusters.
+    private(set) var lockedRanked: ScannerRanking.Ranked?
+    private(set) var inViewClusters: [ScannerRanking.Cluster] = []
+    private(set) var inViewStories: [ProjectedStory] = []
+    private(set) var directionalCandidates: [ScannerRanking.Ranked] = []
+
+    /// Places the user has already opened this session — the novelty signal
+    /// (docs/12 §3 `w_fresh`). In-memory only at P0; P1 seeds it from `visit`.
+    private var seenPlaceIDs: Set<String> = []
+
     var selectedPlace: Place?
+    var selectedStory: Story?
+
+    /// The night/haunted layer toggle (docs/12 §3.1 layer 3). Opt-in only.
+    private(set) var hauntedOnly = false
 
     private var loadError = false
     private var scoutedOnce = false
     private var projectionTask: Task<Void, Never>?
 
+    /// The place currently locked (Tier A), for the reticle "firm up" state.
+    var lockedPlace: Place? { lockedRanked?.place }
+
+    /// True when any nearby story is haunted — gates the "Spooky nearby" toggle.
+    var hasHauntedNearby: Bool { inViewStories.contains { $0.story.isHaunted } || stories.contains(where: \.isHaunted) }
+
     var statusLine: String {
-        if loadError { return "Offline — cached places only" }
+        if loadError { return "Offline, cached places only" }
         return pose.statusLine + scouting.statusSuffix
     }
 
-    func start() async {
+    /// The city the current places/stories were loaded for, so a city switch
+    /// only refetches when it actually changed.
+    private var loadedCity: String?
+
+    /// Adopt the shared curation prefs (persona lens). Cheap and idempotent —
+    /// called on appear and whenever the app's prefs change.
+    func apply(prefs: UserPrefs?) {
+        self.prefs = prefs
+    }
+
+    func start(city: String = Config.defaultCity) async {
         camera.start()
         pose.start()
         startProjectionLoop()
+        await loadContent(city: city)
+    }
+
+    /// Refetch places/stories for a newly-selected city, keeping sensors live.
+    func reload(city: String) async {
+        guard city != loadedCity else { return }
+        await loadContent(city: city)
+    }
+
+    private func loadContent(city: String) async {
+        loadedCity = city
+        loadError = false
+        async let placesResult = LoreAPI.shared.places(city: city)
+        async let storiesResult = LoreAPI.shared.stories(city: city)
         do {
-            places = try await LoreAPI.shared.places()
+            places = try await placesResult
         } catch {
             loadError = true
         }
+        // Stories are enrichment, not the primary resolve: a failure here never
+        // degrades the scan, it just means no meanwhile-nearby markers.
+        stories = (try? await storiesResult) ?? []
     }
 
     func stopSensors() {
         camera.stop()
         pose.stop()
+        narration.stop()
         projectionTask?.cancel()
         projectionTask = nil
     }
+
+    // MARK: Selection
+
+    func select(_ place: Place) {
+        Haptics.play(.dossierOpen)
+        seenPlaceIDs.insert(place.id)
+        selectedPlace = place
+    }
+
+    /// A stack candidate the user confirmed → it becomes the locked pin and
+    /// (P1) would feed a `verification` (docs/12 §2.1 confirm-a-look).
+    func confirmFromStack(_ ranked: ScannerRanking.Ranked) {
+        seenPlaceIDs.insert(ranked.place.id)
+        select(ranked.place)
+        // TODO(P1): POST a `verification` for the confirmed look so the crowd
+        // sharpens the ODbL-tainted geometry (docs/06 crowdsourcing, docs/09
+        // clean-room path). RLS-scoped write via LoreAPI once auth is wired in.
+    }
+
+    func toggleHaunted() {
+        hauntedOnly.toggle()
+        reproject()
+    }
+
+    func playNarration(for place: Place) {
+        let register = ScannerRanking.voiceRegister(for: prefs?.persona ?? .traveler)
+        narration.speak(place, register: register)
+    }
+
+    // MARK: Projection loop
 
     /// Re-projects at ~5 Hz — well under the 10–15 Hz AR budget, plenty for
     /// compass-grade heading, cheap on battery (docs/05 §7).
@@ -179,11 +459,11 @@ final class ScannerModel {
     }
 
     private func reproject() {
-        guard
-            let location = pose.location,
-            pose.headingDegrees >= 0
-        else {
-            projected = []
+        guard let location = pose.location, pose.headingDegrees >= 0 else {
+            lockedRanked = nil
+            inViewClusters = []
+            inViewStories = []
+            directionalCandidates = []
             return
         }
 
@@ -192,11 +472,89 @@ final class ScannerModel {
             scouting.scout(coordinate: location.coordinate)
         }
 
-        projected = BearingProjector.project(
+        // 1. Pose math → projected candidates (unchanged bearing geometry).
+        let projected = BearingProjector.project(
             places: places,
             from: location,
             heading: pose.headingDegrees,
             fovDegrees: camera.horizontalFOVDegrees
         )
+
+        // 2. Sensor quality gates the tier ceiling (docs/05 §4.2). Compass-grade
+        // coarse mode until the ARCore VPS lands; the probe below only tells us
+        // coverage exists, not that we're localized, so `hasVPS` stays false.
+        let quality = ScannerRanking.PoseQuality(
+            horizontalAccuracyM: location.horizontalAccuracy > 0 ? location.horizontalAccuracy : 30,
+            headingAccuracyDeg: pose.headingAccuracy,
+            hasVPS: false
+        )
+
+        // 3. §3 ranking, persona-weighted.
+        let ranked = ScannerRanking.rank(
+            projected,
+            prefs: prefs,
+            quality: quality,
+            seenPlaceIDs: seenPlaceIDs
+        )
+
+        // 4. Tier split. Tier A → the single best-scoring locked pin (there can
+        // be only one commitment). Tier B in-view → clustered into stacks.
+        // Everything else (Tier C + off-screen) → the directional rail.
+        let previousLockID = lockedRanked?.place.id
+
+        let tierA = ranked.filter { $0.tier == .a && $0.projected.isInView }
+        let newLock = tierA.first
+        lockedRanked = newLock
+
+        let tierB = ranked.filter { $0.tier == .b && $0.projected.isInView }
+        inViewClusters = Array(ScannerRanking.cluster(tierB).prefix(5))
+
+        directionalCandidates = Array(
+            ranked
+                .filter { $0.tier == .c || !$0.projected.isInView }
+                .prefix(10)
+        )
+
+        // 5. §3.1 story markers, distance-budgeted, night-toggle aware.
+        let projectedStories = ScannerRanking.nearbyStories(
+            stories,
+            from: location,
+            heading: pose.headingDegrees,
+            fovDegrees: camera.horizontalFOVDegrees,
+            hauntedOnly: hauntedOnly
+        )
+        inViewStories = projectedStories.filter(\.isInView)
+
+        // 6. Haptics + audio on a *new* lock (brand/ELEVATION §4: `.rigid` on
+        // lock; the selection tick as chips pass center is handled below).
+        if let newLock, newLock.place.id != previousLockID {
+            Haptics.play(.scannerLock)
+            narration.offer(newLock.place) // §3.2 auto-offer, not auto-play
+        }
+
+        // 7. Selection tick as a chip crosses the reticle center (docs/12 §3
+        // "gaze"; brand/ELEVATION §4 `.scannerChipPass`). Fire once per chip as
+        // it enters the center band, not every frame it's inside.
+        updateCenterCrossing(inViewClusters.map(\.lead))
+    }
+
+    /// Track which candidates are within the center band so we can fire a
+    /// selection haptic exactly on the frame a chip *enters* it (a tick as it
+    /// passes center, brand/ELEVATION §4), never a buzz-storm while it sits.
+    private var centeredIDs: Set<String> = []
+
+    private func updateCenterCrossing(_ leads: [ScannerRanking.Ranked]) {
+        let band = 0.06 // ±6% of screen width around center counts as "passing"
+        let nowCentered = Set(
+            leads
+                .filter { abs($0.projected.screenFraction - 0.5) <= band }
+                .map(\.id)
+        )
+        // A chip that is centered now but wasn't last frame just crossed.
+        let entered = nowCentered.subtracting(centeredIDs)
+        if !entered.isEmpty {
+            Haptics.play(.scannerChipPass)
+        }
+        centeredIDs = nowCentered
     }
 }
