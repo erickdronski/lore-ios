@@ -1,0 +1,79 @@
+# Lore — native iOS app (XcodeGen spec)
+#
+# Regenerate the Xcode project any time this file or the source tree changes:
+#   xcodegen generate
+#
+# Constants locked in lore/docs/10-APPSTORE.md:
+#   bundle id  app.lore.lore   ·  team J9DMDH4S58  ·  iOS 17.0+
+name: Lore
+
+options:
+  bundleIdPrefix: app.lore
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    DEVELOPMENT_TEAM: J9DMDH4S58
+    CODE_SIGN_STYLE: Automatic
+    # Swift 5 language mode for P0. The AR threading model (docs/03 §2 — ARSession
+    # lane / ResolverActor / network lane) is what earns the flip to Swift 6 strict
+    # concurrency at P1; doing it now would fight the scaffold, not harden it.
+    SWIFT_VERSION: "5.0"
+    ENABLE_USER_SCRIPT_SANDBOXING: true
+
+targets:
+  Lore:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: Sources/Lore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.lore.lore
+        PRODUCT_NAME: Lore
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        TARGETED_DEVICE_FAMILY: "1" # iPhone only — Wi-Fi-only iPads can never localize (docs/10 §1)
+        INFOPLIST_KEY_UIUserInterfaceStyle: Automatic
+        SUPPORTS_MACCATALYST: false
+    info:
+      path: Sources/Lore/Info.plist
+      properties:
+        CFBundleDisplayName: Lore
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        ITSAppUsesNonExemptEncryption: false
+
+        # ── Purpose strings ─────────────────────────────────────────────────
+        # Camera + location copy is EXACT from lore/docs/10-APPSTORE.md §4.3
+        # (locked in 09-LEGAL-DATA-RIGHTS.md §5.1). Do not edit here — edit the
+        # decision doc first, then propagate.
+        NSCameraUsageDescription: "Lore uses your camera to recognize the buildings and statues around you and pin their stories in view. Camera imagery helps determine your precise position; photos are saved only when you choose to contribute one."
+        NSLocationWhenInUseUsageDescription: "Your precise location lets Lore know which block you're standing on, so it can load the stories around you and place them accurately in AR."
+        # Motion string drafted here (not yet in docs/10 — upstream it): compass
+        # smoothing for the coarse scanner + card parallax (CMMotionManager).
+        NSMotionUsageDescription: "Lore uses motion data to steady the compass, so nearby places stay pointed at the right spot as you move."
+
+        # ── UIRequiredDeviceCapabilities — DELIBERATELY NOT SET AT P0 ──────
+        # docs/10 §1: these keys are IRREVERSIBLE once a build ships (Apple
+        # forbids removing required capabilities in updates). They are correct
+        # for Lore forever, but enable them at P1 with the first ARCore build —
+        # not on this scaffold, which still runs fine on any iOS 17 device.
+        #
+        # UIRequiredDeviceCapabilities:
+        #   - arkit   # hides Lore from non-ARKit devices
+        #   - gps     # excludes Wi-Fi-only iPads (no GNSS, can never localize)
+
+schemes:
+  Lore:
+    build:
+      targets:
+        Lore: all
+    run:
+      config: Debug
+    archive:
+      config: Release
