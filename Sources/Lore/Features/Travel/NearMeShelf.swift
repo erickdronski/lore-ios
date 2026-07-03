@@ -27,6 +27,9 @@ struct NearMeShelf: View {
     var onNeedsSignIn: () -> Void = {}
     /// How many cards to show.
     var maxCount: Int = 8
+    /// The city these places belong to — published to the home-screen widget
+    /// alongside the nearest places (docs/16 §7). Defaults to the pilot city.
+    var city: String = Config.defaultCity
 
     @State private var provider = NearMeLocationProvider()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -56,6 +59,15 @@ struct NearMeShelf: View {
         }
         .onAppear { provider.start() }
         .onDisappear { provider.stop() }
+        // Publish the nearest places to the home-screen widget whenever the
+        // ranking shifts (a new fix, a filter change). No-op until the App Group
+        // is provisioned (docs/16 §7).
+        .onChange(of: provider.location) { _, _ in
+            WidgetPublisher.publishNearby(ranked, city: city)
+        }
+        .onChange(of: places) { _, _ in
+            WidgetPublisher.publishNearby(ranked, city: city)
+        }
     }
 
     // MARK: Header

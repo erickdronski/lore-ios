@@ -1,8 +1,10 @@
 # lore-ios
 
 The native Swift app for **Lore** — point at a building, learn its story.
-SwiftUI, iOS 17+, zero external dependencies at P0: pure Apple frameworks +
-`URLSession` against the Lore Supabase project's PostgREST surface.
+SwiftUI, iOS 17+, zero **third-party** dependencies at P0: pure Apple frameworks
+(now including StoreKit 2, AuthenticationServices, WidgetKit, ActivityKit, and
+UserNotifications) + `URLSession` against the Lore Supabase project's PostgREST
+surface. The first third-party SDK (RevenueCat) lands deliberately at P3.
 
 This repo is built on a machine with **Command Line Tools only** (no Xcode, no
 iOS SDK). Every Swift file is syntax-validated (`swiftc -parse` — parse-only;
@@ -15,11 +17,25 @@ from the source tree.
 
 **Composition seam:** `Sources/Lore/App/LoreApp.swift` is the single wiring
 point. It owns the shared observables (`AuthService`, `AppRouter`,
-`EntitlementStore`, `PrefsCoordinator`, `TravelSession`), injects them into the
-environment, presents the first-run Onboarding cover, and installs
-`AppRouter.onRoute` so global search + the city switcher open the right
-surface. Every feature view takes injected closures or reads the environment —
-none import the tab structure.
+`EntitlementStore`, `StoreKitService`, `PrefsCoordinator`, `TravelSession`,
+plus the `PushService` behind the `AppDelegate` adaptor), injects them into the
+environment, presents the first-run Onboarding cover, installs
+`AppRouter.onRoute` so global search + the city switcher open the right surface,
+and handles `lore://` deep links (widget / Live Activity taps) via `.onOpenURL`.
+Every feature view takes injected closures or reads the environment — none
+import the tab structure.
+
+**Apple toolkits (docs/16-APPLE-TOOLKITS.md):** the client paths for StoreKit 2,
+native Sign in with Apple, WidgetKit, ActivityKit (tour Live Activity), and push
+registration are wired here — real code, with the portal-gated bits (entitlements,
+App Group, APNs key) commented in `project.yml` and the server-side bits (RevenueCat
+reconcile, Apple provider config, push sender) left as documented TODOs. See
+"[Apple toolkits — real vs. Xcode-gated](#apple-toolkits--real-vs-xcode-gated)".
+
+**Targets:** the app (`Lore`) plus a **`LoreWidget`** app-extension that ships the
+home-screen widget and the tour Live Activity. Cross-target types live in
+`Sources/Shared` (compiled into both): the App-Group snapshot model and the
+`TourActivityAttributes`.
 
 ## Bootstrap (first machine with Xcode)
 
@@ -47,6 +63,11 @@ none import the tab structure.
    **J9DMDH4S58** and bundle id **`app.lore.lore`** are pre-set in
    `project.yml` (constants locked in `lore/docs/10-APPSTORE.md`); with the
    App ID registered per that doc, "Automatically manage signing" just works.
+   The **`LoreWidget`** extension (`app.lore.lore.LoreWidget`) signs the same
+   way. Before the StoreKit / Sign-in-with-Apple / Push / App-Group paths run on
+   a signed build, enable those **portal-gated capabilities** — see
+   "[Apple toolkits — Portal-gated](#portal-gated-needs-the-apple-developer-portal--entitlements)"
+   and the commented block in `project.yml`.
 5. **Run.**
    - **Simulator:** Onboarding, Map (pins + filter chips + near-me shelf +
      city switcher + search), Tours, Passport, place cards, dives, Meet-the-City,
@@ -74,11 +95,62 @@ map header.
 | **Scanner tab** | **Real, coarse mode (v2 intelligence)** — AVCaptureSession preview + CLLocationManager GPS/true-heading; persona-weighted ranking, honest confidence tiers (locked pin / bearing chip / directional cluster), meanwhile-nearby story markers, disambiguation stacks, and the §3.2 audio auto-offer. City- and persona-aware (reads the shared `AppRouter.selectedCity` + `PrefsCoordinator.prefs`). Makes **no on-building claims** per the honesty contract (`docs/12`, `docs/05` §5 rung 2). |
 | `GeoScoutingService` | **Stub with a real probe** — `ARGeoTrackingConfiguration.checkAvailability(at:)` answers "is there VPS-class coverage here" on-device today; the ARCore Geospatial `GARSession` integration is `TODO(P1)`. |
 | **Tours tab** | **Real** — `tour` + embedded `tour_stop` rows by city, stop-stepper detail with curator notes. (Tables live, seed content landing.) |
-| **Premium (Lore+)** | **Wired store, stubbed purchase** — `EntitlementStore` is the single "is this user Lore+?" source (`entitlements.status ∈ {active, trialing}`), failing closed; `PaywallView` renders the offer ($4.99/mo · $29.99/yr · 7-day trial) and calls a purchase stub (RevenueCat lands at P1, `docs/00` §2). Gating surfaces (`DiveMeter`, `PlusGate`, `DiveGateCard`) exist; the meter/gate on the dive is a P1 wire-in. |
-| **Auth** | **Real email sign-in** against GoTrue REST (`/auth/v1/token?grant_type=password`); session in-memory only at P0. Session changes fan out (via `LoreApp`) to entitlements, prefs, and the visit set. **Sign in with Apple is present but stubbed** (`docs/11` §B; renders above email per guideline 4.8). |
+| **Premium (Lore+)** | **StoreKit 2 wired** — `EntitlementStore` is the single "is this user Lore+?" source; `isPlus` now **unions** the server row (`entitlements.status ∈ {active, trialing}`) with the on-device `StoreKitService` (`Transaction.currentEntitlements`), the offline belt-and-suspenders (`docs/16` §1). `PaywallView` runs a **real StoreKit 2 purchase** (`Product.products` / `purchase()` / `AppStore.sync()`), localized prices, and a trial CTA that branches on real intro-offer eligibility. Products `lore_plus_monthly_4_99` / `lore_plus_annual_29_99`; test with `StoreKit/Lore.storekit`. RevenueCat remains the planned server-side truth at P3 (reconcile TODOs in `StoreKitService`/`PaywallView`). |
+| **Auth** | **Real email sign-in** against GoTrue REST (`/auth/v1/token?grant_type=password`); session in-memory only at P0. Session changes fan out (via `LoreApp`) to entitlements, prefs, and the visit set. **Sign in with Apple is now a real native flow** — `AppleSignInCoordinator` runs `ASAuthorizationController` with a hashed nonce; `AuthService.signInWithApple` exchanges the identity token at `/auth/v1/token?grant_type=id_token` (`docs/11` §B.2, `docs/16` §2). Renders above email per guideline 4.8. Server prereq (bundle id in the Supabase Apple provider) is the same the web path already stood up; first-auth name/email are carried through for the profile write (TODO). |
 | **Profile tab** | **Real when signed in** (`user_profile`: handle, trust tier, Insight points); Contributions (P2) and Lore+ (P3) rows are labeled stubs. |
+| **Widget (`LoreWidget`)** | **Real, second target** — a WidgetKit extension with the "Nearby Lore" widget (small "daily lore" + medium "around you", `TimelineProvider`, Amber-pin brand styling). Reads a `LoreWidgetSnapshot` the app writes to a shared App Group after each near-me refresh (`WidgetPublisher`); falls back to a brand sample when the group isn't provisioned. Taps deep-link `lore://place/{id}`. **App Group is portal-gated** — commented in `project.yml`. |
+| **Live Activity (tour)** | **Real** — `TourActivityAttributes` (shared type) + a Lock-Screen view and Dynamic Island (compact/expanded/minimal) in the widget extension; the app's `TourLiveActivityController` starts/updates/ends it from `TourDetailView` (a "Start walking tour" control; stop changes push progress). `NSSupportsLiveActivities` is set (not portal-gated). On-device driven — no push token (`docs/16` §8). Live distance from Core Location is a TODO. |
+| **Push (APNs)** | **Client scaffold** — `PushService` (UNUserNotificationCenter authorization, `registerForRemoteNotifications`, delegate for foreground/tap) + `AppDelegate` (`@UIApplicationDelegateAdaptor`) for the APNs token callbacks. Onboarding's "Turn on nudges" now registers for remote too. `UIBackgroundModes: remote-notification` is set; the **Push capability + `aps-environment` entitlement are portal-gated** (commented in `project.yml`) and the **server sender is a TODO** (`docs/16` §5). |
 | **AR pipeline** | **Not here yet.** ARKit + ARCore Geospatial + RealityKit (VPS pose, Streetscape Geometry, resolver, chunk store) is the P1 build (`docs/05` + `docs/03`). |
 | `UIRequiredDeviceCapabilities` | **Deliberately commented out** in `project.yml` — `arkit` + `gps` are irreversible once shipped; they go in with the first ARCore build at P1 (`docs/10` §1). |
+
+## Apple toolkits — real vs. Xcode-gated
+
+The client paths from `docs/16-APPLE-TOOLKITS.md`'s "do-these-first" set are
+implemented against pure Apple frameworks and **parse clean** (`swiftc -parse`,
+whole tree). What can't be done on a Command-Line-Tools-only machine (or without
+the Apple Developer portal) is deliberately isolated and labeled — no assumed
+entitlements, no invented server pieces.
+
+### Real, in-repo, parses clean
+
+| Toolkit | What's wired |
+|---|---|
+| **StoreKit 2** | `StoreKitService` — `Product.products`, `product.purchase()`, `Transaction.currentEntitlements`, a `Transaction.updates` listener, `AppStore.sync()` restore, intro-offer eligibility. `EntitlementStore.isPlus` unions StoreKit's on-device answer with the server row. `PaywallView` drives it with localized prices + an eligibility-aware trial CTA. `StoreKit/Lore.storekit` for simulator testing. |
+| **Sign in with Apple** | `AppleSignInCoordinator` (`ASAuthorizationController` + SHA-256 nonce + `ASAuthorizationAppleIDButton`) → `AuthService.signInWithApple` exchanges the identity token at GoTrue `grant_type=id_token`. |
+| **WidgetKit** | `LoreWidget` extension target — `NearbyLoreWidget` (`TimelineProvider`, small + medium), App-Group snapshot contract (`Sources/Shared`), `lore://` deep links, `WidgetPublisher` on the app side. |
+| **ActivityKit** | `TourActivityAttributes` (shared) + `TourLiveActivityWidget` (Lock Screen + Dynamic Island) + `TourLiveActivityController` started from `TourDetailView`. `NSSupportsLiveActivities` set. |
+| **Push (client half)** | `PushService` + `AppDelegate` adaptor; UNUserNotificationCenter authorization, remote registration, token capture, foreground/tap delegate. `UIBackgroundModes: remote-notification` set. |
+
+### Xcode-gated (needs the machine with Xcode)
+
+- **Generate the project + build/type-check:** `xcodegen generate` then build in
+  Xcode. `swiftc -parse` here is syntax-only — `import SwiftUI`/`StoreKit`/
+  `ActivityKit`/`WidgetKit` and full type resolution need the iOS SDK.
+- **StoreKit configuration in the scheme:** wire `StoreKit/Lore.storekit` into
+  the Run scheme (Xcode-only) to exercise purchase/trial/restore in the
+  simulator. See `StoreKit/README.md`.
+- **Widget/Live-Activity on device:** Live Activities and the Dynamic Island
+  need a real device (or the widget in the simulator); the extension target is
+  built by Xcode from the `project.yml` spec.
+
+### Portal-gated (needs the Apple Developer portal + entitlements)
+
+All left **commented** in `project.yml` under the app target's "Capabilities
+that REQUIRE the Apple Developer portal" note — none assumed:
+
+- **Sign in with Apple entitlement** (`com.apple.developer.applesignin`) on the
+  App ID; plus the bundle id in the Supabase Apple provider's Client IDs (the
+  web OAuth path already stood up the shared `.p8`/Services ID, so no new
+  Supabase console work — `docs/16` §2).
+- **Push capability + `aps-environment` entitlement** on the App ID, and an
+  APNs token-auth `.p8` key. The **server sender** (a Supabase Edge Function
+  signing the APNs JWT) is a documented TODO (`docs/16` §5).
+- **App Group `group.app.lore.lore`** on *both* the app and widget targets — the
+  widget↔app snapshot hand-off no-ops safely until it exists.
+- **Paid Apps agreement + the two IAP products** in App Store Connect, and the
+  **RevenueCat project** that becomes the server-side entitlement truth at P3
+  (`docs/16` §1; reconcile TODOs already in the StoreKit code).
 
 ## Supabase surfaces used (`Sources/Lore/Networking/LoreAPI.swift`)
 

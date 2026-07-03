@@ -1,3 +1,4 @@
+import CoreLocation
 import SwiftUI
 
 /// One tour as a stop stepper: progress rail, current stop's place card
@@ -7,6 +8,8 @@ struct TourDetailView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var model = TourDetailModel()
     @State private var stopIndex = 0
+    /// Drives the active-tour Live Activity + Dynamic Island (docs/16 §8).
+    @State private var liveActivity = TourLiveActivityController()
 
     var body: some View {
         ScrollView {
@@ -27,6 +30,7 @@ struct TourDetailView: View {
                         .id(stopIndex)
                         .transition(stopTransition)
                         .animation(LoreSpring.smooth(reduceMotion: reduceMotion), value: stopIndex)
+                    liveActivityControl
                     stepperControls
                 }
             }
@@ -36,6 +40,85 @@ struct TourDetailView: View {
         .navigationTitle(tour.title)
         .navigationBarTitleDisplayMode(.inline)
         .task { await model.load(city: tour.city) }
+        // Push each stop change into the Live Activity so the Lock Screen /
+        // Dynamic Island track the walk (docs/16 §8). No-op when not running.
+        .onChange(of: stopIndex) { _, _ in syncLiveActivity() }
+        // End the activity if the user leaves the tour screen without finishing.
+        .onDisappear { liveActivity.end() }
+    }
+
+    // MARK: Live Activity
+
+    /// Start / stop the active-tour Live Activity. Only meaningful when the tour
+    /// has stops and the system permits Live Activities.
+    @ViewBuilder
+    private var liveActivityControl: some View {
+        if !tour.stops.isEmpty && liveActivity.areActivitiesEnabled {
+            Button {
+                if liveActivity.isRunning {
+                    liveActivity.end()
+                } else {
+                    startLiveActivity()
+                }
+            } label: {
+                Label(
+                    liveActivity.isRunning ? "End Live Activity" : "Start walking tour",
+                    systemImage: liveActivity.isRunning ? "stop.circle" : "figure.walk.circle.fill"
+                )
+                .font(LoreType.button)
+                .frame(maxWidth: .infinity)
+                .frame(height: 44)
+                .background(
+                    liveActivity.isRunning ? LoreColor.bone200 : LoreColor.brass700,
+                    in: Capsule()
+                )
+                .foregroundStyle(liveActivity.isRunning ? LoreColor.ink : LoreColor.bone)
+            }
+            .buttonStyle(.pressable)
+        }
+    }
+
+    /// Kick off the Live Activity from the current stop.
+    private func startLiveActivity() {
+        liveActivity.start(
+            tour: tour,
+            initialStopIndex: stopIndex + 1,
+            currentStopName: liveStopName(at: stopIndex),
+            nextStopName: liveStopName(at: stopIndex + 1),
+            distanceToNextMeters: liveDistanceToNext()
+        )
+    }
+
+    /// Reflect the current stopIndex into a running Live Activity.
+    private func syncLiveActivity() {
+        guard liveActivity.isRunning else { return }
+        liveActivity.updateProgress(
+            currentStopIndex: stopIndex + 1,
+            currentStopName: liveStopName(at: stopIndex),
+            nextStopName: liveStopName(at: stopIndex + 1),
+            distanceToNextMeters: liveDistanceToNext()
+        )
+    }
+
+    /// A display name for the stop at `index` — the resolved place name, else a
+    /// "Stop N" fallback. Returns "" past the end (no next stop).
+    private func liveStopName(at index: Int) -> String {
+        guard tour.stops.indices.contains(index) else { return "" }
+        let stop = tour.stops[index]
+        return model.place(id: stop.placeID)?.name ?? "Stop \(index + 1)"
+    }
+
+    /// Straight-line distance (m) from the current stop's place to the next
+    /// stop's place, when both resolve — a scaffold stand-in for the real
+    /// user→next-stop distance a Core Location fix would give (docs/16 §8 TODO).
+    private func liveDistanceToNext() -> Double? {
+        guard
+            tour.stops.indices.contains(stopIndex),
+            tour.stops.indices.contains(stopIndex + 1),
+            let here = model.place(id: tour.stops[stopIndex].placeID),
+            let next = model.place(id: tour.stops[stopIndex + 1].placeID)
+        else { return nil }
+        return here.location.distance(from: next.location)
     }
 
     private var currentStop: TourStop? {

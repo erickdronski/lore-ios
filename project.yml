@@ -30,6 +30,10 @@ targets:
     deploymentTarget: "17.0"
     sources:
       - path: Sources/Lore
+      - path: Sources/Shared # types shared with the LoreWidget extension
+    # The widget extension is embedded in the app bundle.
+    dependencies:
+      - target: LoreWidget
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.lore.lore
@@ -40,6 +44,38 @@ targets:
         TARGETED_DEVICE_FAMILY: "1" # iPhone only — Wi-Fi-only iPads can never localize (docs/10 §1)
         INFOPLIST_KEY_UIUserInterfaceStyle: Automatic
         SUPPORTS_MACCATALYST: false
+
+        # ── Capabilities that REQUIRE the Apple Developer portal ───────────
+        # These are entitlement-backed and can NOT be assumed from a spec file —
+        # they must be enabled on the App ID `app.lore.lore` in the portal (and
+        # the matching provisioning profile regenerated) before a signed build
+        # works. XcodeGen can emit the entitlement, but the portal is the source
+        # of truth, so they are left COMMENTED here per the doctrine "don't
+        # assume entitlements". Uncomment + create the .entitlements file on the
+        # machine with Xcode once the App ID is configured.
+        #
+        # StoreKit (In-App Purchase) — docs/16 §1. No entitlement key is needed
+        #   for StoreKit 2 itself; the IAP capability lives on the App ID + the
+        #   Paid Apps agreement in App Store Connect. Nothing to add here beyond
+        #   the products in App Store Connect + the local StoreKit/Lore.storekit.
+        #
+        # Sign in with Apple — docs/16 §2. Portal-gated entitlement:
+        #   CODE_SIGN_ENTITLEMENTS: Sources/Lore/Lore.entitlements
+        #   and in that file: com.apple.developer.applesignin = [Default]
+        #
+        # Push Notifications (APNs) — docs/16 §5. Portal-gated entitlement:
+        #   in Lore.entitlements: aps-environment = development (→ production for
+        #   release). Requires the Push capability on the App ID + an APNs .p8
+        #   auth key. The UIBackgroundModes/remote-notification key above is the
+        #   non-gated half and is set.
+        #
+        # App Groups (widget ⇄ app snapshot) — docs/16 §7. Portal-gated:
+        #   in Lore.entitlements AND LoreWidget.entitlements:
+        #   com.apple.security.application-groups = [group.app.lore.lore]
+        #   Until provisioned, LoreWidgetStore.sharedDefaults is nil and the
+        #   widget falls back to its sample content (no crash).
+        #
+        # CODE_SIGN_ENTITLEMENTS: Sources/Lore/Lore.entitlements
     info:
       path: Sources/Lore/Info.plist
       properties:
@@ -48,6 +84,30 @@ targets:
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
         ITSAppUsesNonExemptEncryption: false
+
+        # ── Live Activities (ActivityKit) ──────────────────────────────────
+        # docs/16 §8 — the tour Live Activity + Dynamic Island. This Info.plist
+        # key is the ONLY thing ActivityKit needs beyond the shared attributes
+        # type; it is NOT a portal-gated capability (no entitlement), so it's
+        # safe to enable now.
+        NSSupportsLiveActivities: true
+
+        # ── URL scheme (widget / Live Activity deep links) ─────────────────
+        # `lore://place/{id}`, `lore://tour/{slug}`, `lore://map` — handled by
+        # AppRouter.handleDeepLink via .onOpenURL (docs/16 §7/§8).
+        CFBundleURLTypes:
+          - CFBundleURLName: app.lore.lore
+            CFBundleURLSchemes:
+              - lore
+
+        # ── Background modes ───────────────────────────────────────────────
+        # `remote-notification` lets the app receive silent/content pushes
+        # (nearby-lore / new-city, docs/16 §5). The push *capability* +
+        # aps-environment entitlement are portal-gated (see the entitlements
+        # note below); this background-mode key is not, and is the app-side
+        # half of the registration in PushService.
+        UIBackgroundModes:
+          - remote-notification
 
         # ── Purpose strings ─────────────────────────────────────────────────
         # Camera + location copy is EXACT from lore/docs/10-APPSTORE.md §4.3
@@ -69,11 +129,49 @@ targets:
         #   - arkit   # hides Lore from non-ARKit devices
         #   - gps     # excludes Wi-Fi-only iPads (no GNSS, can never localize)
 
+  # ── Widget extension (docs/16 §7 WidgetKit + §8 Live Activities) ─────────
+  # Ships the home-screen "Nearby Lore" widget (small + medium) AND the active-
+  # tour Live Activity / Dynamic Island (an ActivityConfiguration must live in a
+  # widget extension bundle). Shares the `Sources/Shared` types with the app —
+  # the App-Group snapshot model + the Live Activity attributes — so there is no
+  # duplicate-type drift between the two targets.
+  LoreWidget:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: Sources/LoreWidget
+      - path: Sources/Shared # SAME shared types the app compiles
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.lore.lore.LoreWidget
+        PRODUCT_NAME: LoreWidget
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        TARGETED_DEVICE_FAMILY: "1"
+        SKIP_INSTALL: true
+        # App Group entitlement is portal-gated — same note as the app target.
+        # Both targets must carry `group.app.lore.lore` for the snapshot hand-off
+        # to resolve. Left commented until the App ID + group are provisioned.
+        # CODE_SIGN_ENTITLEMENTS: Sources/LoreWidget/LoreWidget.entitlements
+    info:
+      # XcodeGen generates this plist from the properties below (overwriting the
+      # hand-written Sources/LoreWidget/Info.plist on `xcodegen generate`). The
+      # NSExtension point is what makes this a WidgetKit extension. Live
+      # Activities need NSSupportsLiveActivities on the CONTAINING APP, not here.
+      path: Sources/LoreWidget/Info.plist
+      properties:
+        CFBundleDisplayName: Lore
+        CFBundleName: LoreWidget
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+
 schemes:
   Lore:
     build:
       targets:
         Lore: all
+        LoreWidget: all
     run:
       config: Debug
     archive:

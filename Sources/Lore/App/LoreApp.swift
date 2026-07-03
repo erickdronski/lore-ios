@@ -18,6 +18,11 @@ import SwiftUI
 /// or read the environment.
 @main
 struct LoreApp: App {
+    /// The UIKit delegate adaptor — its only job is the APNs token callbacks
+    /// (docs/16 §5). It owns the shared `PushService`, which we lift into the
+    /// SwiftUI environment below.
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+
     /// Single auth instance for the whole app — every signed-in surface reads it
     /// from the environment.
     @State private var auth: AuthService
@@ -25,6 +30,9 @@ struct LoreApp: App {
     @State private var router = AppRouter()
     /// The single "is this user Lore+?" source of truth (docs/00 §7).
     @State private var entitlements = EntitlementStore()
+    /// The StoreKit 2 client path — the on-device transaction engine and the
+    /// offline entitlement read `EntitlementStore` unions in (docs/16 §1).
+    @State private var store = StoreKitService()
     /// The one shared `user_prefs` load — persona weighting + hidden kinds.
     @State private var prefs = PrefsCoordinator()
     /// Owns the Travel stores (visits + filters) and the unlock bridge.
@@ -48,10 +56,19 @@ struct LoreApp: App {
                 .environment(auth)
                 .environment(router)
                 .environment(entitlements)
+                .environment(store)
+                .environment(appDelegate.push)
                 .environment(prefs)
                 .environment(travel)
                 .environment(travel.visits)
                 .environment(travel.filters)
+                // Wire the StoreKit client path into the entitlement store and
+                // start the Transaction.updates listener once, at launch. Both
+                // are @MainActor app-lifetime singletons (docs/16 §1).
+                .task {
+                    entitlements.storeKit = store
+                    store.start()
+                }
                 // App chrome is the app's words — Ink/Brass, never Amber
                 // (Amber is reserved for the world: pins, outlines, beacon —
                 // brand/DESIGN.md §4). brass700 is the AA-safe brass on Bone.
@@ -145,6 +162,8 @@ struct RootTabView: View {
                 .presentationDetents([.large])
         }
         .onAppear { installRouter() }
+        // Widget taps + Live Activity taps arrive as `lore://` deep links.
+        .onOpenURL { url in router.handleDeepLink(url) }
         // Session changes ripple to every dependent store.
         .task(id: auth.session?.accessToken) { await syncSession() }
     }

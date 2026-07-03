@@ -112,4 +112,37 @@ final class AppRouter {
     func switchCity(to slug: String) {
         route(.city(slug: slug))
     }
+
+    /// Handle a `lore://` deep link from a **widget tap** or a **Live Activity**
+    /// (docs/16 §7/§8). Supported forms:
+    /// - `lore://place/{id}` → open that place's card
+    /// - `lore://tour/{slug}` → the Tours surface (deep tour detail is a P1 nicety)
+    /// - `lore://map` → just bring the map forward (no-op route beyond that)
+    ///
+    /// Returns `true` when the URL was understood. Unknown URLs are ignored.
+    @discardableResult
+    func handleDeepLink(_ url: URL) -> Bool {
+        guard url.scheme == "lore" else { return false }
+        // `host` is the verb ("place"/"tour"/"map"); the first path component is
+        // the identifier.
+        let verb = url.host
+        let ident = url.pathComponents.first(where: { $0 != "/" })
+        switch verb {
+        case "place":
+            guard let ident else { return false }
+            route(.place(id: ident, city: nil))
+            return true
+        case "tour":
+            guard let ident else { return false }
+            route(.tour(slug: ident, city: nil))
+            return true
+        case "map":
+            // Nothing to resolve — the host's onRoute for a city no-op keeps the
+            // map foremost. Emit a city route to the current city to surface it.
+            route(.city(slug: selectedCity))
+            return true
+        default:
+            return false
+        }
+    }
 }

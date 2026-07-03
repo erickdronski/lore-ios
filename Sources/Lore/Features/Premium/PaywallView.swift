@@ -8,17 +8,22 @@ import Observation
 /// free-vs-plus table, and the monthly / annual choice with the 7-day trial.
 ///
 /// Prices are locked in docs/00-DECISIONS.md §7: **$4.99/mo, $29.99/yr, 7-day
-/// free trial.** The store products themselves come from RevenueCat at P1
-/// (docs/00 §2 names RevenueCat for payments); this screen renders the offer
-/// and calls a purchase stub. When the SDK lands, swap `PaywallModel.purchase`
-/// for a real `Purchases.shared` call, keep everything else.
+/// free trial.** The purchase runs through **StoreKit 2** today (the real client
+/// path, `StoreKitService`); RevenueCat remains the planned server-side truth
+/// and lands at P3 (docs/16-APPLE-TOOLKITS.md §1, docs/00 §2). Localized prices
+/// come from the loaded `Product`s when available, falling back to the hardcoded
+/// USD lines. The "Start 7-day free trial" CTA branches on real intro-offer
+/// eligibility so it never lies to a returning subscriber.
 ///
 /// Presentation contract: present in a `.sheet`; the caller passes the
-/// `EntitlementStore` and an `AuthService` (for the access token / user id) so
-/// a completed purchase can optimistically flip `isPlus` and then reconcile.
+/// `EntitlementStore`, the `StoreKitService`, and an `AuthService` (for the
+/// access token / user id) so a completed purchase can optimistically flip
+/// `isPlus` and then reconcile.
 struct PaywallView: View {
     /// The store to update on a successful purchase (optimistic + refresh).
     let entitlements: EntitlementStore
+    /// The StoreKit 2 client path — products, purchase, restore, eligibility.
+    let store: StoreKitService
     /// Auth for the access token (refresh) and user id (optimistic row).
     let auth: AuthService
     /// Optional context line — "Unlock this tour", "Keep reading" — so the
@@ -56,8 +61,17 @@ struct PaywallView: View {
             closeButton
         }
         .presentationDragIndicator(.visible)
-        .onAppear { appeared = true }
+        .onAppear {
+            appeared = true
+            model.store = store
+        }
         .task {
+            // Ensure the model has the store even if `.task` beats `.onAppear`.
+            model.store = store
+            // Load real StoreKit products (localized prices) + intro-offer
+            // eligibility so the plan rows and CTA are truthful.
+            await store.loadProducts()
+            await model.refreshEligibility()
             // Reflect any membership the user already has (e.g. re-opened the
             // paywall) so the CTA reads "You're a member" rather than selling.
             await entitlements.refresh(accessToken: auth.session?.accessToken)
@@ -97,6 +111,7 @@ struct PaywallView: View {
             ForEach(PaywallModel.Plan.allCases) { plan in
                 PlanRow(
                     plan: plan,
+                    priceLine: model.displayPriceLine(for: plan),
                     selected: model.selectedPlan == plan
                 ) {
                     Haptics.play(.chipTap)
@@ -168,7 +183,10 @@ struct PaywallView: View {
                                     .tint(LoreColor.ink)
                             } else {
                                 VStack(spacing: 2) {
-                                    Text("Start 7-day free trial")
+                                    // Only promise the trial when the user is
+                                    // actually eligible for the intro offer;
+                                    // otherwise sell the plan straight (docs/16 §1).
+                                    Text(model.ctaTitle)
                                         .font(LoreType.button)
                                     Text(model.selectedPlan.ctaSubtitle)
                                         .font(LoreType.caption)
@@ -202,8 +220,11 @@ struct PaywallView: View {
 
     private var finePrint: some View {
         Text(
-            "7 days free, then \(model.selectedPlan.priceLine). Cancel anytime in "
-            + "Settings. Your free daily dives and unlimited scanning never expire."
+            (model.isEligibleForTrial
+                ? "7 days free, then \(model.displayPriceLine(for: model.selectedPlan)). "
+                : "\(model.displayPriceLine(for: model.selectedPlan)). ")
+            + "Cancel anytime in Settings. Your free daily dives and unlimited "
+            + "scanning never expire."
         )
         .font(LoreType.caption)
         .foregroundStyle(LoreColor.ink600)
@@ -235,16 +256,27 @@ struct PaywallView: View {
     // MARK: Actions
 
     private func purchase() async {
-        let succeeded = await model.purchase()
-        guard succeeded else { return }
-        // Optimistically flip to Lore+ (trialing) so the gate reopens now; the
-        // server webhook writes the real row, and `refresh` reconciles.
-        if let userID = auth.session?.user.id {
-            entitlements.applyLocalPurchase(userID: userID, trialing: true)
+        let outcome = await model.purchase()
+        switch outcome {
+        case .success(let trialing):
+            // Optimistically flip to Lore+ so the gate reopens now. StoreKit's
+            // `currentEntitlements` (re-read by `refresh`) is the real on-device
+            // truth; the RevenueCat webhook writes the server row at P3.
+            if let userID = auth.session?.user.id {
+                entitlements.applyLocalPurchase(userID: userID, trialing: trialing)
+            }
+            await entitlements.refresh(accessToken: auth.session?.accessToken)
+            Haptics.play(.badgeEarned)  // the unlock is a reward moment
+            dismiss()
+        case .pending:
+            // Ask-to-Buy / SCA — the grant arrives later via Transaction.updates.
+            // Leave the sheet up with the model's informational message.
+            break
+        case .userCancelled:
+            break  // no-op, no error
+        case .failed:
+            break  // model.purchaseError already set
         }
-        await entitlements.refresh(accessToken: auth.session?.accessToken)
-        Haptics.play(.badgeEarned)  // the unlock is a reward moment
-        dismiss()
     }
 
     private func restore() async {
@@ -284,6 +316,8 @@ enum PaywallContext {
 
 private struct PlanRow: View {
     let plan: PaywallModel.Plan
+    /// Localized price when the StoreKit product loaded, else the hardcoded line.
+    let priceLine: String
     let selected: Bool
     let onTap: () -> Void
 
@@ -308,7 +342,7 @@ private struct PlanRow: View {
                                 .background(BrassSheenSurface(shape: Capsule(), sweepOnAppear: false))
                         }
                     }
-                    Text(plan.priceLine)
+                    Text(priceLine)
                         .font(LoreType.caption)
                         .foregroundStyle(LoreColor.ink600)
                 }
@@ -329,7 +363,7 @@ private struct PlanRow: View {
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(plan.title), \(plan.priceLine)")
+        .accessibilityLabel("\(plan.title), \(priceLine)")
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
     }
 }
@@ -401,26 +435,26 @@ private struct FeatureRow: View {
     }
 }
 
-// MARK: - Model + purchase stub
+// MARK: - Model (StoreKit 2 driven)
 
 @Observable
 @MainActor
 final class PaywallModel {
-    /// The two Lore+ SKUs (docs/00 §7). Product identifiers are placeholders
-    /// until the RevenueCat dashboard defines them.
+    /// The two Lore+ SKUs (docs/00 §7), mapped to the real App Store Connect
+    /// product identifiers in `StoreKitService.ProductID`.
     enum Plan: String, CaseIterable, Identifiable {
         case monthly
         case annual
 
         var id: String { rawValue }
 
-        /// The RevenueCat / StoreKit product identifier.
-        /// TODO(P1): confirm these match the App Store Connect + RevenueCat
-        /// product IDs (docs/00 §2 names RevenueCat).
+        /// The App Store Connect / StoreKit product identifier (docs/16 §1).
+        /// These are the live IDs the `Configuration.storekit` file and ASC
+        /// both define — not placeholders.
         var productID: String {
             switch self {
-            case .monthly: return "app.lore.plus.monthly"
-            case .annual: return "app.lore.plus.annual"
+            case .monthly: return StoreKitService.ProductID.monthly
+            case .annual: return StoreKitService.ProductID.annual
             }
         }
 
@@ -431,9 +465,9 @@ final class PaywallModel {
             }
         }
 
-        /// The price line, locked in docs/00 §7. TODO(P1): render the
-        /// *localized* price from the fetched StoreKit product, not this
-        /// hardcoded USD string.
+        /// The fallback price line, locked in docs/00 §7. Used only when the
+        /// StoreKit product hasn't loaded; `PaywallModel.displayPriceLine(for:)`
+        /// prefers the localized `Product.displayPrice`.
         var priceLine: String {
             switch self {
             case .monthly: return "$4.99 / month"
@@ -456,59 +490,90 @@ final class PaywallModel {
             case .annual: return "Save 50%"
             }
         }
+
+        /// The suffix appended to a localized `displayPrice` so the row reads
+        /// "$4.99 / month" even when the number comes from StoreKit.
+        var periodSuffix: String {
+            switch self {
+            case .monthly: return " / month"
+            case .annual: return " / year"
+            }
+        }
     }
+
+    /// The StoreKit 2 client path, injected from the view's `onAppear`. Nil in
+    /// previews / before injection — the model degrades to hardcoded prices and
+    /// an honest "unavailable" purchase error.
+    var store: StoreKitService?
 
     var selectedPlan: Plan = .annual  // default to the better value
     private(set) var isPurchasing = false
     private(set) var purchaseError: String?
 
-    /// Purchase the selected plan.
-    ///
-    /// **RevenueCat-ready stub.** Today it simulates a successful purchase so
-    /// the paywall flow, optimistic entitlement flip, and gate reopening can be
-    /// exercised end-to-end without the SDK. It returns `true` on "success".
-    ///
-    /// TODO(P1): replace the body with the real purchase:
-    /// ```swift
-    /// // import RevenueCat
-    /// let offerings = try await Purchases.shared.offerings()
-    /// guard let package = offerings.current?.availablePackages
-    ///         .first(where: { $0.storeProduct.productIdentifier == selectedPlan.productID })
-    /// else { throw PurchaseError.noProduct }
-    /// let result = try await Purchases.shared.purchase(package: package)
-    /// return result.customerInfo.entitlements["lore_plus"]?.isActive == true
-    /// ```
-    /// The RevenueCat webhook writes the `entitlements` row server-side; the
-    /// caller's `EntitlementStore.refresh` then reconciles. Keep the return
-    /// contract (`Bool` success) so the paywall wiring is untouched.
-    func purchase() async -> Bool {
-        isPurchasing = true
-        purchaseError = nil
-        defer { isPurchasing = false }
+    /// Whether the current Apple ID is eligible for the 7-day intro offer.
+    /// Drives the CTA copy so it never promises a trial to a returning user.
+    private(set) var isEligibleForTrial = true
 
-        // --- STUB: simulate the store round-trip. Remove at P1. ---
-        try? await Task.sleep(nanoseconds: 600_000_000)
-        // Flip to `false` here to exercise the error branch during development.
-        let simulatedSuccess = true
-        if !simulatedSuccess {
-            purchaseError = "That didn't go through. No charge was made, try again."
-            return false
-        }
-        return true
-        // --- end STUB ---
+    /// Reload intro-offer eligibility for the selected plan (call after products
+    /// load, and whenever the plan changes if you want per-plan precision — the
+    /// two products share a subscription group, so eligibility is the same).
+    func refreshEligibility() async {
+        guard let store else { return }
+        isEligibleForTrial = await store.isEligibleForIntroOffer(productID: selectedPlan.productID)
     }
 
-    /// Restore prior purchases.
+    /// The CTA title — promises the trial only when eligible.
+    var ctaTitle: String {
+        isEligibleForTrial ? "Start 7-day free trial" : "Subscribe"
+    }
+
+    /// The best price line for a plan: the localized StoreKit `displayPrice`
+    /// with the period suffix when the product loaded, else the hardcoded line.
+    func displayPriceLine(for plan: Plan) -> String {
+        if let product = store?.product(for: plan.productID) {
+            return product.displayPrice + plan.periodSuffix
+        }
+        return plan.priceLine
+    }
+
+    /// Purchase the selected plan through StoreKit 2.
     ///
-    /// TODO(P1): `let info = try await Purchases.shared.restorePurchases()` then
-    /// `return info.entitlements["lore_plus"]?.isActive == true`.
-    func restore() async -> Bool {
+    /// TODO(P3, docs/16 §1): once the RevenueCat SDK is wired, route this through
+    /// `Purchases.shared.purchase(package:)` so RC records the transaction and
+    /// its webhook writes the `entitlements` row. Keep the `PurchaseOutcome`
+    /// return so the paywall wiring is untouched by that swap.
+    func purchase() async -> StoreKitService.PurchaseOutcome {
+        guard let store else {
+            purchaseError = "The store isn't available right now. Try again."
+            return .failed(message: purchaseError!)
+        }
         isPurchasing = true
         purchaseError = nil
         defer { isPurchasing = false }
-        try? await Task.sleep(nanoseconds: 400_000_000)
-        // STUB: nothing to restore in the scaffold.
-        purchaseError = "No previous membership found on this Apple ID."
-        return false
+
+        let outcome = await store.purchase(productID: selectedPlan.productID)
+        if case .failed(let message) = outcome {
+            purchaseError = message
+        }
+        return outcome
+    }
+
+    /// Restore prior purchases via StoreKit 2 (`AppStore.sync()` +
+    /// `Transaction.currentEntitlements`).
+    ///
+    /// TODO(P3): defer to `Purchases.shared.restorePurchases()` once RC is wired.
+    func restore() async -> Bool {
+        guard let store else {
+            purchaseError = "The store isn't available right now. Try again."
+            return false
+        }
+        isPurchasing = true
+        purchaseError = nil
+        defer { isPurchasing = false }
+        let restored = await store.restore()
+        if !restored {
+            purchaseError = "No previous membership found on this Apple ID."
+        }
+        return restored
     }
 }

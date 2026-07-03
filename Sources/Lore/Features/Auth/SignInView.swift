@@ -1,18 +1,27 @@
 import AuthenticationServices
 import SwiftUI
 
-/// Email/password sign-in (live against Supabase GoTrue) plus a Sign in with
-/// Apple button that is present-but-stubbed until P1.
+/// Email/password sign-in (live against Supabase GoTrue) plus a **native Sign in
+/// with Apple** flow (docs/16-APPLE-TOOLKITS.md §2, docs/11 §B.2).
 ///
 /// Guideline 4.8 posture (docs/10 §5 row 3): Sign in with Apple renders
 /// **above** every other provider in every sign-in UI. Keep that order.
+///
+/// The Apple button runs `AppleSignInCoordinator` (nonce + system sheet) and
+/// hands the identity token to `AuthService.signInWithApple`, which exchanges it
+/// with Supabase. Server prerequisites (bundle id in the Apple provider's Client
+/// IDs, shared `.p8`/Services ID) are documented in `AuthService`; the web OAuth
+/// path already stood them up, so no new console work is needed (docs/16 §2).
 struct SignInView: View {
     @Environment(AuthService.self) private var auth
     @Environment(\.dismiss) private var dismiss
 
     @State private var email = ""
     @State private var password = ""
-    @State private var appleStubMessage: String?
+    /// Non-fatal Apple sign-in error (nil when the user simply cancelled).
+    @State private var appleError: String?
+    /// The coordinator is created lazily per sign-in attempt.
+    @State private var isAppleSigningIn = false
 
     var body: some View {
         NavigationStack {
@@ -23,31 +32,30 @@ struct SignInView: View {
                         .foregroundStyle(LoreColor.ink600)
 
                     // Sign in with Apple — FIRST, always (guideline 4.8).
+                    // Native flow: `AppleSignInCoordinator` runs the system
+                    // sheet with a hashed nonce; `AuthService.signInWithApple`
+                    // exchanges the identity token at
+                    // /auth/v1/token?grant_type=id_token (docs/16 §2).
                     //
-                    // TODO(P1): native flow per docs/11-AUTH-SETUP.md §B.2 —
-                    // add the Sign in with Apple entitlement (capability is
-                    // already on app.lore.lore), generate a hashed nonce for
-                    // the request, then exchange credential.identityToken at
-                    // /auth/v1/token?grant_type=id_token (provider=apple,
-                    // nonce=rawNonce). Only dashboard prerequisite: bundle id
-                    // in the Apple provider's Client IDs list (§B.1 step 4).
-                    SignInWithAppleButton(.signIn) { _ in
-                        // Intentionally not configuring scopes yet — the
-                        // exchange path doesn't exist until P1.
-                    } onCompletion: { _ in
-                        appleStubMessage =
-                            "Sign in with Apple lands at P1 — the native "
-                            + "token exchange is specced in docs/11-AUTH-SETUP.md §B.2. "
-                            + "Use email sign-in for now."
-                    }
-                    .signInWithAppleButtonStyle(.black)
-                    .frame(height: 50)
-                    .clipShape(RoundedRectangle(cornerRadius: 14))
+                    // We use `ASAuthorizationAppleIDButton` (the required native
+                    // button) rather than SwiftUI's `SignInWithAppleButton` so we
+                    // own the controller/nonce lifecycle end-to-end.
+                    AppleIDButton { Task { await signInWithApple() } }
+                        .frame(height: 50)
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                        .allowsHitTesting(!isAppleSigningIn && !auth.isBusy)
+                        .opacity(isAppleSigningIn ? 0.6 : 1)
+                        .overlay {
+                            if isAppleSigningIn {
+                                ProgressView().tint(LoreColor.bone)
+                            }
+                        }
+                        .accessibilityLabel("Sign in with Apple")
 
-                    if let appleStubMessage {
-                        Text(appleStubMessage)
+                    if let appleError {
+                        Text(appleError)
                             .font(LoreType.caption)
-                            .foregroundStyle(LoreColor.info)
+                            .foregroundStyle(LoreColor.error)
                     }
 
                     divider
@@ -123,5 +131,66 @@ struct SignInView: View {
                 .foregroundStyle(LoreColor.ink600)
             Rectangle().fill(LoreColor.bone300).frame(height: 1)
         }
+    }
+
+    // MARK: - Actions
+
+    /// Run the native Apple flow, then exchange the token with Supabase.
+    @MainActor
+    private func signInWithApple() async {
+        appleError = nil
+        isAppleSigningIn = true
+        defer { isAppleSigningIn = false }
+        let coordinator = AppleSignInCoordinator()
+        do {
+            let credential = try await coordinator.signIn()
+            await auth.signInWithApple(
+                idToken: credential.identityToken,
+                rawNonce: credential.rawNonce,
+                fullName: credential.fullName,
+                email: credential.email
+            )
+            if auth.isSignedIn {
+                dismiss()
+            } else if let authError = auth.lastError {
+                appleError = authError
+            }
+        } catch let error as AppleSignInCoordinator.AppleSignInError {
+            // `.cancelled` has a nil description — stay silent on a user cancel.
+            appleError = error.errorDescription
+        } catch {
+            appleError = error.localizedDescription
+        }
+    }
+}
+
+/// The required native **Sign in with Apple** button, wrapped for SwiftUI.
+/// Using `ASAuthorizationAppleIDButton` (not the SwiftUI `SignInWithAppleButton`)
+/// keeps the button's look Apple-managed while the flow is driven by our
+/// `AppleSignInCoordinator`. Renders black to sit above the Ink email CTA.
+private struct AppleIDButton: UIViewRepresentable {
+    let action: () -> Void
+
+    func makeUIView(context: Context) -> ASAuthorizationAppleIDButton {
+        let button = ASAuthorizationAppleIDButton(type: .signIn, style: .black)
+        button.cornerRadius = 14
+        button.addTarget(
+            context.coordinator,
+            action: #selector(Coordinator.tapped),
+            for: .touchUpInside
+        )
+        return button
+    }
+
+    func updateUIView(_ uiView: ASAuthorizationAppleIDButton, context: Context) {
+        context.coordinator.action = action
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(action: action) }
+
+    final class Coordinator {
+        var action: () -> Void
+        init(action: @escaping () -> Void) { self.action = action }
+        @objc func tapped() { action() }
     }
 }
