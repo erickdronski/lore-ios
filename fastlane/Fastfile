@@ -29,6 +29,25 @@ platform :ios do
       is_key_content_base64: true,
     )
 
+    # Register the App IDs in the Developer portal first (skip_itc, so no App
+    # Store Connect app record, no metadata, no trader status needed). match
+    # needs the App ID to exist before it can make a provisioning profile.
+    # Idempotent: produce no-ops if the identifier already exists.
+    produce(
+      app_identifier: BUNDLE_ID,
+      app_name: "Lore",
+      skip_itc: true,
+      team_id: TEAM_ID,
+      api_key: api_key,
+    )
+    produce(
+      app_identifier: WIDGET_ID,
+      app_name: "Lore Widget",
+      skip_itc: true,
+      team_id: TEAM_ID,
+      api_key: api_key,
+    )
+
     # Cert + App Store profiles for both bundle ids. readonly:false so the first
     # run creates and stores them; later runs just fetch and install.
     match(
