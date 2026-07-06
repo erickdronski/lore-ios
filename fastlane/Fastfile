@@ -32,7 +32,12 @@ platform :ios do
       scheme: "Lore",
       configuration: "Release",
       export_method: "app-store",
-      # Cloud-managed signing on both the archive and the export.
+      # Pass the ASC API key to gym so it forwards -authenticationKeyPath/ID/
+      # IssuerID to xcodebuild. Without this, -allowProvisioningUpdates has no
+      # account to talk to ("No Accounts" / "No profiles found") and signing
+      # fails. With it, Xcode cloud-creates the distribution cert + app-store
+      # profiles for both the app and the widget on the runner.
+      api_key: api_key,
       xcargs: "-allowProvisioningUpdates DEVELOPMENT_TEAM=#{TEAM_ID} CURRENT_PROJECT_VERSION=#{build_number}",
       export_xcargs: "-allowProvisioningUpdates",
       output_directory: "build",
