@@ -87,7 +87,7 @@ enum JSONValue: Codable, Hashable {
                 .joined(separator: ", ")
         case .array(let a):
             return a.map(\.displayString).joined(separator: ", ")
-        case .null: return "—"
+        case .null: return "-"
         }
     }
 }
