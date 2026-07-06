@@ -94,9 +94,8 @@ struct DiveView: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
 
-        let photos = dive.media.filter { ($0.kind ?? "image") != "audio" }
-        if !photos.isEmpty {
-            DiveGallery(media: photos)
+        if let wikipediaTitle = dive.media.wikipediaTitle {
+            DiveGallery(wikipediaTitle: wikipediaTitle)
         }
 
         if !dive.timeline.isEmpty {
@@ -122,17 +121,17 @@ struct DiveView: View {
             }
 
             if case .loaded(let dive) = model.state {
-                ForEach(dive.links) { link in
-                    if let url = URL(string: link.url) {
-                        Link(destination: url) {
-                            LinkRow(
-                                icon: "link",
-                                title: link.displayTitle,
-                                subtitle: URL(string: link.url)?.host()
-                            )
-                        }
-                        .buttonStyle(.pressable)
+                if let website = dive.links.website, let url = URL(string: website) {
+                    Link(destination: url) {
+                        LinkRow(icon: "link", title: "Official site", subtitle: url.host())
                     }
+                    .buttonStyle(.pressable)
+                }
+                if let url = dive.links.wikipediaURL {
+                    Link(destination: url) {
+                        LinkRow(icon: "book", title: "Wikipedia", subtitle: "en.wikipedia.org")
+                    }
+                    .buttonStyle(.pressable)
                 }
             }
         }
@@ -309,45 +308,37 @@ struct TimelineNode: View {
 
 // MARK: - Gallery
 
-/// The dossier photo gallery: a horizontal shelf of blur-up tiles. Each image
-/// loads through `BlurUpAsyncImage` (shimmer placeholder → cross-fade to sharp,
-/// no pop-in, LUXURY-MOTION §3) and the tiles cascade in with the shared 40 ms
-/// fade+rise. Photographs breathe, so the lead tile gets a slow Ken-Burns drift.
+/// The dossier's lead photo: resolved from `dive.media.wikipedia_title` through
+/// the same Wikipedia summary API the culture portraits use (no dependency, no
+/// key), then shown through `BlurUpAsyncImage` (shimmer placeholder →
+/// cross-fade to sharp, no pop-in, LUXURY-MOTION §3). Self-hides on a confirmed
+/// miss so a title without an image leaves no empty frame.
 struct DiveGallery: View {
-    let media: [DiveMedia]
+    let wikipediaTitle: String
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var appeared = false
+    @State private var imageURL: URL?
+    @State private var resolved = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Gallery")
-                .font(LoreType.displayM)
-                .foregroundStyle(LoreColor.bone)
+        Group {
+            if !resolved || imageURL != nil {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Gallery")
+                        .font(LoreType.displayM)
+                        .foregroundStyle(LoreColor.bone)
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 12) {
-                    ForEach(Array(media.enumerated()), id: \.element.id) { index, item in
-                        BlurUpAsyncImage(url: URL(string: item.url))
-                            .frame(width: 240, height: 160)
-                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                            .loreElevation(.elev1)
-                            .modifier(StaggerChild(
-                                index: index,
-                                appeared: appeared,
-                                reduceMotion: reduceMotion
-                            ))
-                            .accessibilityLabel(Text(item.caption ?? "Photo"))
-                    }
+                    BlurUpAsyncImage(url: imageURL)
+                        .frame(height: 200)
+                        .frame(maxWidth: .infinity)
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .loreElevation(.elev1)
+                        .accessibilityLabel(Text("Photo of \(wikipediaTitle)"))
                 }
             }
         }
-        .onAppear {
-            if reduceMotion {
-                appeared = true
-            } else {
-                withAnimation { appeared = true }
-            }
+        .task(id: wikipediaTitle) {
+            imageURL = await WikipediaService.shared.portraitURL(for: wikipediaTitle)
+            resolved = true
         }
     }
 }

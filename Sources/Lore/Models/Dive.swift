@@ -4,18 +4,24 @@ import Foundation
 /// (synthesized once, read many; lore/docs/03-ARCHITECTURE.md §7).
 ///
 /// Live PostgREST columns: `place_id`, `narrative`, `timeline`, `links`,
-/// `media`, `source`. The jsonb columns can be null — decoding defaults them
-/// to empty arrays so views never branch on optionality.
+/// `media`, `source`. `links` and `media` are jsonb OBJECTS (not arrays) and
+/// every jsonb column can be null, so each is decoded leniently: a null,
+/// absent, or unexpectedly-shaped value defaults to empty and NEVER throws, so
+/// one odd row can never fail the whole dossier (the bug that broke the
+/// paywalled deep dive on device).
 struct Dive: Codable, Hashable {
     let placeID: String
     /// Long-form docent narrative (the DiveSheet reader body).
     let narrative: String?
     /// Horizontal timeline events, oldest first.
     let timeline: [TimelineEvent]
-    /// Source / read-more links (attribution surface for CC-BY-SA prose).
-    let links: [DiveLink]
-    /// Photos / audio attached to the dossier.
-    let media: [DiveMedia]
+    /// Source / read-more links, a jsonb OBJECT
+    /// ({"website": "...", "wikipedia_title": "..."}).
+    let links: DiveLinks
+    /// The dossier's lead image reference, resolved from
+    /// `media.wikipedia_title` via the Wikipedia summary API (the same source
+    /// the culture portraits use). Also a jsonb OBJECT.
+    let media: DiveMediaRef
     /// Synthesis provenance tag.
     let source: String?
 
@@ -28,9 +34,9 @@ struct Dive: Codable, Hashable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         placeID = try container.decode(String.self, forKey: .placeID)
         narrative = try container.decodeIfPresent(String.self, forKey: .narrative)
-        timeline = try container.decodeIfPresent([TimelineEvent].self, forKey: .timeline) ?? []
-        links = try container.decodeIfPresent([DiveLink].self, forKey: .links) ?? []
-        media = try container.decodeIfPresent([DiveMedia].self, forKey: .media) ?? []
+        timeline = (try? container.decodeIfPresent([TimelineEvent].self, forKey: .timeline)) ?? []
+        links = (try? container.decodeIfPresent(DiveLinks.self, forKey: .links)) ?? DiveLinks()
+        media = (try? container.decodeIfPresent(DiveMediaRef.self, forKey: .media)) ?? DiveMediaRef()
         source = try container.decodeIfPresent(String.self, forKey: .source)
     }
 
@@ -38,8 +44,8 @@ struct Dive: Codable, Hashable {
         placeID: String,
         narrative: String?,
         timeline: [TimelineEvent] = [],
-        links: [DiveLink] = [],
-        media: [DiveMedia] = [],
+        links: DiveLinks = DiveLinks(),
+        media: DiveMediaRef = DiveMediaRef(),
         source: String? = nil
     ) {
         self.placeID = placeID
@@ -62,23 +68,43 @@ struct TimelineEvent: Codable, Hashable, Identifiable {
     var id: String { "\(year)-\(title)" }
 }
 
-/// A link row in `dive.links`.
-struct DiveLink: Codable, Hashable, Identifiable {
-    let title: String?
-    let url: String
+/// `dive.links`, a jsonb object. Both fields optional; a link row only renders
+/// when its value is present.
+struct DiveLinks: Codable, Hashable {
+    let website: String?
+    let wikipediaTitle: String?
 
-    var id: String { url }
-    var displayTitle: String {
-        if let title, !title.isEmpty { return title }
-        return URL(string: url)?.host() ?? url
+    enum CodingKeys: String, CodingKey {
+        case website
+        case wikipediaTitle = "wikipedia_title"
+    }
+
+    init(website: String? = nil, wikipediaTitle: String? = nil) {
+        self.website = website
+        self.wikipediaTitle = wikipediaTitle
+    }
+
+    /// The read-more Wikipedia article URL for this dive, if it names one.
+    var wikipediaURL: URL? {
+        guard let title = wikipediaTitle,
+              let encoded = title.replacingOccurrences(of: " ", with: "_")
+                .addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)
+        else { return nil }
+        return URL(string: "https://en.wikipedia.org/wiki/\(encoded)")
     }
 }
 
-/// A media row in `dive.media`.
-struct DiveMedia: Codable, Hashable, Identifiable {
-    let url: String
-    let kind: String?
-    let caption: String?
+/// `dive.media`, a jsonb object naming the Wikipedia article whose lead image
+/// is the dossier's gallery photo. Resolved to a URL at render via
+/// `WikipediaService`.
+struct DiveMediaRef: Codable, Hashable {
+    let wikipediaTitle: String?
 
-    var id: String { url }
+    enum CodingKeys: String, CodingKey {
+        case wikipediaTitle = "wikipedia_title"
+    }
+
+    init(wikipediaTitle: String? = nil) {
+        self.wikipediaTitle = wikipediaTitle
+    }
 }
