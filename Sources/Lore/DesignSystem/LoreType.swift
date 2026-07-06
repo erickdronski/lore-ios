@@ -50,6 +50,19 @@ enum LoreType {
     static var button: Font { .system(size: 15, weight: .semibold) }
     /// 11 SF Pro, pin labels in-world only (`type.micro`).
     static var micro: Font { .system(size: 11, weight: .medium) }
+
+    /// Friendly numerals: **SF Pro Rounded**, tabular so columns of figures
+    /// never jitter (docs/28, the iOS design mockup's warm "7:00" / "60 m").
+    /// The rounded face is reserved for functional numbers, distances, timers,
+    /// counts, and the Passport tally, never for editorial text (that stays
+    /// Fraunces) or ordinary UI copy (that stays flat SF Pro).
+    static func numeral(size: CGFloat, weight: Font.Weight = .semibold) -> Font {
+        .system(size: size, weight: weight, design: .rounded).monospacedDigit()
+    }
+    /// 40 bold rounded, the Passport "wrapped" tally numbers.
+    static var numeralXL: Font { numeral(size: 40, weight: .bold) }
+    /// 22 semibold rounded, secondary stats + distances.
+    static var numeralM: Font { numeral(size: 22, weight: .semibold) }
 }
 
 extension Text {

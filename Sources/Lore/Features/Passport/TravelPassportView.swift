@@ -3,7 +3,7 @@ import SwiftUI
 /// The Passport scrapbook (lore/docs/26-TRAVEL-PASSPORT.md §2, "the shoebox of
 /// postcards made digital"). One `travel_stats` RPC feeds the whole surface:
 ///
-/// - **The tally**: the big Fraunces numerals, places / cities / countries /
+/// - **The tally**: the big SF Pro Rounded numerals, places / cities / countries /
 ///   this-year, the ongoing-Wrapped headline, always live.
 /// - **The stamp wall**: one stamp per city collected, slightly rotated in a
 ///   Brass ring, the passport-stamp metaphor.
@@ -80,7 +80,7 @@ struct TravelPassportView: View {
 
     private func tallyStat(_ value: Int, _ caption: String, tint: Color) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            CountUpText.integer(value, font: LoreType.display(size: 30, weight: .semibold))
+            CountUpText.integer(value, font: LoreType.numeral(size: 30, weight: .bold))
                 .foregroundStyle(tint)
             Text(caption.uppercased())
                 .loreLabelStyle()
