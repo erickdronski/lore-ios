@@ -24,9 +24,19 @@ import SwiftUI
 ///   (brand/ELEVATION §4).
 ///
 /// The honesty contract (docs/12 §2, docs/05 §4.2) is enforced in the ranking
-/// layer, not here: this view only *renders* the tier a candidate earned. Full
-/// VPS (ARCore Geospatial + Streetscape, exact pins + occlusion) replaces the
-/// coarse pose at P1; the `GeoScoutingService` probe below is the tier hook.
+/// layer, not here: this view only *renders* the tier a candidate earned.
+///
+/// **Precise mode (docs/05 §5 rung 1, pure Apple).** When the coverage probe
+/// (`GeoScoutingService`) says Apple has VPS-class data here and the device
+/// supports ARGeoTracking, a "Lock on" affordance appears in the bottom bar.
+/// It swaps the AVCapture preview for `GeoARView` + `GeoARSessionController`:
+/// ARGeoAnchors on the top-ranked candidates, world-locked cards at their
+/// projected screen points once the tracker reports localized. While it is
+/// still localizing the reticle keeps the scanning treatment; on any hard
+/// failure the scanner falls silently back to this coarse mode, which stays
+/// the default and the fallback (the ladder, docs/05 §5). ARCore Geospatial
+/// (Streetscape occlusion, dual VPS) lands at P1.5 behind the same
+/// `VPSProvider` seam.
 struct ScannerScreen: View {
     /// The active city the scanner scopes its place/story load to. Defaults to
     /// the pilot so the scanner works before the city switcher is ever opened.
@@ -46,29 +56,44 @@ struct ScannerScreen: View {
     var body: some View {
         GeometryReader { proxy in
             ZStack {
-                CameraPreviewView(session: model.camera.session)
-                    .ignoresSafeArea()
+                // The camera layer: AVCapture preview in coarse mode, the
+                // shared ARSession's feed in precise mode. One owner at a
+                // time; the model handles the handoff (docs/05 §5 ladder).
+                if model.preciseMode {
+                    GeoARView(controller: model.geoAR)
+                        .ignoresSafeArea()
+                } else {
+                    CameraPreviewView(session: model.camera.session)
+                        .ignoresSafeArea()
+                }
 
                 // Reticle underlays the content so pins/chips sit on top of it.
-                ScannerReticle(isLocked: model.lockedPlace != nil)
+                // It firms up on a coarse Tier-A lock or a precise localize.
+                ScannerReticle(isLocked: model.reticleLocked)
                     .ignoresSafeArea()
 
-                lockedPin(size: proxy.size)
-                    // A lock is an arrival — the pin blooms in with `spring.bounce`
-                    // (its `.rigid` haptic fires in the model). Reduce Motion
-                    // crossfades. Keyed on identity so only a *new* lock animates.
-                    .animation(
-                        LoreSpring.bounce(reduceMotion: reduceMotion),
-                        value: model.lockedPlace?.id
-                    )
-                bearingChips(size: proxy.size)
-                    // Chips enter/leave and re-cluster on a settled spring so the
-                    // field never snaps or jitters as the scan updates.
-                    .animation(
-                        LoreSpring.smooth(reduceMotion: reduceMotion),
-                        value: model.inViewClusters.map(\.id)
-                    )
-                storyMarkers(size: proxy.size)
+                if model.preciseMode {
+                    // World-locked cards at the tracker's projected points;
+                    // they only render once the state machine says locked.
+                    geoPins
+                } else {
+                    lockedPin(size: proxy.size)
+                        // A lock is an arrival — the pin blooms in with `spring.bounce`
+                        // (its `.rigid` haptic fires in the model). Reduce Motion
+                        // crossfades. Keyed on identity so only a *new* lock animates.
+                        .animation(
+                            LoreSpring.bounce(reduceMotion: reduceMotion),
+                            value: model.lockedPlace?.id
+                        )
+                    bearingChips(size: proxy.size)
+                        // Chips enter/leave and re-cluster on a settled spring so the
+                        // field never snaps or jitters as the scan updates.
+                        .animation(
+                            LoreSpring.smooth(reduceMotion: reduceMotion),
+                            value: model.inViewClusters.map(\.id)
+                        )
+                    storyMarkers(size: proxy.size)
+                }
 
                 VStack(spacing: 0) {
                     StatusChip(text: model.statusLine)
@@ -78,7 +103,9 @@ struct ScannerScreen: View {
                         audioOffer(for: offered)
                             .padding(.bottom, 8)
                     }
-                    directionalRail
+                    if !model.preciseMode {
+                        directionalRail
+                    }
                     bottomBar
                 }
             }
@@ -136,6 +163,46 @@ struct ScannerScreen: View {
                 .transition(.scale(scale: 0.6).combined(with: .opacity))
                 .id(locked.place.id)
         }
+    }
+
+    // MARK: Precise mode, world-locked pins (docs/05 §5 rung 1)
+
+    /// The precise-mode render: each tracked geo anchor's `ProjectedPin`
+    /// becomes a tappable card at its screen point, nearest N only, clamped
+    /// into safe bounds. This layer owns the full screen (ignoring the safe
+    /// area) so its coordinates match the AR view's viewport exactly.
+    private var geoPins: some View {
+        GeometryReader { proxy in
+            ForEach(model.geoARPins) { display in
+                GeoLockedPin(place: display.place, distanceM: display.pin.distanceM)
+                    .position(clampToSafeBounds(display.pin.screenPoint, in: proxy.size))
+                    // Track the projection on an interruptible spring so the
+                    // 10 Hz snapshots read as smooth world-lock, never jitter.
+                    .animation(
+                        reduceMotion ? nil : LoreSpring.smoothInteractive,
+                        value: display.pin.screenPoint
+                    )
+                    .onTapGesture {
+                        Haptics.play(.dossierOpen)
+                        model.select(display.place)
+                    }
+                    .transition(.scale(scale: 0.6).combined(with: .opacity))
+            }
+            .animation(
+                LoreSpring.smooth(reduceMotion: reduceMotion),
+                value: model.geoARPins.map(\.id)
+            )
+        }
+        .ignoresSafeArea()
+    }
+
+    /// Clamp a projected point so a card never clips the screen edge or the
+    /// status/bottom chrome; an edge-of-frame world lock stays reachable.
+    private func clampToSafeBounds(_ point: CGPoint, in size: CGSize) -> CGPoint {
+        CGPoint(
+            x: min(max(point.x, 60), size.width - 60),
+            y: min(max(point.y, 120), size.height - 170)
+        )
     }
 
     // MARK: Tier B — bearing chips + stacks
@@ -211,9 +278,12 @@ struct ScannerScreen: View {
     // MARK: Bottom bar — compass + haunted toggle + mode
 
     private var bottomBar: some View {
-        HStack {
+        HStack(spacing: 8) {
             CompassRing(headingDegrees: model.pose.headingDegrees)
             Spacer()
+            if model.canLockOn || model.preciseMode {
+                lockOnToggle
+            }
             if model.hasHauntedNearby {
                 Button {
                     Haptics.play(.chipTap)
@@ -240,6 +310,47 @@ struct ScannerScreen: View {
         }
         .padding(.horizontal, 16)
         .padding(.bottom, 16)
+    }
+
+    /// The precise-mode affordance (docs/05 §5): offered only when the
+    /// coverage probe says Apple has VPS-class data here AND the hardware
+    /// can run geo tracking. Coarse stays the default; this is an upgrade
+    /// the user opts into, and the same button drops back down the ladder.
+    private var lockOnToggle: some View {
+        Button {
+            Haptics.play(.chipTap)
+            if model.preciseMode {
+                model.exitPreciseMode()
+            } else {
+                model.enterPreciseMode()
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: model.preciseMode ? "scope" : "dot.viewfinder")
+                    .font(.system(size: 13, weight: .semibold))
+                Text(model.preciseMode ? "Precise on" : "Lock on")
+                    .font(LoreType.button)
+            }
+            .foregroundStyle(model.preciseMode ? LoreColor.ink : LoreColor.bone)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                model.preciseMode ? LoreColor.amber : LoreColor.scrimFacade,
+                in: Capsule()
+            )
+            .overlay(
+                Capsule().strokeBorder(
+                    LoreColor.amber.opacity(model.preciseMode ? 0 : 0.5),
+                    lineWidth: 1
+                )
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(
+            model.preciseMode
+                ? "Precise AR on, tap to return to coarse mode"
+                : "Lock on, start precise AR"
+        ))
     }
 
     // MARK: §3.2 — the audio auto-offer
@@ -316,6 +427,53 @@ struct LockedPin: View {
     }
 }
 
+// MARK: - Precise-mode pin (docs/05 §5 rung 1)
+
+/// The world-locked card of precise mode: the same Amber teardrop language
+/// as `LockedPin`, plus a live distance caption, anchored at an ARGeoAnchor's
+/// projected screen point instead of a bearing estimate. Every one of these
+/// is a Tier-A claim, which is why the model only surfaces them while the
+/// tracker reports locked (docs/05 §4.2 honesty contract).
+struct GeoLockedPin: View {
+    let place: Place
+    let distanceM: Double
+
+    private var distanceLabel: String {
+        BearingProjector.distanceLabel(meters: distanceM)
+    }
+
+    var body: some View {
+        VStack(spacing: 6) {
+            ZStack {
+                Image(systemName: "mappin.circle.fill")
+                    .font(.system(size: 34))
+                    .foregroundStyle(LoreColor.amber)
+                    .background(Circle().fill(LoreColor.ink).padding(6))
+                    .shadow(color: LoreColor.ink.opacity(0.35), radius: 3, x: 0, y: 1)
+                Text(place.displayEmoji)
+                    .font(.system(size: 14))
+            }
+            VStack(spacing: 1) {
+                Text(place.name)
+                    .font(LoreType.button)
+                    .foregroundStyle(LoreColor.bone)
+                    .lineLimit(1)
+                Text(distanceLabel)
+                    .font(LoreType.caption)
+                    .foregroundStyle(LoreColor.amber)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .background(LoreColor.scrimSky, in: Capsule())
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Text(
+            "\(place.name), pinned, \(distanceLabel) ahead"
+        ))
+        .accessibilityAddTraits(.isButton)
+    }
+}
+
 // MARK: - Bearing chip (Tier B / directional)
 
 /// A scanner label chip: scrim-backed (never raw text on camera,
@@ -361,6 +519,15 @@ struct BearingChip: View {
 
 // MARK: - Model
 
+/// A `ProjectedPin` joined back to its `Place` for rendering. Identity is
+/// the anchor id so SwiftUI diffing tracks anchors, not screen points.
+struct GeoPinDisplay: Identifiable {
+    let anchorID: UUID
+    let place: Place
+    let pin: ProjectedPin
+    var id: UUID { anchorID }
+}
+
 @Observable
 @MainActor
 final class ScannerModel {
@@ -368,6 +535,13 @@ final class ScannerModel {
     let pose = LocationHeadingProvider()
     let scouting = GeoScoutingService()
     let narration = NarrationService()
+    /// The precise pipeline (docs/05 §5 rung 1): Apple ARGeoTracking behind
+    /// the `VPSProvider` seam. Idle until the user opts in via "Lock on".
+    let geoAR = GeoARSessionController()
+
+    /// True while the precise pipeline owns the viewfinder. Coarse mode is
+    /// the default and the fallback; this only flips on an explicit upgrade.
+    private(set) var preciseMode = false
 
     private(set) var places: [Place] = []
     private(set) var stories: [Story] = []
@@ -401,7 +575,48 @@ final class ScannerModel {
 
     var statusLine: String {
         if loadError { return "Offline, cached places only" }
+        if preciseMode {
+            // The precise ladder rung narrated honestly: localizing keeps
+            // the searching language, locked earns the claim (docs/05 §5).
+            switch geoAR.state {
+            case .idle, .initializing: return "Precise mode · starting…"
+            case .localizing: return "Locking on · aim at the buildings"
+            case .locked: return "Locked · precise mode"
+            case .failed: return "Precise mode unavailable here"
+            }
+        }
         return pose.statusLine + scouting.statusSuffix
+    }
+
+    /// The reticle firms up on a Tier-A commitment in either mode: a coarse
+    /// lock, or the precise tracker reaching localized.
+    var reticleLocked: Bool {
+        preciseMode ? geoAR.state == .locked : lockedPlace != nil
+    }
+
+    /// Whether the "Lock on" upgrade is offered: coverage scouted available
+    /// (docs/05 §5 tier hook) AND this hardware can run geo tracking AND we
+    /// have a fix to rank candidates from. Coarse remains the default.
+    var canLockOn: Bool {
+        !preciseMode
+            && scouting.availability == .available
+            && GeoARSessionController.isSupported
+            && pose.location != nil
+            && !places.isEmpty
+    }
+
+    /// The precise-mode render set: in-front projections only, joined back
+    /// to their `Place`, nearest first, capped for clutter (the anchor cap
+    /// already bounds this at 8; the render cap keeps a dense block
+    /// readable, same budget thinking as the coarse chip field).
+    var geoARPins: [GeoPinDisplay] {
+        guard preciseMode, geoAR.state == .locked else { return [] }
+        let displays = geoAR.projections.compactMap { anchorID, pin -> GeoPinDisplay? in
+            guard pin.isInFront else { return nil }
+            guard let place = places.first(where: { $0.id == pin.placeID }) else { return nil }
+            return GeoPinDisplay(anchorID: anchorID, place: place, pin: pin)
+        }
+        return Array(displays.sorted { $0.pin.distanceM < $1.pin.distanceM }.prefix(6))
     }
 
     /// The city the current places/stories were loaded for, so a city switch
@@ -446,8 +661,67 @@ final class ScannerModel {
         camera.stop()
         pose.stop()
         narration.stop()
+        // Leaving the screen always lands back on the coarse default; the
+        // next appearance starts clean and re-offers the upgrade.
+        if preciseMode {
+            preciseMode = false
+            geoAR.stop()
+        }
         projectionTask?.cancel()
         projectionTask = nil
+    }
+
+    // MARK: Precise mode (docs/05 §5 ladder, rung 1)
+
+    /// Upgrade to the precise pipeline: hand the camera to the ARSession and
+    /// anchor the top-ranked candidates as ARGeoAnchors. Coarse remains the
+    /// fallback at every step; any hard failure lands in exitPreciseMode().
+    func enterPreciseMode() {
+        guard !preciseMode, let location = pose.location else { return }
+
+        // Rank the whole nearby field, not just the current FOV, so anchors
+        // cover what the user will sweep to. Ranked first, nearest breaking
+        // ties via the proximity term; the controller caps at its quota.
+        let projected = BearingProjector.project(
+            places: places,
+            from: location,
+            heading: max(pose.headingDegrees, 0),
+            fovDegrees: camera.horizontalFOVDegrees
+        )
+        let quality = ScannerRanking.PoseQuality(
+            horizontalAccuracyM: location.horizontalAccuracy > 0 ? location.horizontalAccuracy : 30,
+            headingAccuracyDeg: pose.headingAccuracy,
+            hasVPS: false
+        )
+        let ranked = ScannerRanking.rank(
+            projected,
+            prefs: prefs,
+            quality: quality,
+            seenPlaceIDs: seenPlaceIDs
+        )
+        guard !ranked.isEmpty else { return }
+
+        preciseMode = true
+        narration.dismissOffer()
+        // One camera owner at a time: the AVCapture preview yields to ARKit.
+        camera.stop()
+        // Clear the coarse frame so nothing stale flashes on the way back.
+        lockedRanked = nil
+        inViewClusters = []
+        inViewStories = []
+        directionalCandidates = []
+        geoAR.start(candidates: ranked.map(\.place))
+    }
+
+    /// Fall back down the ladder (docs/05 §5: transitions are silent and
+    /// fast, the pins soften into labels). Called on the user toggle and
+    /// automatically by the watchdog on a hard tracking failure.
+    func exitPreciseMode() {
+        guard preciseMode else { return }
+        preciseMode = false
+        geoAR.stop()
+        camera.start()
+        reproject()
     }
 
     // MARK: Selection
@@ -493,6 +767,17 @@ final class ScannerModel {
     }
 
     private func reproject() {
+        // Precise mode owns the frame: the coarse chips are hidden, so the
+        // bearing math is skipped. The one job here is the ladder watchdog,
+        // a hard failure drops silently back to coarse (docs/05 §5). A
+        // transient relocalize keeps the searching treatment instead.
+        if preciseMode {
+            if case .failed = geoAR.state {
+                exitPreciseMode()
+            }
+            return
+        }
+
         guard let location = pose.location, pose.headingDegrees >= 0 else {
             lockedRanked = nil
             inViewClusters = []
