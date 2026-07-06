@@ -131,6 +131,12 @@ targets:
         # decision doc first, then propagate.
         NSCameraUsageDescription: "Lore uses your camera to recognize the buildings and statues around you and pin their stories in view. Camera imagery helps determine your precise position; photos are saved only when you choose to contribute one."
         NSLocationWhenInUseUsageDescription: "Your precise location lets Lore know which block you're standing on, so it can load the stories around you and place them accurately in AR."
+        # Always string: the passive "Record my travels" opt-in (docs/26 §1),
+        # OFF by default. Honest copy, this records the places you walk through
+        # for your Passport, in the background, and is never ad tracking
+        # (NSPrivacyTracking stays false). Only requested after the user turns
+        # the toggle on in the Passport.
+        NSLocationAlwaysAndWhenInUseUsageDescription: "With your permission, Lore records the places you walk through for your travel Passport, even in the background, so a visit is collected the moment you arrive. This is only for your own Passport; it is never ad tracking, and you can turn it off anytime."
         # Motion string drafted here (not yet in docs/10 — upstream it): compass
         # smoothing for the coarse scanner + card parallax (CMMotionManager).
         NSMotionUsageDescription: "Lore uses motion data to steady the compass, so nearby places stay pointed at the right spot as you move."

@@ -62,6 +62,12 @@ struct PassportView: View {
     private var wall: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
+                // The travel scrapbook leads the Passport (docs/26 §2): the
+                // Wrapped tally, city stamps, and recent postcards, then the
+                // achievements wall below. Additive, its own `travel_stats`
+                // fetch, so the badge wall is untouched.
+                TravelPassportView()
+
                 PassportSummary(
                     unlockedCount: model.unlockedCount,
                     totalCount: model.totalCount,

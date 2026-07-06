@@ -229,6 +229,47 @@ struct LoreAPI {
         )
     }
 
+    /// Log a visit with a device pose (the auto-capture path, docs/26 §1). The
+    /// `VisitTracker` calls this when a geofence / `CLVisit` dwell fires, tagging
+    /// `source='gps'` and stamping the fix that triggered it into
+    /// `visit.device_pose` (the jsonb column, same shape as
+    /// `contribution.device_pose`). RLS derives `user_id`; the server defaults
+    /// `visited_at`. `pose` omitted ⇒ a plain visit with no pose column set.
+    /// `POST /rest/v1/visit`
+    func logVisit(
+        placeID: String,
+        source: Visit.Source,
+        pose: VisitPose?,
+        accessToken: String
+    ) async throws {
+        var body: [String: Any] = [
+            "place_id": placeID,
+            "source": source.rawValue,
+        ]
+        if let pose { body["device_pose"] = pose.jsonObject }
+        let _: EmptyResponse = try await write(
+            "visit",
+            method: "POST",
+            jsonBody: body,
+            accessToken: accessToken,
+            prefer: "return=minimal"
+        )
+    }
+
+    /// The whole Passport scrapbook in one call (docs/26 "Backend"): the
+    /// `travel_stats` RPC (SECURITY DEFINER) reads the caller's own visits and
+    /// returns the tally, the city stamps, and the recent-visit feed joined to
+    /// place + city + photo title. Pass the user's own id as `p_user` (mirrors
+    /// `recompute_achievements`); RLS + SECURITY DEFINER scope it to their rows.
+    /// `POST /rest/v1/rpc/travel_stats { "p_user": userID }`
+    func travelStats(userID: String, accessToken: String) async throws -> TravelStats {
+        try await rpc(
+            "travel_stats",
+            body: ["p_user": userID],
+            accessToken: accessToken
+        )
+    }
+
     /// Recompute achievements for the signed-in user and return any newly
     /// unlocked badges. RLS-scoped RPC; pass the user's own id as `p_user`.
     /// `POST /rest/v1/rpc/recompute_achievements { "p_user": userID }`

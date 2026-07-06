@@ -45,6 +45,19 @@ final class PushService: NSObject {
     /// Set when registration failed, non-fatal, surfaced only if useful.
     private(set) var lastError: String?
 
+    /// A `lore://` deep link carried by a tapped notification (e.g. the
+    /// `VisitTracker`'s "You reached {place}" arrival notification, docs/26 §1),
+    /// waiting for the host to route it. The host observes this and hands it to
+    /// `AppRouter.handleDeepLink`, then clears it. Kept as a value (not a
+    /// callback) so `PushService` stays free of any dependency on `AppRouter`.
+    var pendingDeepLink: URL?
+
+    /// Consume the pending deep link, if any (the host calls this after routing).
+    func takePendingDeepLink() -> URL? {
+        defer { pendingDeepLink = nil }
+        return pendingDeepLink
+    }
+
     /// True once the user has granted notification authorization.
     var isAuthorized: Bool {
         authorizationStatus == .authorized || authorizationStatus == .provisional
@@ -127,15 +140,21 @@ extension PushService: UNUserNotificationCenterDelegate {
 
     /// Handle a tap on a notification, deep-link into the matching surface.
     ///
-    /// TODO(P2): read the payload's `type` (`nearby_lore` / `new_city`) + a
-    /// `place_id` / `city`, and route via `AppRouter.handleDeepLink` (the
-    /// `lore://` scheme already exists). Left as a seam; the payload shape is
-    /// defined server-side.
+    /// The `VisitTracker`'s local arrival notification carries a `lore://place/`
+    /// deep link in `userInfo["deeplink"]` (docs/26 §1). We surface it as
+    /// `pendingDeepLink` for the host to route via `AppRouter.handleDeepLink`.
+    /// Server-sent pushes (`nearby_lore` / `new_city`) can carry the same
+    /// `deeplink` key when the sender exists (TODO/server, docs/16 §5).
     nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
-        completionHandler()
+        let userInfo = response.notification.request.content.userInfo
+        let link = (userInfo["deeplink"] as? String).flatMap(URL.init(string:))
+        Task { @MainActor in
+            if let link { self.pendingDeepLink = link }
+            completionHandler()
+        }
     }
 }

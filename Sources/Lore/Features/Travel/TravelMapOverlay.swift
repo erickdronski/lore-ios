@@ -28,6 +28,11 @@ struct TravelMapControls: View {
     var onNeedsSignIn: () -> Void = {}
 
     @Environment(MapFilterStore.self) private var filters
+    /// The Travel session, so the map can bring auto-capture up for the loaded
+    /// places. Reading it here keeps `MapScreen` untouched (it already composes
+    /// `TravelMapControls`); `startAutoCapture` is a no-op unless the user has
+    /// opted into "Record my travels", so this changes nothing until then.
+    @Environment(TravelSession.self) private var travel
 
     /// Relevance derived from the current prefs + whether a filter is active.
     let relevance: MapRelevance
@@ -58,9 +63,16 @@ struct TravelMapControls: View {
             )
             .ignoresSafeArea(edges: .bottom)
         )
-        .onAppear { filters.syncCategories(from: places) }
+        .onAppear {
+            filters.syncCategories(from: places)
+            // Bring auto-capture up for whatever's loaded (no-op unless opted
+            // in). The tracker registers geofences around the nearest places.
+            travel.startAutoCapture(with: places)
+        }
         .onChange(of: places) { _, newValue in
             filters.syncCategories(from: newValue)
+            // Re-fence when the city's places change (city switch, filter load).
+            travel.startAutoCapture(with: newValue)
         }
     }
 }
@@ -80,6 +92,10 @@ struct TravelMapControls: View {
 final class TravelSession {
     let visits: VisitStore
     let filters: MapFilterStore
+    /// The auto-capture engine (docs/26 §1). Owned here so it outlives the map
+    /// tab; gated behind the default-OFF "Record my travels" opt-in, so it is a
+    /// no-op until the user turns it on (the app runs exactly as today).
+    let tracker: VisitTracker
 
     /// The queue the host raises an `UnlockCelebration` for. Set by the
     /// `VisitStore.onUnlocks` bridge; cleared by the host on dismiss.
@@ -90,10 +106,16 @@ final class TravelSession {
     init(credentials: @escaping () -> (userID: String, accessToken: String)?) {
         self.visits = VisitStore(credentials: credentials)
         self.filters = MapFilterStore(credentials: credentials)
-        // Now that both stored properties exist, `self` is fully initialized —
-        // wire the unlock bridge so a logged visit raises the celebration queue.
+        self.tracker = VisitTracker(credentials: credentials)
+        // Now that the stored properties exist, `self` is fully initialized.
+        // Wire the unlock bridge so a logged visit raises the celebration queue,
+        // and fold an auto-captured visit into the "Been here" set so the map's
+        // Brass check appears the moment the tracker collects a place.
         self.visits.onUnlocks = { [weak self] unlocked in
             self?.enqueue(unlocked)
+        }
+        self.tracker.onAutoVisit = { [weak self] placeID in
+            self?.visits.markVisitedLocally(placeID)
         }
     }
 
@@ -102,6 +124,13 @@ final class TravelSession {
     func bootstrap(prefs: UserPrefs?) async {
         filters.adopt(prefs: prefs)
         await visits.load()
+    }
+
+    /// Bring auto-capture up for the map's loaded places. No-op unless the user
+    /// has opted into "Record my travels" (docs/26 §1/§3); the map integrator
+    /// calls this when a city's places load.
+    func startAutoCapture(with places: [Place]) {
+        tracker.start(with: places)
     }
 
     /// A `MapRelevance` for the current prefs and filter state.

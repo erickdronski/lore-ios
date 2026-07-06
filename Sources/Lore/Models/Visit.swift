@@ -50,5 +50,48 @@ struct Visit: Codable, Identifiable, Hashable {
         case tour
         /// Manually marked as visited.
         case manual
+        /// Auto-captured by dwell / geofence (the `VisitTracker`, docs/26 §1).
+        /// The `visit.source` column already defaults to `'tap'` and accepts
+        /// arbitrary sources, so `'gps'` needs no migration.
+        case gps
+    }
+}
+
+/// A device pose stamped into `visit.device_pose` on an auto-captured visit
+/// (docs/26 §1, docs/04 §2.3). Same field shape as `contribution.device_pose`
+/// so exports and audits read one schema: `{lat, lng, alt_m, h_accuracy_m,
+/// v_accuracy_m, heading_deg, captured_at}`. This is the fix that *triggered*
+/// the capture, not continuous tracking, one row per collected place.
+struct VisitPose: Hashable {
+    let lat: Double
+    let lng: Double
+    /// Altitude in meters, if the fix carried one.
+    let altitudeM: Double?
+    /// Horizontal accuracy in meters (negative ⇒ invalid, omitted).
+    let horizontalAccuracyM: Double?
+    /// Vertical accuracy in meters (negative ⇒ invalid, omitted).
+    let verticalAccuracyM: Double?
+    /// Course/heading in degrees, if known.
+    let headingDeg: Double?
+    /// ISO-8601 timestamp of the fix.
+    let capturedAt: String
+
+    /// The jsonb object POSTed as `device_pose`. Only present, valid fields are
+    /// included, so a coarse fix never writes bogus `-1` accuracies.
+    var jsonObject: [String: Any] {
+        var object: [String: Any] = [
+            "lat": lat,
+            "lng": lng,
+            "captured_at": capturedAt,
+        ]
+        if let altitudeM { object["alt_m"] = altitudeM }
+        if let horizontalAccuracyM, horizontalAccuracyM >= 0 {
+            object["h_accuracy_m"] = horizontalAccuracyM
+        }
+        if let verticalAccuracyM, verticalAccuracyM >= 0 {
+            object["v_accuracy_m"] = verticalAccuracyM
+        }
+        if let headingDeg, headingDeg >= 0 { object["heading_deg"] = headingDeg }
+        return object
     }
 }

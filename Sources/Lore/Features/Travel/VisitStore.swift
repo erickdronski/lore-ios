@@ -160,6 +160,14 @@ final class VisitStore {
         visitedPlaceIDs.remove(placeID)
     }
 
+    /// Locally mark a place visited without a write, for a visit already logged
+    /// elsewhere (the auto-capture `VisitTracker` writes the `source='gps'` row
+    /// itself, then calls this so the map's Brass check flips at once). The
+    /// server row is the source of truth; a later `load()` reconciles.
+    func markVisitedLocally(placeID: String) {
+        visitedPlaceIDs.insert(placeID)
+    }
+
     /// Reset for a session change (sign-out/sign-in). Clears state so the next
     /// `load()` re-hydrates for the new identity.
     func reset() {

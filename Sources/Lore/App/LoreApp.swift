@@ -91,6 +91,10 @@ struct RootTabView: View {
     @Environment(EntitlementStore.self) private var entitlements
     @Environment(PrefsCoordinator.self) private var prefs
     @Environment(TravelSession.self) private var travel
+    /// The push client, observed here so a tapped local arrival notification
+    /// (the `VisitTracker`'s "You reached {place}") routes via the same
+    /// `AppRouter.handleDeepLink` a widget / Live Activity tap uses (docs/26 §1).
+    @Environment(PushService.self) private var push
 
     @State private var selection: Tab = .map
 
@@ -164,6 +168,12 @@ struct RootTabView: View {
         .onAppear { installRouter() }
         // Widget taps + Live Activity taps arrive as `lore://` deep links.
         .onOpenURL { url in router.handleDeepLink(url) }
+        // A tapped local notification (arrival, docs/26 §1) surfaces its
+        // `lore://place/{id}` here; route it and clear the pending link.
+        .onChange(of: push.pendingDeepLink) { _, link in
+            if let link { router.handleDeepLink(link) }
+            _ = push.takePendingDeepLink()
+        }
         // Session changes ripple to every dependent store.
         .task(id: auth.session?.accessToken) { await syncSession() }
     }
@@ -229,6 +239,9 @@ struct RootTabView: View {
             entitlements.clear()
             prefs.reset()
             travel.visits.reset()
+            // Stop auto-capture when signed out, a visit is an owned row; the
+            // opt-in preference persists, so it resumes on the next sign-in.
+            travel.tracker.stop()
         }
         await entitlements.refresh(accessToken: token)
         await prefs.load(accessToken: token, force: true)
