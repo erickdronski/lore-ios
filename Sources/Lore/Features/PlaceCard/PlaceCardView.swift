@@ -10,6 +10,7 @@ struct PlaceCardView: View {
     /// previews / standalone hosts working.
     var onMeetCity: (String) -> Void = { _ in }
     @State private var showDive = false
+    @State private var showShare = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// The shared-element morph namespace (LUXURY-MOTION §6): the medallion + the
@@ -38,6 +39,9 @@ struct PlaceCardView: View {
             }
         }
         .animation(LoreSpring.smooth(reduceMotion: reduceMotion), value: showDive)
+        .sheet(isPresented: $showShare) {
+            PlaceShareSheet(place: place)
+        }
     }
 
     // MARK: Layer-1 card
@@ -142,7 +146,7 @@ struct PlaceCardView: View {
     }
 
     private var header: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
+        HStack(alignment: .center, spacing: 12) {
             // The morph *source* medallion, carries the shared id so it becomes
             // the dossier header disc. Sized to the Layer-1 card's 34pt emoji.
             Text(place.displayEmoji)
@@ -157,10 +161,31 @@ struct PlaceCardView: View {
                     .foregroundStyle(LoreColor.ink600)
             }
             Spacer()
-            if let year = place.layer1?.yearBuilt {
-                YearChip(year: year)
+            VStack(alignment: .trailing, spacing: 8) {
+                if let year = place.layer1?.yearBuilt {
+                    YearChip(year: year)
+                }
+                shareButton
             }
         }
+    }
+
+    /// Share affordance (strategy synth: sharing is the growth engine, so it is
+    /// a first-class, always-visible control on every place). Opens the poster
+    /// composer for one-tap posting to Instagram / TikTok / X or Save Image.
+    private var shareButton: some View {
+        Button {
+            Haptics.play(.chipTap)
+            showShare = true
+        } label: {
+            Image(systemName: "square.and.arrow.up")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(LoreColor.ink)
+                .frame(width: 36, height: 36)
+                .background(LoreColor.bone200, in: Circle())
+        }
+        .buttonStyle(.pressable)
+        .accessibilityLabel(Text("Share \(place.name)"))
     }
 
     @ViewBuilder
