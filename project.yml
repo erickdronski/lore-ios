@@ -4,7 +4,7 @@
 #   xcodegen generate
 #
 # Constants locked in lore/docs/10-APPSTORE.md:
-#   bundle id  app.lore.lore   ·  team J9DMDH4S58  ·  iOS 17.0+
+#   bundle id  com.erickdronski.lore   ·  team J9DMDH4S58  ·  iOS 17.0+
 name: Lore
 
 options:
@@ -52,7 +52,7 @@ targets:
         product: MapLibre
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: app.lore.lore
+        PRODUCT_BUNDLE_IDENTIFIER: com.erickdronski.lore
         PRODUCT_NAME: Lore
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon # Sources/Lore/Resources/Assets.xcassets/AppIcon.appiconset (1024px, no alpha)
         MARKETING_VERSION: "0.1.0"
@@ -63,7 +63,7 @@ targets:
 
         # ── Capabilities that REQUIRE the Apple Developer portal ───────────
         # These are entitlement-backed and can NOT be assumed from a spec file —
-        # they must be enabled on the App ID `app.lore.lore` in the portal (and
+        # they must be enabled on the App ID `com.erickdronski.lore` in the portal (and
         # the matching provisioning profile regenerated) before a signed build
         # works. XcodeGen can emit the entitlement, but the portal is the source
         # of truth, so they are left COMMENTED here per the doctrine "don't
@@ -87,7 +87,7 @@ targets:
         #
         # App Groups (widget ⇄ app snapshot) — docs/16 §7. Portal-gated:
         #   in Lore.entitlements AND LoreWidget.entitlements:
-        #   com.apple.security.application-groups = [group.app.lore.lore]
+        #   com.apple.security.application-groups = [group.com.erickdronski.lore]
         #   Until provisioned, LoreWidgetStore.sharedDefaults is nil and the
         #   widget falls back to its sample content (no crash).
         #
@@ -112,7 +112,7 @@ targets:
         # `lore://place/{id}`, `lore://tour/{slug}`, `lore://map` — handled by
         # AppRouter.handleDeepLink via .onOpenURL (docs/16 §7/§8).
         CFBundleURLTypes:
-          - CFBundleURLName: app.lore.lore
+          - CFBundleURLName: com.erickdronski.lore
             CFBundleURLSchemes:
               - lore
 
@@ -160,14 +160,14 @@ targets:
       - path: Sources/Shared # SAME shared types the app compiles
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: app.lore.lore.LoreWidget
+        PRODUCT_BUNDLE_IDENTIFIER: com.erickdronski.lore.LoreWidget
         PRODUCT_NAME: LoreWidget
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"
         TARGETED_DEVICE_FAMILY: "1"
         SKIP_INSTALL: true
         # App Group entitlement is portal-gated — same note as the app target.
-        # Both targets must carry `group.app.lore.lore` for the snapshot hand-off
+        # Both targets must carry `group.com.erickdronski.lore` for the snapshot hand-off
         # to resolve. Left commented until the App ID + group are provisioned.
         # CODE_SIGN_ENTITLEMENTS: Sources/LoreWidget/LoreWidget.entitlements
     info:

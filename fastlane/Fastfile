@@ -11,8 +11,8 @@
 
 default_platform(:ios)
 
-BUNDLE_ID = "app.lore.lore"
-WIDGET_ID = "app.lore.lore.LoreWidget"
+BUNDLE_ID = "com.erickdronski.lore"
+WIDGET_ID = "com.erickdronski.lore.LoreWidget"
 TEAM_ID = "J9DMDH4S58"
 CERTS_REPO = "https://github.com/erickdronski/lore-certs.git"
 
@@ -29,24 +29,10 @@ platform :ios do
       is_key_content_base64: true,
     )
 
-    # Register the App IDs in the Developer portal first (skip_itc, so no App
-    # Store Connect app record, no metadata, no trader status needed). match
-    # needs the App ID to exist before it can make a provisioning profile.
-    # Idempotent: produce no-ops if the identifier already exists.
-    produce(
-      app_identifier: BUNDLE_ID,
-      app_name: "Lore",
-      skip_itc: true,
-      team_id: TEAM_ID,
-      api_key: api_key,
-    )
-    produce(
-      app_identifier: WIDGET_ID,
-      app_name: "Lore Widget",
-      skip_itc: true,
-      team_id: TEAM_ID,
-      api_key: api_key,
-    )
+    # The App IDs (com.erickdronski.lore + .LoreWidget) are already registered
+    # in the Developer portal, so there is no `produce` step: produce authenticates
+    # with an Apple ID + password, not the App Store Connect API key, so it cannot
+    # run headless here. match just needs the App IDs to exist, which they do.
 
     # Cert + App Store profiles for both bundle ids. readonly:false so the first
     # run creates and stores them; later runs just fetch and install.

@@ -9,7 +9,7 @@ Xcode installed.
 
 ## What is already done (no action needed)
 - App target + LoreWidget extension speced in `project.yml` (XcodeGen), bundle
-  `app.lore.lore`, team `J9DMDH4S58`, iOS 17.0, iPhone-only (deliberate, see
+  `com.erickdronski.lore`, team `J9DMDH4S58`, iOS 17.0, iPhone-only (deliberate, see
   docs/10 §1 in the lore repo).
 - StoreKit 2 service + local `StoreKit/Lore.storekit` config (Lore+ products),
   Sign in with Apple coordinator, WidgetKit widget, tour Live Activity +
@@ -29,9 +29,9 @@ Xcode installed.
    Simulator (sanity: app boots to the map shell).
 4. **Signing**: project → targets `Lore` and `LoreWidget` → Signing &
    Capabilities → check "Automatically manage signing", team `J9DMDH4S58`.
-   Xcode will create the App ID `app.lore.lore` + profiles on the portal.
+   Xcode will create the App ID `com.erickdronski.lore` + profiles on the portal.
 5. **App Store Connect** (appstoreconnect.apple.com): My Apps → "+" → New App →
-   platform iOS, name **Lore**, bundle `app.lore.lore`, SKU `lore-ios`.
+   platform iOS, name **Lore**, bundle `com.erickdronski.lore`, SKU `lore-ios`.
    (Listing copy, keywords, and screenshot plan live in lore repo
    `docs/10-APPSTORE.md`; screenshots can come later, TestFlight does not
    need them.)

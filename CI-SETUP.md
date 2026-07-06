@@ -39,8 +39,8 @@ base64 -i AuthKey_XXXXXXXXXX.p8 | pbcopy
 then paste as the `ASC_KEY_CONTENT` value.
 
 ### 3. Make sure the app record exists in App Store Connect
-The bundle id `app.lore.lore` needs an app record. If you have not made it:
-My Apps → "+" → New App → iOS → name **Lore** → bundle `app.lore.lore` →
+The bundle id `com.erickdronski.lore` needs an app record. If you have not made it:
+My Apps → "+" → New App → iOS → name **Lore** → bundle `com.erickdronski.lore` →
 SKU `lore-ios`. (Listing copy can come later; TestFlight does not need it.)
 
 ## Run it

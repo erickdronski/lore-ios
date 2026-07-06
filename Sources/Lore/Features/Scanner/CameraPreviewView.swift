@@ -10,7 +10,7 @@ import UIKit
 /// wholesale at P1 (docs/05 §2.2 step 1).
 final class ScannerCameraService {
     let session = AVCaptureSession()
-    private let sessionQueue = DispatchQueue(label: "app.lore.lore.camera-session")
+    private let sessionQueue = DispatchQueue(label: "com.erickdronski.lore.camera-session")
     private var configured = false
 
     /// Requests camera permission if needed, then configures + starts the

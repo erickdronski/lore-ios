@@ -50,14 +50,14 @@ public struct LoreWidgetSnapshot: Codable, Equatable {
 /// Reads/writes `LoreWidgetSnapshot` through the shared App Group `UserDefaults`.
 ///
 /// **App Group is a portal-gated capability** (docs/16 §7): the group
-/// `group.app.lore.lore` must be created in the Apple Developer portal and added
+/// `group.com.erickdronski.lore` must be created in the Apple Developer portal and added
 /// to *both* the app and the widget extension entitlements before this resolves
 /// at runtime. The `project.yml` notes this; until it's provisioned,
 /// `sharedDefaults` is `nil` and every call no-ops gracefully (the widget shows
 /// its sample content, the app's write is a silent miss), nothing crashes.
 public enum LoreWidgetStore {
     /// The App Group identifier. Must match the entitlement on both targets.
-    public static let appGroupID = "group.app.lore.lore"
+    public static let appGroupID = "group.com.erickdronski.lore"
 
     /// The single key the snapshot lives under.
     private static let snapshotKey = "widget.snapshot.v1"

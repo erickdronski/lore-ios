@@ -118,7 +118,7 @@ final class AuthService {
     /// authorization, so `fullName`/`email` are passed here to seed the profile.
     ///
     /// **Server prerequisites (docs/11 §B.1, not wired in this repo):** the
-    /// bundle id `app.lore.lore` must be in the Supabase Apple provider's Client
+    /// bundle id `com.erickdronski.lore` must be in the Supabase Apple provider's Client
     /// IDs list, and the shared `.p8` key + Services ID configured. Because the
     /// web OAuth path already stood those up, the native path needs **no new
     /// Supabase console work** (docs/16 §2).

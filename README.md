@@ -60,10 +60,10 @@ home-screen widget and the tour Live Activity. Cross-target types live in
    Re-run `xcodegen generate` any time `project.yml` changes or files are
    added/removed — never edit the `.xcodeproj` by hand.
 4. **Signing:** Xcode → target `Lore` → Signing & Capabilities. Team
-   **J9DMDH4S58** and bundle id **`app.lore.lore`** are pre-set in
+   **J9DMDH4S58** and bundle id **`com.erickdronski.lore`** are pre-set in
    `project.yml` (constants locked in `lore/docs/10-APPSTORE.md`); with the
    App ID registered per that doc, "Automatically manage signing" just works.
-   The **`LoreWidget`** extension (`app.lore.lore.LoreWidget`) signs the same
+   The **`LoreWidget`** extension (`com.erickdronski.lore.LoreWidget`) signs the same
    way. Before the StoreKit / Sign-in-with-Apple / Push / App-Group paths run on
    a signed build, enable those **portal-gated capabilities** — see
    "[Apple toolkits — Portal-gated](#portal-gated-needs-the-apple-developer-portal--entitlements)"
@@ -146,7 +146,7 @@ that REQUIRE the Apple Developer portal" note — none assumed:
 - **Push capability + `aps-environment` entitlement** on the App ID, and an
   APNs token-auth `.p8` key. The **server sender** (a Supabase Edge Function
   signing the APNs JWT) is a documented TODO (`docs/16` §5).
-- **App Group `group.app.lore.lore`** on *both* the app and widget targets — the
+- **App Group `group.com.erickdronski.lore`** on *both* the app and widget targets — the
   widget↔app snapshot hand-off no-ops safely until it exists.
 - **Paid Apps agreement + the two IAP products** in App Store Connect, and the
   **RevenueCat project** that becomes the server-side entitlement truth at P3

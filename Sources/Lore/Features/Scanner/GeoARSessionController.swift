@@ -112,7 +112,7 @@ final class GeoARSessionController: NSObject, VPSProvider {
 
     /// The AR lane (docs/03 §2): delegate callbacks and projection math live
     /// here so the main thread only ever sees throttled value snapshots.
-    private let frameQueue = DispatchQueue(label: "app.lore.lore.geo-ar-frames")
+    private let frameQueue = DispatchQueue(label: "com.erickdronski.lore.geo-ar-frames")
     /// Thread-confined to `frameQueue`; holds the per-frame working state.
     /// The serial queue is the synchronization, no locks.
     private let projector = GeoAnchorProjector()
