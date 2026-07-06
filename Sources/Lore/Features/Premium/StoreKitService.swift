@@ -68,7 +68,10 @@ final class StoreKitService {
     private(set) var lastError: String?
 
     /// The long-lived `Transaction.updates` listener. Cancelled on deinit.
-    private var updatesTask: Task<Void, Never>?
+    /// `nonisolated(unsafe)` so the nonisolated `deinit` can cancel it: it is
+    /// only written on the main actor in `start()`, and `Task.cancel()` is safe
+    /// to call from any thread, so the escape hatch carries no real race.
+    nonisolated(unsafe) private var updatesTask: Task<Void, Never>?
 
     init() {}
 

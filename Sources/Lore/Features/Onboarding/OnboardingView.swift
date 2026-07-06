@@ -219,7 +219,7 @@ private struct LocationStep: View {
             PermissionCard(
                 symbol: "location.fill",
                 title: OnboardingContent.locationTitle,
-                body: OnboardingContent.locationBody,
+                message: OnboardingContent.locationBody,
                 footnote: locationFootnote,
                 footnoteColor: footnoteColor
             )
@@ -285,7 +285,7 @@ private struct NotificationsStep: View {
             PermissionCard(
                 symbol: "bell.badge.fill",
                 title: OnboardingContent.notificationsTitle,
-                body: OnboardingContent.notificationsBody,
+                message: OnboardingContent.notificationsBody,
                 footnote: notificationFootnote,
                 footnoteColor: footnoteColor
             )
@@ -405,7 +405,7 @@ private struct FinishStep: View {
 private struct PermissionCard: View {
     let symbol: String
     let title: String
-    let body: String
+    let message: String
     let footnote: String?
     var footnoteColor: Color = LoreColor.bone.opacity(0.6)
 
@@ -424,7 +424,7 @@ private struct PermissionCard: View {
                 .font(LoreType.displayL)
                 .foregroundStyle(LoreColor.bone)
 
-            Text(body)
+            Text(message)
                 .font(LoreType.body)
                 .foregroundStyle(LoreColor.bone.opacity(0.8))
                 .fixedSize(horizontal: false, vertical: true)

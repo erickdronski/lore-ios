@@ -110,8 +110,8 @@ struct MapScreen: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar(.hidden, for: .navigationBar)
             .task(id: city) { await model.load(city: city) }
-            .onChange(of: model.cameraTarget) { _, target in
-                guard let target else { return }
+            .onChange(of: model.cameraTargetKey) { _, _ in
+                guard let target = model.cameraTarget else { return }
                 // The fly-to eases on `spring.smooth`, a settled camera glide,
                 // no overshoot (LUXURY-MOTION §2, §7 "flyTo eases").
                 withAnimation(LoreSpring.smooth(reduceMotion: reduceMotion)) {
@@ -172,6 +172,13 @@ final class MapScreenModel {
     /// The camera region to fly to when a (new) city loads. The view observes
     /// this and eases to it (§7 "flyTo eases").
     private(set) var cameraTarget: MKCoordinateRegion?
+
+    /// An `Equatable` projection of `cameraTarget` for SwiftUI `onChange`, which
+    /// requires an `Equatable` value and `MKCoordinateRegion` isn't one.
+    var cameraTargetKey: String? {
+        guard let r = cameraTarget else { return nil }
+        return "\(r.center.latitude),\(r.center.longitude),\(r.span.latitudeDelta),\(r.span.longitudeDelta)"
+    }
 
     /// City slug → display name, learned from the `city` table so the header
     /// reads "Chicago", not "chicago".

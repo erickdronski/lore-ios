@@ -175,7 +175,9 @@ struct LoreMapLibreView: UIViewRepresentable {
             if let feature = features.first,
                let id = feature.attribute(forKey: LorePins.idKey) as? String {
                 onSelectPlace(id)
-                Haptics.play(.pinTap)
+                // UIKit delivers gesture actions on the main thread; hop to the
+                // main actor so the isolated Haptics API is satisfied.
+                Task { @MainActor in Haptics.play(.pinTap) }
             }
         }
     }
@@ -352,8 +354,8 @@ private enum LoreStyle {
             line.lineColor = constant(p.water)
         case "transportation":
             // Rounded caps + joins so the network reads as an engraving.
-            line.lineCap = constant(NSValue.mlnLineCap(.round)) // VERIFY: round cap constant name (v6).
-            line.lineJoin = constant(NSValue.mlnLineJoin(.round)) // VERIFY: round join constant name (v6).
+            line.lineCap = constant(NSValue(mlnLineCap: .round))
+            line.lineJoin = constant(NSValue(mlnLineJoin: .round))
             if id.contains("casing") {
                 line.lineColor = constant(p.roadCasing)
             } else if id.contains("motorway") || id.contains("trunk") || id.contains("primary") {
@@ -395,7 +397,7 @@ private enum LoreStyle {
             symbol.textColor = constant(strong ? p.label : p.labelMuted)
             if strong {
                 // Uppercase + generous tracking on big places = the atlas look.
-                symbol.textTransform = constant(NSValue.mlnTextTransform(.uppercase)) // VERIFY: uppercase constant name (v6).
+                symbol.textTransform = constant(NSValue(mlnTextTransform: .uppercase))
                 symbol.textLetterSpacing = constant(major ? 0.22 : 0.12)
             }
         case "transportation_name":
@@ -521,7 +523,7 @@ private enum LoreTowers {
         core.minimumZoomLevel = 13 // matches web (a touch below liberty building-3d at 14)
         core.fillExtrusionHeight = heightExpression(key: "height_m")
         core.fillExtrusionBase = NSExpression(forConstantValue: 0)
-        core.isFillExtrusionHasVerticalGradient = constantBool(true) // VERIFY: vertical-gradient property name (v6).
+        core.fillExtrusionHasVerticalGradient = constantBool(true)
         style.addLayer(core)
 
         // Glow halo, above the core, translucent Amber.
@@ -533,7 +535,7 @@ private enum LoreTowers {
             format: "base_m + %@", NSNumber(value: glowRiseM)
         )
         glow.fillExtrusionOpacity = NSExpression(forConstantValue: 0.3)
-        glow.isFillExtrusionHasVerticalGradient = constantBool(true)
+        glow.fillExtrusionHasVerticalGradient = constantBool(true)
         style.addLayer(glow)
     }
 

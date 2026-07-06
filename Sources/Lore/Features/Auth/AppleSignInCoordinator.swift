@@ -80,7 +80,7 @@ final class AppleSignInCoordinator: NSObject {
         controller.delegate = self
         controller.presentationContextProvider = self
 
-        return try await withCheckedContinuation { (cont: CheckedContinuation<AppleCredential, Error>) -> Void in
+        return try await withCheckedThrowingContinuation { (cont: CheckedContinuation<AppleCredential, Error>) -> Void in
             self.continuation = cont
             controller.performRequests()
         }
