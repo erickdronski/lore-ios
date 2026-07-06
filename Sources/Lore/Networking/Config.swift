@@ -28,4 +28,14 @@ enum Config {
     /// The pilot city. Every read surface is filtered by `city` (docs/00 §8:
     /// Chicago seed, Loop / Riverwalk / Museum Campus).
     static let defaultCity = "chicago"
+
+    // MARK: Feature flags
+
+    /// Render the native MapLibre GL Native map (the flagship map, docs/17 +
+    /// docs/22) instead of the MapKit stand-in. Default false so the app builds
+    /// and runs today on any machine, MapKit is still the shipped map. Flip to
+    /// true ONLY after the MapLibre SPM package compiles on a device with Xcode
+    /// (this scaffold cannot compile against MapLibre types headless), then the
+    /// map on the Map tab becomes the ported Lore restyle + storied towers.
+    static let useMapLibreMap = false
 }

@@ -35,6 +35,12 @@ struct MapScreen: View {
     @State private var model = MapScreenModel()
     @State private var position: MapCameraPosition = .automatic
     @State private var selectedPlaceID: String?
+    // Day/night + 2D/3D, mirroring the web map controls (docs/17 §2.4). These
+    // drive the native MapLibre map (LoreMapLibreView); the MapKit map ignores
+    // them for now. Night + tilted is Lore's signature first impression, the
+    // same defaults the web map persists to.
+    @State private var mapMode: LoreMapLibreView.Mode = .night
+    @State private var mapViewMode: LoreMapLibreView.ViewMode = .tilted
 
     /// The relevance lens for the current prefs + whether a hard filter is on.
     private var relevance: MapRelevance {
@@ -53,20 +59,7 @@ struct MapScreen: View {
 
     var body: some View {
         NavigationStack {
-            Map(position: $position, selection: $selectedPlaceID) {
-                ForEach(Array(visiblePlaces.enumerated()), id: \.element.id) { index, place in
-                    Annotation(place.name, coordinate: place.coordinate) {
-                        PlacePinBadge(
-                            place: place,
-                            weighting: relevance.weighting(for: place),
-                            index: index,
-                            isSelected: selectedPlaceID == place.id
-                        )
-                    }
-                    .tag(place.id)
-                }
-            }
-            .mapStyle(.standard(pointsOfInterest: .excludingAll))
+            baseMap
             // Depth behind an open card (LUXURY-MOTION §4): the map recedes —
             // dims to a scrim + a soft blur, so the focused place sheet floats.
             // Reduce Motion keeps the dim (a still tint is safe) but drops blur.
@@ -125,6 +118,40 @@ struct MapScreen: View {
                     position = .region(target)
                 }
             }
+        }
+    }
+
+    /// The base map surface. MapKit is the default (Config.useMapLibreMap ==
+    /// false) so the app builds and runs today; flip the flag after the
+    /// MapLibre SDK compiles on device to get the flagship native map (docs/17
+    /// + docs/22). Both surfaces feed the SAME `selectedPlaceID` selection, so
+    /// every surrounding modifier (sheet, recede, haptics) is shared unchanged.
+    @ViewBuilder
+    private var baseMap: some View {
+        if Config.useMapLibreMap {
+            LoreMapLibreView(
+                places: visiblePlaces,
+                mode: mapMode,
+                viewMode: mapViewMode,
+                cameraTarget: model.cameraTarget?.center,
+                onSelectPlace: { selectedPlaceID = $0 }
+            )
+            .ignoresSafeArea()
+        } else {
+            Map(position: $position, selection: $selectedPlaceID) {
+                ForEach(Array(visiblePlaces.enumerated()), id: \.element.id) { index, place in
+                    Annotation(place.name, coordinate: place.coordinate) {
+                        PlacePinBadge(
+                            place: place,
+                            weighting: relevance.weighting(for: place),
+                            index: index,
+                            isSelected: selectedPlaceID == place.id
+                        )
+                    }
+                    .tag(place.id)
+                }
+            }
+            .mapStyle(.standard(pointsOfInterest: .excludingAll))
         }
     }
 

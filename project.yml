@@ -13,6 +13,18 @@ options:
     iOS: "17.0"
   createIntermediateGroups: true
 
+# ── Swift packages ───────────────────────────────────────────────────────────
+# MapLibre GL Native, the locked production map engine (docs/17 §3, docs/22
+# Half B). The native Lore map (LoreMapLibreView) matches the proprietary web
+# restyle, ported from lore-web/lib/mapStyle.ts + map3d.ts. It ships behind
+# Config.useMapLibreMap (default false) so MapKit stays the map until the
+# founder compiles on device and flips the flag. The distribution repo below is
+# the official prebuilt xcframework, no build-from-source needed.
+packages:
+  MapLibre:
+    url: https://github.com/maplibre/maplibre-gl-native-distribution
+    from: 6.0.0
+
 settings:
   base:
     DEVELOPMENT_TEAM: J9DMDH4S58
@@ -34,6 +46,10 @@ targets:
     # The widget extension is embedded in the app bundle.
     dependencies:
       - target: LoreWidget
+      # MapLibre GL Native (docs/17 §3). Behind Config.useMapLibreMap; MapKit
+      # remains the default map until the founder verifies on device.
+      - package: MapLibre
+        product: MapLibre
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.lore.lore
