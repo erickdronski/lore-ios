@@ -1,6 +1,6 @@
 import Foundation
 
-/// Row shape of the `achievement` table — the catalog of earnable badges
+/// Row shape of the `achievement` table, the catalog of earnable badges
 /// (definitions only; a user's progress lives in `user_achievement`).
 /// `GET /rest/v1/achievement?order=sort`
 ///
@@ -21,7 +21,7 @@ struct Achievement: Codable, Identifiable, Hashable {
     let emoji: String?
     /// Grouping bucket (`milestone`, `explorer`, `collector`, …).
     let category: String?
-    /// `bronze` | `silver` | `gold` | `platinum` — the badge tier.
+    /// `bronze` | `silver` | `gold` | `platinum`, the badge tier.
     let tier: Tier
     /// Machine-readable unlock rule, e.g. `{ "n": 10, "type": "visit_count" }`.
     /// Kept as a flexible value bag so a new criteria type never breaks decode.
@@ -32,7 +32,7 @@ struct Achievement: Codable, Identifiable, Hashable {
     let secret: Bool
     let sort: Int?
 
-    /// `slug` is the identity — the table has no `id` column.
+    /// `slug` is the identity, the table has no `id` column.
     var id: String { slug }
 
     enum CodingKeys: String, CodingKey {
@@ -53,7 +53,7 @@ struct Achievement: Codable, Identifiable, Hashable {
         sort = try container.decodeIfPresent(Int.self, forKey: .sort)
     }
 
-    /// Badge tiers, ordered — `Comparable` so UIs can sort/rank by prestige.
+    /// Badge tiers, ordered, `Comparable` so UIs can sort/rank by prestige.
     enum Tier: String, Codable, Hashable, CaseIterable, Comparable {
         case bronze, silver, gold, platinum
 
@@ -91,7 +91,7 @@ struct Achievement: Codable, Identifiable, Hashable {
         return nil
     }
 
-    /// The numeric target inside `criteria` (`n`), if present — the default
+    /// The numeric target inside `criteria` (`n`), if present, the default
     /// `target` when a `user_achievement` row hasn't set its own.
     var criteriaTarget: Int? {
         if case .object(let dict)? = criteria, case .number(let n)? = dict["n"] {
@@ -101,7 +101,7 @@ struct Achievement: Codable, Identifiable, Hashable {
     }
 }
 
-/// Row shape of the `user_achievement` table — a signed-in user's progress
+/// Row shape of the `user_achievement` table, a signed-in user's progress
 /// toward (and unlock time of) each achievement. Own rows only, via RLS.
 /// `GET /rest/v1/user_achievement` (with a user bearer token)
 ///

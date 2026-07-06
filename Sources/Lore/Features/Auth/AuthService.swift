@@ -23,7 +23,7 @@ struct AuthUser: Codable {
     let email: String?
 }
 
-/// Email/password auth against Supabase GoTrue REST — no SDK.
+/// Email/password auth against Supabase GoTrue REST, no SDK.
 ///
 /// P0 scope: session lives in memory only (relaunch = signed out). P1 adds
 /// Keychain persistence + refresh-token rotation, the **anonymous sign-in**
@@ -104,7 +104,7 @@ final class AuthService {
         profile = try? await LoreAPI.shared.profile(accessToken: token)
     }
 
-    /// Native **Sign in with Apple** — exchange the Apple identity token for a
+    /// Native **Sign in with Apple**, exchange the Apple identity token for a
     /// Supabase session (docs/11-AUTH-SETUP.md §B.2, docs/16 §2).
     ///
     /// This is the REST counterpart of the SDK's `signInWithIdToken`:
@@ -124,7 +124,7 @@ final class AuthService {
     /// Supabase console work** (docs/16 §2).
     ///
     /// TODO(P1/server): on first authorization, upsert `fullName` + `email` to
-    /// `user_profile` immediately — Apple never sends them again (docs/16 §2).
+    /// `user_profile` immediately, Apple never sends them again (docs/16 §2).
     /// This wants a `user_profile` write path (currently profile is read-only in
     /// `LoreAPI`); scaffolded here as the seed values are carried through.
     func signInWithApple(
@@ -162,7 +162,7 @@ final class AuthService {
             let newSession = try JSONDecoder().decode(AuthSession.self, from: data)
             session = newSession
             // Seed the name/email Apple only ever sends once. TODO(P1/server):
-            // persist to `user_profile` here once a write path exists — carried
+            // persist to `user_profile` here once a write path exists, carried
             // through so the wiring is ready.
             pendingAppleName = fullName
             pendingAppleEmail = email
@@ -173,7 +173,7 @@ final class AuthService {
     }
 
     /// First-authorization Apple name, stashed until a `user_profile` write path
-    /// exists to persist it (docs/16 §2 — Apple sends it only once).
+    /// exists to persist it (docs/16 §2, Apple sends it only once).
     /// TODO(P1/server): flush to `user_profile` and clear.
     private(set) var pendingAppleName: PersonNameComponents?
     /// First-authorization Apple email (possibly private-relay), same lifecycle.

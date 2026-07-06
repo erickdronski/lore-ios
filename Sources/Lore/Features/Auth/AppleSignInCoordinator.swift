@@ -10,14 +10,14 @@ import UIKit
 /// Doctrine (docs/16-APPLE-TOOLKITS.md §2, docs/11-AUTH-SETUP.md §B.2): use the
 /// native `AuthenticationServices` path, not a web redirect. Take the returned
 /// `identityToken` (a JWT) and exchange it with Supabase via
-/// `signInWithIdToken(provider: .apple, idToken:, nonce:)` — which is
+/// `signInWithIdToken(provider: .apple, idToken:, nonce:)`, which is
 /// `AuthService.signInWithApple`. The nonce protects the exchange from replay:
 /// we send the SHA-256 hash to Apple in the request, and the raw nonce to
 /// Supabase, which verifies the hash inside the signed token matches.
 ///
 /// **Name/email caveat (docs/16 §2):** Apple returns `fullName`/`email` only on
 /// the *very first* authorization for a given Apple ID. Persist them immediately
-/// (to `user_profile`) or they're gone — `AppleCredential` carries them up so
+/// (to `user_profile`) or they're gone, `AppleCredential` carries them up so
 /// the caller can. Honor the private-relay email as a real address; never block
 /// `@privaterelay.appleid.com`.
 ///
@@ -26,7 +26,7 @@ import UIKit
 /// of the request via the continuation, then releases.
 @MainActor
 final class AppleSignInCoordinator: NSObject {
-    /// The credential the flow yields on success — everything the token exchange
+    /// The credential the flow yields on success, everything the token exchange
     /// and first-run profile write need.
     struct AppleCredential {
         /// The Apple identity token (JWT) to exchange with Supabase.
@@ -49,7 +49,7 @@ final class AppleSignInCoordinator: NSObject {
         var errorDescription: String? {
             switch self {
             case .cancelled:
-                return nil  // user backed out — not an error to surface
+                return nil  // user backed out, not an error to surface
             case .missingIdentityToken:
                 return "Apple didn't return a sign-in token. Try again."
             case .failed(let message):
@@ -123,7 +123,7 @@ final class AppleSignInCoordinator: NSObject {
         return result
     }
 
-    /// SHA-256 of the nonce, hex-encoded — what goes in the Apple request.
+    /// SHA-256 of the nonce, hex-encoded, what goes in the Apple request.
     private static func sha256(_ input: String) -> String {
         let hashed = SHA256.hash(data: Data(input.utf8))
         return hashed.map { String(format: "%02x", $0) }.joined()

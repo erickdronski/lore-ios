@@ -1,14 +1,14 @@
 import CoreLocation
 import Foundation
 
-/// The scanner's **intelligence layer** — the `docs/12-SCANNER-INTELLIGENCE.md`
+/// The scanner's **intelligence layer**, the `docs/12-SCANNER-INTELLIGENCE.md`
 /// §2 resolution ladder and §3 ranking, sitting on top of `BearingProjector`'s
 /// pose math. Pure value logic, no I/O and no frameworks beyond CoreLocation
 /// value types, so it parses/tests without the AR stack (same doctrine as
 /// `BearingProjector` and the P1 `Resolver`, docs/03 §2).
 ///
 /// Two jobs:
-/// 1. **Rank** every projected candidate by the §3 formula — proximity +
+/// 1. **Rank** every projected candidate by the §3 formula, proximity +
 ///    prominence + gaze + novelty + a persona/interest term borrowed from
 ///    `InterestMap.relevanceScore`, with the weights swapped per mode (§4).
 /// 2. **Classify confidence** into the honest Tier A / B / C treatment (§2 +
@@ -24,14 +24,14 @@ enum ScannerRanking {
     /// locked pin looks different from a bearing chip on purpose (§2 honesty
     /// contract). `D` (off-map) is handled a rung up, at city resolution.
     enum Tier: Int, Comparable {
-        /// **A — Locked pin.** The math clears the footprint: a landmark-scale
+        /// **A, Locked pin.** The math clears the footprint: a landmark-scale
         /// silhouette near enough that heading error stays inside its width.
         /// Solid Amber pin anchored on the building, tap → dossier.
         case a
-        /// **B — Confident chip.** Direction is trustworthy, the façade claim
+        /// **B, Confident chip.** Direction is trustworthy, the façade claim
         /// is not: a floating bearing chip (emoji + name + distance).
         case b
-        /// **C — Directional.** Coarse only: a cardinal-cluster hint, no
+        /// **C, Directional.** Coarse only: a cardinal-cluster hint, no
         /// on-building claim at all ("The Loop's icons are that way →").
         case c
 
@@ -40,7 +40,7 @@ enum ScannerRanking {
 
     /// Sensor-quality inputs that gate the tier ceiling for the whole frame.
     /// Mirrors the `σ_lat = horizontalAccuracy + d·tan(yawAccuracy)` model in
-    /// docs/05 §4.2 without needing the VPS pose — compass-grade honesty.
+    /// docs/05 §4.2 without needing the VPS pose, compass-grade honesty.
     struct PoseQuality {
         /// Horizontal position accuracy, meters (CLLocation.horizontalAccuracy).
         let horizontalAccuracyM: Double
@@ -48,7 +48,7 @@ enum ScannerRanking {
         /// invalid; treated as the worst case.
         let headingAccuracyDeg: Double
         /// True when a VPS-class fix backs the pose (ARGeoTracking coverage).
-        /// P0 is always `false` — the coarse scanner never claims Tier A from
+        /// P0 is always `false`, the coarse scanner never claims Tier A from
         /// footprint math alone unless the silhouette is unmistakable.
         let hasVPS: Bool
 
@@ -66,7 +66,7 @@ enum ScannerRanking {
 
     /// Predicted lateral error at a target `distance`, meters:
     /// `σ_lat = horizontalAccuracy + d · tan(yawAccuracy)` (docs/05 §4.2).
-    /// This is the honesty math — it decides whether a pin would be a lie.
+    /// This is the honesty math, it decides whether a pin would be a lie.
     static func lateralErrorMeters(distance: Double, quality: PoseQuality) -> Double {
         let yawRadians = quality.effectiveHeadingDeg * .pi / 180
         return quality.horizontalAccuracyM + distance * tan(yawRadians)
@@ -95,9 +95,9 @@ enum ScannerRanking {
 
     /// Classify one candidate into its earned tier (docs/05 §4.2 thresholds):
     /// - Tier A when `σ_lat < 0.5 × footprintWidth` (exact pin), **or** a VPS
-    ///   fix backs it — the geometry clears the building.
-    /// - Tier B up to `2 × footprintWidth` — direction good, façade not.
-    /// - Tier C beyond that, or whenever heading is compass-noisy — no claim.
+    ///   fix backs it, the geometry clears the building.
+    /// - Tier B up to `2 × footprintWidth`, direction good, façade not.
+    /// - Tier C beyond that, or whenever heading is compass-noisy, no claim.
     ///
     /// `footprintWidth` here is the full width (2× half-width) to match the
     /// doc's "× footprint width" phrasing.
@@ -123,11 +123,11 @@ enum ScannerRanking {
     /// corner ranks differently for a traveler vs. an architect. Derived from a
     /// persona so the caller never hand-tunes at the call site.
     struct Weights {
-        var proximity: Double   // w_dist  — closer = higher, steep past 300 m
-        var prominence: Double  // w_rank  — height, landmark status
-        var gaze: Double        // w_gaze  — centered in the reticle
-        var novelty: Double     // w_fresh — unseen-by-this-user nudge
-        var context: Double     // w_ctx   — persona/interest/tour/haunted
+        var proximity: Double   // w_dist , closer = higher, steep past 300 m
+        var prominence: Double  // w_rank , height, landmark status
+        var gaze: Double        // w_gaze , centered in the reticle
+        var novelty: Double     // w_fresh, unseen-by-this-user nudge
+        var context: Double     // w_ctx  , persona/interest/tour/haunted
 
         /// Mode weights per persona (docs/12 §4 ranking-bias column). The
         /// leading term for each mode gets the heaviest weight; the rest stay
@@ -138,7 +138,7 @@ enum ScannerRanking {
                 // Famous icons + the one arresting fact: prominence + proximity.
                 return Weights(proximity: 1.0, prominence: 1.2, gaze: 0.9, novelty: 0.3, context: 0.6)
             case .local:
-                // Novelty — the thing walked past 1,000× and never known.
+                // Novelty, the thing walked past 1,000× and never known.
                 return Weights(proximity: 0.9, prominence: 0.5, gaze: 0.9, novelty: 1.3, context: 0.8)
             case .architect:
                 // Style/structure: dive-richness + engineering-feat tags.
@@ -161,7 +161,7 @@ enum ScannerRanking {
         }
     }
 
-    /// The §3 register the scanner should speak in for this persona — the
+    /// The §3 register the scanner should speak in for this persona, the
     /// "voice register" column of docs/12 §4. Copy only; never a content fork.
     static func voiceRegister(for persona: UserPrefs.Persona) -> String {
         switch persona {
@@ -198,7 +198,7 @@ enum ScannerRanking {
     /// Proximity term: 1.0 at the user's feet, falling steeply past 300 m
     /// (docs/12 §3 "steep falloff past 300 m"). Exponential so a place at
     /// 300 m still scores ~0.37 and a 1.5 km tower barely registers on
-    /// distance alone — prominence has to carry the far field.
+    /// distance alone, prominence has to carry the far field.
     static func proximityScore(distance: Double) -> Double {
         exp(-distance / 300)
     }
@@ -237,7 +237,7 @@ enum ScannerRanking {
 
     /// Rank a frame of projected candidates. `prefs` supplies the persona lens
     /// (weights + the `InterestMap` context term); pass `nil` to fall back to
-    /// the traveler default — the app works signed-out (docs/12 §4: chosen at
+    /// the traveler default, the app works signed-out (docs/12 §4: chosen at
     /// onboarding, but never required to scan).
     static func rank(
         _ projected: [ProjectedPlace],
@@ -279,7 +279,7 @@ enum ScannerRanking {
         .sorted { $0.score > $1.score }
     }
 
-    // MARK: - Disambiguation clustering (docs/12 §2.1 — the "stack")
+    // MARK: - Disambiguation clustering (docs/12 §2.1, the "stack")
 
     /// A cluster of candidates that fall inside one bearing cone (a dense
     /// skyline, a row of Beaux-Arts façades). The scanner shows a single stack
@@ -291,7 +291,7 @@ enum ScannerRanking {
         var lead: Ranked { members[0] }
         var count: Int { members.count }
         var isStack: Bool { members.count > 1 }
-        /// Center of the cone, screen fraction — where the chip renders.
+        /// Center of the cone, screen fraction, where the chip renders.
         var screenFraction: Double { lead.projected.screenFraction }
     }
 
@@ -326,7 +326,7 @@ enum ScannerRanking {
     }
 }
 
-// MARK: - Story proximity (docs/12 §3.1 — "meanwhile-nearby")
+// MARK: - Story proximity (docs/12 §3.1, "meanwhile-nearby")
 
 /// A `story` row floated at its real spot when the user's pose comes within
 /// range (docs/12 §3.1: *"On this corner, 1934…"*). The scanner projects it
@@ -349,7 +349,7 @@ extension ScannerRanking {
     /// Project the nearby `story` layer against the current pose, keeping only
     /// moments within `radius` meters (docs/12 §3.1: "within ~150 m"). Honors a
     /// per-frame budget so a dense historic core can't crowd the viewfinder
-    /// (docs/12 open Q3) — overflow is the caller's "stories that way →".
+    /// (docs/12 open Q3), overflow is the caller's "stories that way →".
     /// When `hauntedOnly` is set (the night/spooky toggle, §3.1 layer 3) only
     /// ghost-tagged moments float.
     static func nearbyStories(

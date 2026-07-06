@@ -9,7 +9,7 @@ import Observation
 ///
 /// Publishes the latest fix and authorization status. It never blocks the shelf:
 /// with no permission or no fix yet, the shelf shows its own empty/placeholder
-/// state — location is an enhancement, not a gate (the map works from anywhere,
+/// state, location is an enhancement, not a gate (the map works from anywhere,
 /// docs/10 §5).
 @Observable
 final class NearMeLocationProvider: NSObject, CLLocationManagerDelegate {
@@ -23,7 +23,7 @@ final class NearMeLocationProvider: NSObject, CLLocationManagerDelegate {
             || authorizationStatus == .authorizedAlways
     }
 
-    /// True once we've been denied/restricted — the shelf uses this to show a
+    /// True once we've been denied/restricted, the shelf uses this to show a
     /// "turn on location" affordance instead of an endless spinner.
     var isDenied: Bool {
         authorizationStatus == .denied || authorizationStatus == .restricted

@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The one clean seam the integrator wires — **no edit to `LoreApp.swift`
+/// The one clean seam the integrator wires, **no edit to `LoreApp.swift`
 /// required** beyond attaching this modifier.
 ///
 /// Usage in `LoreApp` (the integrator adds exactly this one line to the
@@ -24,7 +24,7 @@ extension View {
     /// - Parameters:
     ///   - auth: the app's `AuthService`, read for the current session so the
     ///     finish-write can upsert `user_prefs` (signed-out is handled: the
-    ///     choice is stashed and the flow still completes — see
+    ///     choice is stashed and the flow still completes, see
     ///     `OnboardingPrefsWriter`).
     ///   - forcePresent: bypass the gate and always show the flow (a "replay
     ///     onboarding" hook for Profile / debug). Default `false`.

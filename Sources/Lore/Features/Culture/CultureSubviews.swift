@@ -16,7 +16,7 @@ struct CultureQuoteCard: View {
     @State private var index = 0
     @State private var autoAdvance = true
 
-    /// ~9s per quote — long enough to read a sentence, short enough to feel
+    /// ~9s per quote, long enough to read a sentence, short enough to feel
     /// alive. One sanctioned ambient beat, not decoration for its own sake.
     private let rotation = Timer.publish(every: 9, on: .main, in: .common).autoconnect()
 
@@ -168,7 +168,7 @@ struct FamousFaceView: View {
     @ViewBuilder
     private var portrait: some View {
         ZStack {
-            // Placeholder medallion — always drawn; the photo fades in over it.
+            // Placeholder medallion, always drawn; the photo fades in over it.
             Circle()
                 .fill(LoreColor.ink800)
                 .overlay(

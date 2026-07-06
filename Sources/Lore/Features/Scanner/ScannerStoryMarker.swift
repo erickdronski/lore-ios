@@ -3,7 +3,7 @@ import SwiftUI
 /// A "meanwhile-nearby" story marker floating at its real spot in the
 /// viewfinder (docs/12 §3.1): *"On this corner, 1934…"*. This is the life and
 /// history of everything around you, the fire, the film shoot, the riot, the
-/// invention that has no building of its own — so it renders as a *ghost of a
+/// invention that has no building of its own, so it renders as a *ghost of a
 /// moment*, deliberately lighter than a place pin (a smaller disc, a dashed
 /// tether) so it never competes with the primary resolve (docs/12 §3.1 layer 2).
 ///
@@ -21,7 +21,7 @@ struct StoryMarker: View {
 
     var body: some View {
         VStack(spacing: 4) {
-            // The tether disc — smaller than a place pin, dashed ring so it
+            // The tether disc, smaller than a place pin, dashed ring so it
             // reads as "a moment here", not "a building here".
             ZStack {
                 Circle()
@@ -37,7 +37,7 @@ struct StoryMarker: View {
                     .font(.system(size: 13))
             }
 
-            // The one-line hook: "On this corner, 1934…" — year + a taste of
+            // The one-line hook: "On this corner, 1934…", year + a taste of
             // the title, deliberately terse (the full narrative is the sheet).
             Text(hookLine)
                 .font(LoreType.caption)

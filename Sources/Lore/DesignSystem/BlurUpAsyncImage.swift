@@ -16,7 +16,7 @@ import SwiftUI
 /// safe and calm) and the shimmer is static.
 ///
 /// Layout: the frame is fixed by the caller (`.frame`/aspect ratio) so nothing
-/// shifts when the image lands — the sharp image fills the same box the
+/// shifts when the image lands, the sharp image fills the same box the
 /// placeholder held.
 struct BlurUpAsyncImage: View {
     let url: URL?
@@ -39,7 +39,7 @@ struct BlurUpAsyncImage: View {
                     .transition(fadeTransition)
             case .failure:
                 // Failed load rests on the blurred thumb if we have one, else
-                // a static muted block — never a broken-image glyph.
+                // a static muted block, never a broken-image glyph.
                 placeholder
             case .empty:
                 placeholder

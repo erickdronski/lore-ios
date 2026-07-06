@@ -1,6 +1,6 @@
 import Foundation
 
-/// Row shape of the `entitlements` table — a user's paid access grants. Own
+/// Row shape of the `entitlements` table, a user's paid access grants. Own
 /// rows only, via RLS. A `status` of `active` or `trialing` means the Lore+
 /// gate is open.
 /// `GET /rest/v1/entitlements` (with a user bearer token)

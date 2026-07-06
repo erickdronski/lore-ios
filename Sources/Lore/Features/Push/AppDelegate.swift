@@ -1,7 +1,7 @@
 import UIKit
 import UserNotifications
 
-/// The `UIApplicationDelegate` adaptor for the SwiftUI app — it exists **only**
+/// The `UIApplicationDelegate` adaptor for the SwiftUI app, it exists **only**
 /// to receive the APNs remote-notification token callbacks, which have no
 /// SwiftUI-native equivalent (docs/16-APPLE-TOOLKITS.md §5).
 ///
@@ -21,7 +21,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     ) -> Bool {
         // Become the notification-center delegate immediately so foreground
         // presentation + taps route through `PushService`. Authorization itself
-        // is requested later, from onboarding (docs/16 §5 — never at cold launch).
+        // is requested later, from onboarding (docs/16 §5, never at cold launch).
         Task { @MainActor in
             push.becomeNotificationCenterDelegate()
             await push.refreshAuthorizationStatus()
@@ -39,7 +39,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     }
 
     /// APNs registration failed (no network, simulator, revoked capability).
-    /// Non-fatal — the app runs fine without push.
+    /// Non-fatal, the app runs fine without push.
     func application(
         _ application: UIApplication,
         didFailToRegisterForRemoteNotificationsWithError error: Error

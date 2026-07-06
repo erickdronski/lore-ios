@@ -3,11 +3,11 @@ import Observation
 
 /// Backs the map filter chips (task requirement 3): the set of `place.kind`
 /// categories the user has toggled **off**, persisted to `user_prefs.hidden_kinds`
-/// — the one hard filter in the persona system (13-CURATION-PERSONAS.md §3).
+///, the one hard filter in the persona system (13-CURATION-PERSONAS.md §3).
 ///
 /// The chips are kind categories (Buildings, Parks, Statues, …) derived from the
 /// city's own places so the row never shows an empty category. A chip is "on" by
-/// default; toggling it off adds its kind to `hidden_kinds` (a wall — those pins
+/// default; toggling it off adds its kind to `hidden_kinds` (a wall, those pins
 /// leave the map), and the change is written back with a targeted `PATCH` that
 /// leaves persona/interests untouched.
 ///
@@ -22,7 +22,7 @@ import Observation
 @MainActor
 final class MapFilterStore {
 
-    /// `place.kind`s the user hid — the live filter the map reads. Mirrors
+    /// `place.kind`s the user hid, the live filter the map reads. Mirrors
     /// `user_prefs.hidden_kinds`.
     private(set) var hiddenKinds: Set<String> = []
 
@@ -36,7 +36,7 @@ final class MapFilterStore {
     /// UserDefaults key for a signed-out user's hidden-kinds, flushed post-login.
     static let pendingHiddenKindsKey = "lore.map.pendingHiddenKinds.v1"
 
-    /// `(userID, accessToken)` or `nil` when signed out — a closure to stay
+    /// `(userID, accessToken)` or `nil` when signed out, a closure to stay
     /// decoupled from the auth type, like the other Travel stores.
     private let credentials: () -> (userID: String, accessToken: String)?
 
@@ -96,7 +96,7 @@ final class MapFilterStore {
         persist()
     }
 
-    /// "Show everything" — clear the hard filter (§3: always one tap back to
+    /// "Show everything", clear the hard filter (§3: always one tap back to
     /// the full map). No-op when nothing is hidden.
     func clear() {
         guard !hiddenKinds.isEmpty else { return }

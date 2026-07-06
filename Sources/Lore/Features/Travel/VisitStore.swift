@@ -1,7 +1,7 @@
 import Foundation
 import Observation
 
-/// The "Been here" state store — the source of truth for which places the
+/// The "Been here" state store, the source of truth for which places the
 /// signed-in user has logged an "I was here" visit at, plus the write path that
 /// records a new visit and settles any freshly-unlocked achievements.
 ///
@@ -15,8 +15,8 @@ import Observation
 /// Signed-out is a first-class state (browsing never requires an account, see
 /// `SignInView`): with no session the store simply holds an empty set and every
 /// write is a silent no-op that reports `.signedOut` so the caller can nudge
-/// sign-in. Credentials arrive as a closure — the same decoupling
-/// `OnboardingPrefsWriter` uses — so this type never imports the auth layer.
+/// sign-in. Credentials arrive as a closure, the same decoupling
+/// `OnboardingPrefsWriter` uses, so this type never imports the auth layer.
 @Observable
 @MainActor
 final class VisitStore {
@@ -25,7 +25,7 @@ final class VisitStore {
     /// toggle and shelf read; the map integrator dims/marks visited pins from it.
     private(set) var visitedPlaceIDs: Set<String> = []
 
-    /// Place ids with a visit write currently in flight — lets the toggle show a
+    /// Place ids with a visit write currently in flight, lets the toggle show a
     /// spinner and guards against double-taps hammering `POST /visit`.
     private(set) var inFlightPlaceIDs: Set<String> = []
 
@@ -38,7 +38,7 @@ final class VisitStore {
 
     /// The signed-in user's `(userID, accessToken)`, or `nil` when signed out.
     /// A closure (not a stored `AuthService`) keeps this decoupled from the auth
-    /// type — the integrator wires it to `auth.session`.
+    /// type, the integrator wires it to `auth.session`.
     private let credentials: () -> (userID: String, accessToken: String)?
 
     /// Called with the achievements a visit newly unlocked, on the main actor.
@@ -104,7 +104,7 @@ final class VisitStore {
         /// The place is now marked visited (either freshly logged, with any
         /// newly-unlocked badges, or it was already visited).
         case logged(unlocked: [Achievement])
-        /// Already recorded — no write was made.
+        /// Already recorded, no write was made.
         case alreadyVisited
         /// No signed-in user; the caller should nudge sign-in.
         case signedOut
@@ -144,7 +144,7 @@ final class VisitStore {
             if !unlocked.isEmpty { onUnlocks(unlocked) }
             return .logged(unlocked: unlocked)
         } catch {
-            // Roll back the optimistic mark — the visit didn't land.
+            // Roll back the optimistic mark, the visit didn't land.
             visitedPlaceIDs.remove(placeID)
             let message = (error as? LoreAPI.APIError)?.errorDescription
                 ?? "Couldn't log that visit."

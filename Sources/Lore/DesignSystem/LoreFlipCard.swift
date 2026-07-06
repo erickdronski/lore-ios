@@ -1,12 +1,12 @@
 import SwiftUI
 import UIKit
 
-/// A two-sided card that flips on tap (3D Y-axis rotation) — the paywall gate
+/// A two-sided card that flips on tap (3D Y-axis rotation), the paywall gate
 /// (the 4th dive card flips to the gate, brand/ELEVATION.md §7) and any
 /// "front → detail" reveal. Front and back are supplied as view builders; the
 /// back is pre-mirrored so its content reads correctly after the flip.
 ///
-/// Motion: `reveal.unfurl`-family spring (`spring.settle`, no overshoot — a
+/// Motion: `reveal.unfurl`-family spring (`spring.settle`, no overshoot, a
 /// gate must never feel jaunty). Under Reduce Motion the rotation is dropped
 /// for a 160 ms opacity crossfade between the two faces (no 3D transform).
 struct FlipCard<Front: View, Back: View>: View {
@@ -35,12 +35,12 @@ struct FlipCard<Front: View, Back: View>: View {
 
     var body: some View {
         ZStack {
-            // Front — visible for angles < 90°.
+            // Front, visible for angles < 90°.
             front()
                 .opacity(frontOpacity)
                 .accessibilityHidden(isFlipped)
 
-            // Back — pre-mirrored so text isn't reversed after the flip.
+            // Back, pre-mirrored so text isn't reversed after the flip.
             back()
                 .scaleEffect(x: -1, y: 1)
                 .opacity(backOpacity)
@@ -90,7 +90,7 @@ private struct FlipRotation: ViewModifier {
     }
 }
 
-/// Tap-to-flip convenience that owns its flip state — use when the caller has
+/// Tap-to-flip convenience that owns its flip state, use when the caller has
 /// no reason to hold the `isFlipped` binding itself. Wraps `FlipCard` with an
 /// internal `@State` so tapping actually toggles (a `.constant` binding can't).
 ///

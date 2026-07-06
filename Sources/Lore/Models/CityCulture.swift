@@ -1,6 +1,6 @@
 import Foundation
 
-/// Row shape of the `city_culture` table — the "how a city talks and thinks"
+/// Row shape of the `city_culture` table, the "how a city talks and thinks"
 /// layer: slang, sayings, quotes, and notable people, shown on the city intro
 /// / culture shelf.
 /// `GET /rest/v1/city_culture?city=eq.{city}&order=sort`

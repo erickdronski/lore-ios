@@ -5,7 +5,7 @@ import SwiftUI
 /// scanner refuses to guess and instead shows one stack chip with a count.
 /// Tapping opens a distance-sorted, live-reordering list; the one the user
 /// confirms is what snaps to a Tier-A pin and (silently, opt-in) would feed a
-/// `verification` at P1 — the crowd sharpening the model with every confirmed
+/// `verification` at P1, the crowd sharpening the model with every confirmed
 /// look. Here we render the honest UI and surface the confirmation callback;
 /// the network verification write is the P1 hook (docs/06 crowdsourcing).
 ///
@@ -26,12 +26,12 @@ struct StackChip: View {
                 candidateList
             }
         }
-        // The stack expands as a settled panel — `spring.smooth`, no jaunty
+        // The stack expands as a settled panel, `spring.smooth`, no jaunty
         // overshoot on a decision UI (LUXURY-MOTION §2, §7).
         .animation(LoreSpring.smooth(reduceMotion: reduceMotion), value: isOpen)
     }
 
-    // MARK: Collapsed — the count chip
+    // MARK: Collapsed, the count chip
 
     private var collapsedChip: some View {
         Button {
@@ -74,7 +74,7 @@ struct StackChip: View {
         ))
     }
 
-    // MARK: Open — distance-sorted rows
+    // MARK: Open, distance-sorted rows
 
     /// The candidate rows, nearest-first (docs/12 §2.1). Rows cascade in with a
     /// 30 ms stagger (brand/DESIGN §6 "Stack open"); the model re-sorts by

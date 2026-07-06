@@ -2,14 +2,14 @@ import Foundation
 import Observation
 import StoreKit
 
-/// The **StoreKit 2** client path for Lore+ — the on-device transaction engine.
+/// The **StoreKit 2** client path for Lore+, the on-device transaction engine.
 ///
 /// Doctrine (docs/16-APPLE-TOOLKITS.md §1): StoreKit 2 and RevenueCat are
 /// *layers, not alternatives*. RevenueCat remains the planned **server-side
-/// truth** — its webhook writes the `entitlements` row `EntitlementStore` reads,
+/// truth**, its webhook writes the `entitlements` row `EntitlementStore` reads,
 /// and it owns the paywall/offering config. StoreKit 2 is the on-device engine
 /// underneath: the actual purchase sheet, restore, intro-offer eligibility, and
-/// — critically — `Transaction.currentEntitlements` as a **belt-and-suspenders
+///, critically, `Transaction.currentEntitlements` as a **belt-and-suspenders
 /// offline check** so a returning subscriber isn't gated during an RC outage or
 /// a first-launch-before-network.
 ///
@@ -26,7 +26,7 @@ import StoreKit
 /// on StoreKit 2 under the hood) and its webhook the entitlement writer. At that
 /// point this service's `purchase`/`restore` should defer to RC, and its role
 /// narrows to the *offline union* read (`hasActiveEntitlement`) that
-/// `EntitlementStore` unions with — **never subtracts from** — the RC/`entitlements`
+/// `EntitlementStore` unions with, **never subtracts from**, the RC/`entitlements`
 /// answer. Do not run a second raw purchase path in parallel with RC once it
 /// exists; that is the double-bookkeeping trap the doc warns against. Until RC
 /// is wired, this is the real, working purchase path.
@@ -39,7 +39,7 @@ import StoreKit
 final class StoreKitService {
     /// The two Lore+ subscription products, App Store Connect identifiers
     /// (docs/16 §1, and the ASC setup in docs/10 §6). These are the *real* IDs
-    /// the `Configuration.storekit` file and ASC both define — not placeholders.
+    /// the `Configuration.storekit` file and ASC both define, not placeholders.
     enum ProductID {
         static let monthly = "lore_plus_monthly_4_99"
         static let annual = "lore_plus_annual_29_99"
@@ -115,14 +115,14 @@ final class StoreKitService {
 
     /// True when any current on-device entitlement is a Lore+ product and its
     /// verified transaction hasn't been revoked/expired. This is the union input
-    /// `EntitlementStore` reads — it can only *open* the gate, never close one
+    /// `EntitlementStore` reads, it can only *open* the gate, never close one
     /// the server (RevenueCat/`entitlements`) has opened.
     var hasActiveEntitlement: Bool {
         !ownedProductIDs.isEmpty
     }
 
     /// Whether the current on-device entitlement is within an introductory
-    /// (free-trial) period — lets the paywall/profile show "Trial" framing
+    /// (free-trial) period, lets the paywall/profile show "Trial" framing
     /// offline, distinct from a paid member. Determined from the latest verified
     /// transaction's `offer`/`offerType`.
     private(set) var isInIntroPeriod = false
@@ -158,9 +158,9 @@ final class StoreKitService {
         /// Purchase succeeded and the transaction verified + finished. `trialing`
         /// reflects whether it started in the introductory free-trial period.
         case success(trialing: Bool)
-        /// The user tapped Cancel in the sheet — not an error, no message.
+        /// The user tapped Cancel in the sheet, not an error, no message.
         case userCancelled
-        /// Apple needs a further step (Ask to Buy / SCA) — the transaction will
+        /// Apple needs a further step (Ask to Buy / SCA), the transaction will
         /// arrive later via `Transaction.updates`.
         case pending
         /// Something failed. `message` is a user-safe line.
@@ -231,7 +231,7 @@ final class StoreKitService {
         do {
             try await AppStore.sync()
         } catch {
-            // A cancelled/failed sync isn't fatal — currentEntitlements may still
+            // A cancelled/failed sync isn't fatal, currentEntitlements may still
             // reflect prior purchases. Fall through to the recompute.
         }
         await refreshEntitlements()

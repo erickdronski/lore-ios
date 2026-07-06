@@ -1,10 +1,10 @@
 import MapKit
 import SwiftUI
 
-/// The 2D living map — degraded-modes rung 3 surface (docs/05 §5) and the
+/// The 2D living map, degraded-modes rung 3 surface (docs/05 §5) and the
 /// App-Review-reviewable surface from anywhere on Earth (docs/10 §5 row 4).
 /// MapKit at P0; the locked production stack is MapLibre GL Native +
-/// OpenFreeMap PMTiles (docs/03 §2 `MapKitFallback`) — swap when tiles land.
+/// OpenFreeMap PMTiles (docs/03 §2 `MapKitFallback`), swap when tiles land.
 ///
 /// This is the composed Explorer: the base map + persona-weighted pins
 /// (`MapRelevance`), the Travel controls (filter chips + near-me shelf, both
@@ -20,7 +20,7 @@ struct MapScreen: View {
     /// Persona/interest weighting for the pins + shelf (from `PrefsCoordinator`).
     let prefs: UserPrefs?
 
-    // Header actions — injected so the map never imports the tab structure.
+    // Header actions, injected so the map never imports the tab structure.
     /// Open the global search sheet.
     var onOpenSearch: () -> Void = {}
     /// Open the city switcher sheet.
@@ -47,7 +47,7 @@ struct MapScreen: View {
         relevance.arrange(model.places).filter { filters.allows($0) }
     }
 
-    /// True while a place sheet is presented — drives the map's recede (dim +
+    /// True while a place sheet is presented, drives the map's recede (dim +
     /// blur) so the focused surface floats above it (LUXURY-MOTION §4).
     private var cardOpen: Bool { selectedPlaceID != nil }
 
@@ -68,7 +68,7 @@ struct MapScreen: View {
             }
             .mapStyle(.standard(pointsOfInterest: .excludingAll))
             // Depth behind an open card (LUXURY-MOTION §4): the map recedes —
-            // dims to a scrim + a soft blur — so the focused place sheet floats.
+            // dims to a scrim + a soft blur, so the focused place sheet floats.
             // Reduce Motion keeps the dim (a still tint is safe) but drops blur.
             .blur(radius: cardOpen && !reduceMotion ? 2 : 0)
             .overlay {
@@ -79,7 +79,7 @@ struct MapScreen: View {
             }
             .animation(LoreSpring.smooth(reduceMotion: reduceMotion), value: cardOpen)
             .onChange(of: selectedPlaceID) { _, newValue in
-                // Pin tap — light impact (brand/ELEVATION.md §4).
+                // Pin tap, light impact (brand/ELEVATION.md §4).
                 if newValue != nil { Haptics.play(.pinTap) }
             }
             .safeAreaInset(edge: .top) {
@@ -119,7 +119,7 @@ struct MapScreen: View {
             .task(id: city) { await model.load(city: city) }
             .onChange(of: model.cameraTarget) { _, target in
                 guard let target else { return }
-                // The fly-to eases on `spring.smooth` — a settled camera glide,
+                // The fly-to eases on `spring.smooth`, a settled camera glide,
                 // no overshoot (LUXURY-MOTION §2, §7 "flyTo eases").
                 withAnimation(LoreSpring.smooth(reduceMotion: reduceMotion)) {
                     position = .region(target)
@@ -192,7 +192,7 @@ final class MapScreenModel {
                 cameraTarget = Self.regionFitting(loaded)
             }
         } catch {
-            errorMessage = "Offline — pull to retry"
+            errorMessage = "Offline, pull to retry"
             loadedCity = city
         }
     }
@@ -220,7 +220,7 @@ final class MapScreenModel {
 
 /// The one top-of-map header (brand/DESIGN.md §7): a Bone-on-Ink strip with the
 /// current city (tap to switch), a global search entry, and the Meet-the-City
-/// affordance. App chrome, so Ink/Brass — never Amber (Amber is the world's).
+/// affordance. App chrome, so Ink/Brass, never Amber (Amber is the world's).
 struct MapHeader: View {
     let cityName: String
     let onSearch: () -> Void
@@ -274,8 +274,8 @@ struct MapHeader: View {
     }
 }
 
-/// The map pin: compound render per brand/DESIGN.md §4 — Amber fill, 1.5 pt
-/// Ink stroke, Ink shadow (y1 / blur 3 / 35%) — with the place emoji badged
+/// The map pin: compound render per brand/DESIGN.md §4, Amber fill, 1.5 pt
+/// Ink stroke, Ink shadow (y1 / blur 3 / 35%), with the place emoji badged
 /// in the middle. Persona weighting dims/emphasizes it (`MapRelevance`) without
 /// ever removing it, and a visited pin carries the Brass seal.
 struct PlacePinBadge: View {
@@ -285,10 +285,10 @@ struct PlacePinBadge: View {
     var weighting: PinWeighting = PinWeighting(
         opacity: 1, scale: 1, zPriority: 1, isRelevant: true
     )
-    /// This pin's position in the for-you-first arrangement — drives the
+    /// This pin's position in the for-you-first arrangement, drives the
     /// near→far landing cascade on a city switch (LUXURY-MOTION §6).
     var index: Int = 0
-    /// True while this pin's place sheet is open — the selected pin lifts with a
+    /// True while this pin's place sheet is open, the selected pin lifts with a
     /// spring so a tap reads as "this one" (LUXURY-MOTION §5 pin scale).
     var isSelected: Bool = false
 
@@ -350,7 +350,7 @@ struct PlacePinBadge: View {
     }
 }
 
-/// Passive top strip — the only top-of-screen element (brand/DESIGN.md §7).
+/// Passive top strip, the only top-of-screen element (brand/DESIGN.md §7).
 struct StatusChip: View {
     let text: String
 

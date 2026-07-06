@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The Passport — the exploration reward wall. It fetches the achievement
+/// The Passport, the exploration reward wall. It fetches the achievement
 /// catalog (anonymous read) joined against the signed-in user's
 /// `user_achievement` rows, groups badges by category (milestone, collector,
 /// city, knowledge, streak, special), and renders each as a tier medallion:
@@ -170,7 +170,7 @@ struct PassportSummary: View {
 
             HStack(spacing: 12) {
                 stat(caption: "Badges") {
-                    // "n / total" — n counts up on first view; the total is fixed.
+                    // "n / total", n counts up on first view; the total is fixed.
                     HStack(spacing: 0) {
                         CountUpText.integer(
                             unlockedCount,
@@ -183,7 +183,7 @@ struct PassportSummary: View {
                 }
                 divider
                 stat(caption: "Insight") {
-                    // Insight points roll up — the ledger tallying (LUXURY-MOTION §5).
+                    // Insight points roll up, the ledger tallying (LUXURY-MOTION §5).
                     CountUpText.integer(
                         insightPoints,
                         font: LoreType.display(size: 26, weight: .semibold)
@@ -271,7 +271,7 @@ struct CategorySection: View {
             .padding(.horizontal, 16)
         }
         // Flip on appear so RevealBounce runs its entrance (a stagger under
-        // motion, a crossfade under Reduce Motion — handled inside RevealBounce).
+        // motion, a crossfade under Reduce Motion, handled inside RevealBounce).
         .onAppear { appeared = true }
     }
 }
@@ -452,7 +452,7 @@ final class PassportModel {
                 }
             }
         } catch {
-            // A recompute failure is silent — the wall stays as it was.
+            // A recompute failure is silent, the wall stays as it was.
         }
     }
 

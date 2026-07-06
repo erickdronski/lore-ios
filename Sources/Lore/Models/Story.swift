@@ -1,10 +1,10 @@
 import CoreLocation
 import Foundation
 
-/// Row shape of the `story` table — the "meanwhile-nearby" layer: a moment in
+/// Row shape of the `story` table, the "meanwhile-nearby" layer: a moment in
 /// history pinned to a real spot that has no building of its own (a fire, a
 /// film shoot, a riot, an invention). Surfaced in the scanner when the user's
-/// pose is within ~150 m (12-SCANNER-INTELLIGENCE.md §3.1) — distance is
+/// pose is within ~150 m (12-SCANNER-INTELLIGENCE.md §3.1), distance is
 /// filtered client-side.
 /// `GET /rest/v1/story?city=eq.{city}`
 ///
@@ -24,7 +24,7 @@ struct Story: Codable, Identifiable, Hashable {
     let narrative: String?
     /// The event year, when a single year applies.
     let year: Int?
-    /// Human display for the year ("1930", "c. 1871", "1920s") — prefer this
+    /// Human display for the year ("1930", "c. 1871", "1920s"), prefer this
     /// over `year` for rendering.
     let yearLabel: String?
     /// Real-world spot the moment happened.
@@ -90,7 +90,7 @@ struct Story: Codable, Identifiable, Hashable {
         tags.contains("ghost") || tags.contains("haunted") || tags.contains("haunted-lore")
     }
 
-    /// Distance in meters from a given location — the client-side proximity
+    /// Distance in meters from a given location, the client-side proximity
     /// filter the scanner uses to decide whether to float this marker.
     func distance(from location: CLLocation) -> CLLocationDistance {
         self.location.distance(from: location)

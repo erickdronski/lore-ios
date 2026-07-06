@@ -31,7 +31,7 @@ struct SignInView: View {
                         .font(LoreType.hook)
                         .foregroundStyle(LoreColor.ink600)
 
-                    // Sign in with Apple — FIRST, always (guideline 4.8).
+                    // Sign in with Apple, FIRST, always (guideline 4.8).
                     // Native flow: `AppleSignInCoordinator` runs the system
                     // sheet with a hashed nonce; `AuthService.signInWithApple`
                     // exchanges the identity token at
@@ -103,7 +103,7 @@ struct SignInView: View {
                     .disabled(email.isEmpty || password.isEmpty || auth.isBusy)
 
                     Text(
-                        "Reading never requires an account — browsing, the map, "
+                        "Reading never requires an account, browsing, the map, "
                         + "and deep dives all work signed out. Accounts unlock "
                         + "contributions, Insight sync, and Lore+."
                     )
@@ -156,7 +156,7 @@ struct SignInView: View {
                 appleError = authError
             }
         } catch let error as AppleSignInCoordinator.AppleSignInError {
-            // `.cancelled` has a nil description — stay silent on a user cancel.
+            // `.cancelled` has a nil description, stay silent on a user cancel.
             appleError = error.errorDescription
         } catch {
             appleError = error.localizedDescription

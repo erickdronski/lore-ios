@@ -1,6 +1,6 @@
 import Foundation
 
-/// Row shape of the publicly readable `fact` table — the dive dossier's raw
+/// Row shape of the publicly readable `fact` table, the dive dossier's raw
 /// provenance rows (mirrors `lore-web/lib/types.ts`). `value` is jsonb and can
 /// be a string, number, or object, hence `JSONValue`.
 struct Fact: Codable, Identifiable, Hashable {

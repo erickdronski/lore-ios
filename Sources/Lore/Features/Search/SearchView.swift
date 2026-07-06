@@ -3,14 +3,14 @@ import SwiftUI
 /// The global search sheet: a single field that queries the `search_lore` RPC
 /// (debounced), grouping the ranked hits by kind (Cities / Places / People /
 /// Stories / Tours). Tapping a row resolves a `LoreRoute` and hands it to the
-/// injected router — the sheet dismisses itself and lets the host navigate.
+/// injected router, the sheet dismisses itself and lets the host navigate.
 ///
 /// Routing is *injected*, not hard-wired to `LoreApp.swift`: the host passes a
 /// `handler` (or, in the app, the shared `AppRouter` via the initializer), so
 /// this view never imports the tab structure it lives inside.
 struct SearchView: View {
     /// Called with the resolved route when a result is tapped. The sheet
-    /// dismisses first, then invokes this — the host decides what "open" means.
+    /// dismisses first, then invokes this, the host decides what "open" means.
     let onSelect: (LoreRoute) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -79,7 +79,7 @@ struct SearchView: View {
     }
 
     /// Content-shaped searching state (LUXURY-MOTION §3): result-row skeletons
-    /// cascading in — no spinner. The rows are shaped like `SearchResultRow`.
+    /// cascading in, no spinner. The rows are shaped like `SearchResultRow`.
     private var searchingSkeleton: some View {
         ScrollView {
             StaggeredReveal(spacing: 8) {
@@ -140,12 +140,12 @@ struct SearchGroup: Hashable {
 
 /// Drives the search sheet: holds the query, debounces RPC calls, and buckets
 /// ranked results by kind. Debounce is a cancellable `Task.sleep` (no timers,
-/// no Combine) — each keystroke cancels the last in-flight debounce.
+/// no Combine), each keystroke cancels the last in-flight debounce.
 @Observable
 @MainActor
 final class SearchModel {
     enum State: Equatable {
-        /// No query yet — show the intro empty state.
+        /// No query yet, show the intro empty state.
         case idle
         /// A request is in flight (may already have stale `groups` to show).
         case searching
@@ -163,7 +163,7 @@ final class SearchModel {
     private(set) var state: State = .idle
     private(set) var groups: [SearchGroup] = []
 
-    /// Debounce window — long enough to coalesce fast typing, short enough to
+    /// Debounce window, long enough to coalesce fast typing, short enough to
     /// feel live. `reveal.tap` is 120 ms; search debounce is a touch longer.
     private let debounce: Duration = .milliseconds(250)
 
@@ -178,7 +178,7 @@ final class SearchModel {
 
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.count >= 2 else {
-            // Too short to be meaningful — clear results, go idle, no request.
+            // Too short to be meaningful, clear results, go idle, no request.
             groups = []
             state = .idle
             return

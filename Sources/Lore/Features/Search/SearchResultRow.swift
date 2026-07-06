@@ -2,11 +2,11 @@ import SwiftUI
 
 /// One row in the global search list: emoji (or the kind's SF Symbol as a
 /// fallback), the primary `label`, and a `sublabel` second line. Sized and
-/// tinted for a Bone list surface (brand/DESIGN.md §7 — the app's words in
+/// tinted for a Bone list surface (brand/DESIGN.md §7, the app's words in
 /// SF Pro; Fraunces only for the world's words, so the label stays SF Pro-ish
 /// display, sublabel is plain caption).
 ///
-/// Purely presentational — the enclosing `List`/`Button` owns the tap.
+/// Purely presentational, the enclosing `List`/`Button` owns the tap.
 struct SearchResultRow: View {
     let result: SearchResult
 
@@ -69,7 +69,7 @@ struct SearchResultRow: View {
 }
 
 /// Human section header for a group of results, keyed by `SearchResult.Kind`.
-/// Cities / Places / People / Stories / Tours — plural, title-cased, matching
+/// Cities / Places / People / Stories / Tours, plural, title-cased, matching
 /// the switcher's and culture shelf's copy.
 extension SearchResult.Kind {
     /// Plural section title used to group results in the search list.
@@ -83,7 +83,7 @@ extension SearchResult.Kind {
         }
     }
 
-    /// Curated order the groups appear in the results list — Cities first (the
+    /// Curated order the groups appear in the results list, Cities first (the
     /// switch that reframes everything), then Places, People, Stories, Tours.
     var sectionOrder: Int {
         switch self {

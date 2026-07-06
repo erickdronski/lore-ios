@@ -2,7 +2,7 @@ import SwiftUI
 
 /// The `lock-plus` premium marker (brand/ELEVATION.md §6): a small brass-sheen
 /// pill reading **Lore+**, used to label an affordance that lives behind the
-/// membership. It's the app's one consistent "this is premium" glyph — a tour
+/// membership. It's the app's one consistent "this is premium" glyph, a tour
 /// row, an audio button, an offline-pack toggle all wear the same chip so the
 /// gate is *learnable*.
 ///
@@ -51,12 +51,12 @@ struct LockChip: View {
     }
 }
 
-/// A full-width "Unlock with Lore+" call-to-action button — the primary way a
+/// A full-width "Unlock with Lore+" call-to-action button, the primary way a
 /// gated surface invites the upgrade. Brass-sheen fill with the one-shot sweep,
 /// Ink label, docent copy. Fires `.chipTap` and runs `action` (present the
 /// paywall).
 struct UnlockButton: View {
-    /// The line under the title — a specific, warm reason this is worth it.
+    /// The line under the title, a specific, warm reason this is worth it.
     /// Docent voice only (brand/ELEVATION.md §1): name the value, don't sell.
     var title: String = "Unlock with Lore+"
     var subtitle: String?

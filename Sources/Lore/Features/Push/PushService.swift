@@ -9,8 +9,8 @@ import UIKit
 ///
 /// Scope (docs/16 §5): this is the **client half**. It gets the app ready to
 /// *receive* the "nearby-lore / new-city" retention pushes. The **server sender**
-/// — a Supabase Edge Function that signs an APNs JWT with the token-auth `.p8`
-/// key and POSTs to `api.push.apple.com` — is a TODO owned server-side (see the
+///, a Supabase Edge Function that signs an APNs JWT with the token-auth `.p8`
+/// key and POSTs to `api.push.apple.com`, is a TODO owned server-side (see the
 /// TODO on `registerTokenWithBackend`). The `remote-notification` background
 /// mode is set in `project.yml`; the Push *capability* + `aps-environment`
 /// entitlement are portal-gated and commented in `project.yml`.
@@ -42,7 +42,7 @@ final class PushService: NSObject {
     /// system delivers it (or on the simulator, which has no APNs token).
     private(set) var deviceToken: String?
 
-    /// Set when registration failed — non-fatal, surfaced only if useful.
+    /// Set when registration failed, non-fatal, surfaced only if useful.
     private(set) var lastError: String?
 
     /// True once the user has granted notification authorization.
@@ -59,7 +59,7 @@ final class PushService: NSObject {
 
     /// Ask the user for notification permission, then register for remote
     /// notifications if granted. Call this from the onboarding notification step
-    /// (or a Profile toggle) — never at cold launch (docs/16 §5).
+    /// (or a Profile toggle), never at cold launch (docs/16 §5).
     ///
     /// Registration triggers the `AppDelegate` APNs callbacks, which call back
     /// into `didRegister(tokenData:)` / `didFailToRegister(error:)` here.
@@ -125,7 +125,7 @@ extension PushService: UNUserNotificationCenterDelegate {
         completionHandler([.banner, .sound, .list])
     }
 
-    /// Handle a tap on a notification — deep-link into the matching surface.
+    /// Handle a tap on a notification, deep-link into the matching surface.
     ///
     /// TODO(P2): read the payload's `type` (`nearby_lore` / `new_city`) + a
     /// `place_id` / `city`, and route via `AppRouter.handleDeepLink` (the

@@ -2,13 +2,13 @@ import Foundation
 import Observation
 
 /// The free-tier deep-dive allowance: **3 dives per day** (docs/00-DECISIONS.md
-/// §7). Lore+ members bypass this entirely — the meter is only consulted when
+/// §7). Lore+ members bypass this entirely, the meter is only consulted when
 /// `EntitlementStore.isPlus == false`.
 ///
 /// ## Doctrine: never gate mid-wonder
 ///
 /// The gate lands on the **4th** dive of a day, never the 1st, 2nd, or 3rd. A
-/// visitor's first taps in a new city must always open — the paywall shows up
+/// visitor's first taps in a new city must always open, the paywall shows up
 /// only after they've felt the value three times. `canOpenDive` is the free
 /// user's remaining-count check; `recordDiveOpened` is called *after* a dive
 /// actually opens, so the count reflects consumed wonder, not intent.
@@ -24,7 +24,7 @@ import Observation
 /// an *optimistic local mirror*: it still gives instant, offline-correct
 /// answers, but reconciles against the server count on refresh, and the server
 /// has final say on whether the gate is up. Until then, a determined free user
-/// can reset by clearing app data — an acceptable P0 leak, called out here so
+/// can reset by clearing app data, an acceptable P0 leak, called out here so
 /// nobody mistakes the client meter for enforcement.
 /// TODO(P1): wire `reconcile(serverCount:day:)` to `GET /rpc/dive_reads_today`
 /// (or the `dive_reads` table) and let the server value win on conflict.
@@ -40,7 +40,7 @@ final class DiveMeter {
     private let defaults: UserDefaults
     private let calendar: Calendar
 
-    /// `UserDefaults` keys — namespaced so they never collide with other
+    /// `UserDefaults` keys, namespaced so they never collide with other
     /// feature state.
     private enum Key {
         static let count = "lore.diveMeter.usedToday"
@@ -64,7 +64,7 @@ final class DiveMeter {
     }
 
     /// Whether a free user may open one more dive right now. Lore+ callers
-    /// should short-circuit on `isPlus` and never ask this — but if they do,
+    /// should short-circuit on `isPlus` and never ask this, but if they do,
     /// this only answers for the free allowance.
     var canOpenFreeDive: Bool {
         remainingToday > 0
@@ -86,7 +86,7 @@ final class DiveMeter {
 
     /// Record that a dive was actually opened. No-op for Lore+ members (their
     /// dives don't count against a free allowance). Call this **after** the
-    /// dive presents, not before — the count tracks consumed wonder.
+    /// dive presents, not before, the count tracks consumed wonder.
     ///
     /// - Parameter isPlus: `EntitlementStore.isPlus` at the call site. When
     ///   true, nothing is recorded.
@@ -118,7 +118,7 @@ final class DiveMeter {
         defaults.set(today, forKey: Key.day)
     }
 
-    /// Days since the reference date at *local* start-of-day — a stable integer
+    /// Days since the reference date at *local* start-of-day, a stable integer
     /// that increments exactly once per calendar day in the user's time zone.
     private var todayOrdinal: Int {
         let startOfToday = calendar.startOfDay(for: Date())

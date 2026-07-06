@@ -1,7 +1,7 @@
 import CoreLocation
 import Foundation
 
-/// Pure bearing math for the coarse scanner — no I/O, no frameworks beyond
+/// Pure bearing math for the coarse scanner, no I/O, no frameworks beyond
 /// CoreLocation value types, fully unit-testable (the same doctrine as the
 /// P1 `Resolver`: docs/03 §2).
 enum BearingProjector {
@@ -46,7 +46,7 @@ enum BearingProjector {
         return String(format: "%.1f km", meters / 1000)
     }
 
-    /// Compass arrow glyph for a bearing delta — used on the off-screen edge
+    /// Compass arrow glyph for a bearing delta, used on the off-screen edge
     /// chips ("Willis Tower ↖ 600 m" style, docs/05 §5 rung 2).
     static func arrowGlyph(delta: Double) -> String {
         switch delta {

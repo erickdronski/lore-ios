@@ -8,7 +8,7 @@ import SwiftUI
 /// list. Tapping a city routes through the injected router (`switchCity`).
 struct CitySwitcherView: View {
     /// Called with the chosen city slug. The sheet dismisses first, then invokes
-    /// this — the host flies the map / refilters reads.
+    /// this, the host flies the map / refilters reads.
     let onSelect: (String) -> Void
     /// The currently-active city slug, checkmarked in the list.
     let currentCity: String?
@@ -82,7 +82,7 @@ struct CitySwitcherView: View {
     }
 
     /// Content-shaped loading state (LUXURY-MOTION §3): city-row skeletons
-    /// cascading in — no spinner.
+    /// cascading in, no spinner.
     private var loadingSkeleton: some View {
         ScrollView {
             StaggeredReveal(spacing: 8) {
@@ -180,7 +180,7 @@ struct CityRow: View {
 // MARK: - Region grouping
 
 /// US-then-International split for the switcher, plus country-code display
-/// names. Kept tiny and local — the roster is small and curated; this is copy,
+/// names. Kept tiny and local, the roster is small and curated; this is copy,
 /// not a locale engine.
 enum CityRegion: String, CaseIterable, Identifiable {
     case unitedStates
@@ -236,7 +236,7 @@ enum CityRegion: String, CaseIterable, Identifiable {
     }
 }
 
-/// A rendered region section — its cities in curated (`sort`) order.
+/// A rendered region section, its cities in curated (`sort`) order.
 struct CityRegionSection: Identifiable {
     let region: CityRegion
     let cities: [City]
@@ -361,7 +361,7 @@ final class CitySwitcherModel {
                 .compactMap { $0.slug ?? $0.city }
             remoteMatchSlugs = Set(slugs)
         } catch {
-            // Silent — local filter remains authoritative.
+            // Silent, local filter remains authoritative.
             remoteMatchSlugs = nil
         }
     }

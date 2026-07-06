@@ -9,7 +9,7 @@ struct DiveView: View {
     /// The shared-element morph namespace (LUXURY-MOTION §6): when the dossier is
     /// grown from a Layer-1 card, the pin/emoji medallion morphs from the card
     /// header into this header via `matchedGeometryEffect`. `nil` when the
-    /// dossier is presented standalone (scanner, tours) — the medallion then just
+    /// dossier is presented standalone (scanner, tours), the medallion then just
     /// appears, no morph, which is correct: nothing to morph *from*.
     var morphNamespace: Namespace.ID? = nil
     /// The shared id the medallion morphs across (unique per place).
@@ -27,7 +27,7 @@ struct DiveView: View {
                 case .loading:
                     loadingSkeleton
                 case .empty:
-                    Text("This dossier hasn't been written yet — dives are synthesized once and cached, never generated on the spot.")
+                    Text("This dossier hasn't been written yet. Dives are synthesized once and cached, never generated on the spot.")
                         .font(LoreType.body)
                         .foregroundStyle(LoreColor.ink600)
                 case .failed(let message):
@@ -37,6 +37,9 @@ struct DiveView: View {
                 case .loaded(let dive):
                     diveBody(dive)
                 }
+
+                // Apple street-level view, shown only where Apple has coverage.
+                LookAroundSection(place: place)
 
                 linksSection
             }
@@ -50,7 +53,7 @@ struct DiveView: View {
 
     // MARK: Header (morph target)
 
-    /// The dossier header: the emoji medallion (the morph *target* — it grows
+    /// The dossier header: the emoji medallion (the morph *target*, it grows
     /// from the Layer-1 card's medallion) beside the place name in display XL.
     private var header: some View {
         HStack(alignment: .firstTextBaseline, spacing: 14) {
@@ -112,7 +115,7 @@ struct DiveView: View {
                 .font(LoreType.displayM)
                 .foregroundStyle(LoreColor.bone)
 
-            // Maps deep-link — always available, built from place coordinates.
+            // Maps deep-link, always available, built from place coordinates.
             if let mapsURL = appleMapsURL {
                 Link(destination: mapsURL) {
                     LinkRow(icon: "map", title: "Open in Maps", subtitle: "Walk there")
@@ -149,7 +152,7 @@ struct DiveView: View {
     }
 
     /// Content-shaped dossier skeleton (LUXURY-MOTION §3): shimmer bars sized
-    /// like the narrative paragraph, then a row of timeline-node tiles — so the
+    /// like the narrative paragraph, then a row of timeline-node tiles, so the
     /// swap to the real dossier is a cross-fade with no layout jump. Bars sit on
     /// the Ink ramp (this surface is dark), not the default Bone.
     private var loadingSkeleton: some View {
@@ -199,7 +202,7 @@ final class DiveModel {
                 state = .empty
             }
         } catch {
-            state = .failed("Couldn't load this dossier — check your connection.")
+            state = .failed("Couldn't load this dossier, check your connection.")
         }
     }
 }
@@ -211,7 +214,7 @@ final class DiveModel {
 /// (Fraunces-ready) face.
 struct TimelineStrip: View {
     let events: [TimelineEvent]
-    /// The event currently snapped into view — drives the selection tick.
+    /// The event currently snapped into view, drives the selection tick.
     @State private var snappedEventID: TimelineEvent.ID?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -238,7 +241,7 @@ struct TimelineStrip: View {
             .scrollTargetBehavior(.viewAligned)
             .scrollPosition(id: $snappedEventID)
             .onChange(of: snappedEventID) { oldValue, newValue in
-                // Decade snap — one selection tick per snap
+                // Decade snap, one selection tick per snap
                 // (brand/ELEVATION.md §4); silent on first settle.
                 if oldValue != nil, newValue != nil, oldValue != newValue {
                     Haptics.play(.timelineSnap)
@@ -253,20 +256,20 @@ struct TimelineStrip: View {
 
 struct TimelineNode: View {
     let event: TimelineEvent
-    /// True when this node is the one snapped into view — it pops forward.
+    /// True when this node is the one snapped into view, it pops forward.
     var isSnapped: Bool = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            // Node dot on the rail — compound Amber per the pin rules.
+            // Node dot on the rail, compound Amber per the pin rules.
             HStack(spacing: 8) {
                 Circle()
                     .fill(LoreColor.amber)
                     .strokeBorder(LoreColor.ink, lineWidth: 1.5)
                     .frame(width: 14, height: 14)
-                    // The snapped dot swells a touch — the "pop" landing.
+                    // The snapped dot swells a touch, the "pop" landing.
                     .scaleEffect(isSnapped && !reduceMotion ? 1.25 : 1.0)
                 Rectangle()
                     .fill(LoreColor.ink700)

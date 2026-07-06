@@ -1,6 +1,6 @@
 import Foundation
 
-/// Row shape of the `visit` table — a logged "I was here" event that feeds the
+/// Row shape of the `visit` table, a logged "I was here" event that feeds the
 /// achievement engine. Own rows only, via RLS; clients INSERT, then call
 /// `recompute_achievements` to settle newly-unlocked badges.
 /// `GET /rest/v1/visit` (with a user bearer token)
@@ -40,7 +40,7 @@ struct Visit: Codable, Identifiable, Hashable {
         self.source = source
     }
 
-    /// How a visit came to be logged — passed to `logVisit(placeID:source:)`.
+    /// How a visit came to be logged, passed to `logVisit(placeID:source:)`.
     enum Source: String {
         /// Locked a Tier-A pin in the camera.
         case scanner

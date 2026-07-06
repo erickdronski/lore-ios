@@ -9,7 +9,7 @@ import SwiftUI
 /// It is deliberately thin: it owns the fetched `UserPrefs?`, a `load(auth:)`
 /// that resolves against the current session, and it forwards the loaded prefs
 /// into the Travel layer (`TravelSession.bootstrap`) so the filter chips and
-/// pin weighting hydrate in one hop. Signed-out is first-class — no session
+/// pin weighting hydrate in one hop. Signed-out is first-class, no session
 /// means `prefs == nil`, which every consumer already treats as "no lens, show
 /// everything" (`MapRelevance`, `InterestMap`).
 ///
@@ -20,13 +20,13 @@ import SwiftUI
 @MainActor
 final class PrefsCoordinator {
     /// The signed-in user's curation prefs, once loaded. `nil` before the first
-    /// load or when signed out — consumers read this as the un-personalized map.
+    /// load or when signed out, consumers read this as the un-personalized map.
     private(set) var prefs: UserPrefs?
 
     /// True while a load is in flight (a surface can show a quiet spinner).
     private(set) var isLoading = false
 
-    /// The last load's error, if any. Non-fatal — the app runs un-personalized.
+    /// The last load's error, if any. Non-fatal, the app runs un-personalized.
     private(set) var lastError: String?
 
     /// Whether we've completed at least one load for the current identity, so a

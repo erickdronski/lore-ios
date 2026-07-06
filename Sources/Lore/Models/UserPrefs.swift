@@ -1,6 +1,6 @@
 import Foundation
 
-/// Row shape of the `user_prefs` table — the onboarding-set curation profile
+/// Row shape of the `user_prefs` table, the onboarding-set curation profile
 /// (13-CURATION-PERSONAS.md): a primary lens plus multi-select interests that
 /// weight (never wall) the map, near-you shelf, scanner, and dossiers. Own row
 /// only, via RLS.
@@ -10,13 +10,13 @@ import Foundation
 /// `affinity` (jsonb tag→weight map the app learns), `onboarded`.
 struct UserPrefs: Codable, Identifiable, Hashable {
     let userID: String
-    /// The primary lens chosen at onboarding — sets interest defaults and the
+    /// The primary lens chosen at onboarding, sets interest defaults and the
     /// docent copy register. `traveler` when skipped.
     let persona: Persona
     /// The real curation signal (`architecture`, `history`, `nightlife`, …).
     /// Raw tag-interest slugs; map to data via `InterestMap`.
     let interests: [String]
-    /// Hard "not interested" `place.kind`s the user toggled off — a wall, not
+    /// Hard "not interested" `place.kind`s the user toggled off, a wall, not
     /// a weight (the only hard filter in the persona system).
     let hiddenKinds: [String]
     /// Learned tag→tap affinity (`{ "art-deco": 0.7, … }`) that silently nudges
@@ -121,7 +121,7 @@ struct UserPrefs: Codable, Identifiable, Hashable {
         return 0
     }
 
-    /// Body for `upsertPrefs` — the mutable subset the client writes back
+    /// Body for `upsertPrefs`, the mutable subset the client writes back
     /// (never `user_id`; RLS derives it from the JWT). `affinity` is
     /// server-learned and omitted here.
     var upsertPayload: [String: Any] {

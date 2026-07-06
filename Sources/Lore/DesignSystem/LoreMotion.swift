@@ -1,20 +1,20 @@
 import SwiftUI
 import UIKit
 
-/// "Reveal" motion tokens — 1:1 with `lore/brand/tokens/tokens.json` §motion.
-/// Nothing pops in — things *bloom*, *unfurl*, *settle*. No ad-hoc curves in
+/// "Reveal" motion tokens, 1:1 with `lore/brand/tokens/tokens.json` §motion.
+/// Nothing pops in, things *bloom*, *unfurl*, *settle*. No ad-hoc curves in
 /// views: every animation in the app goes through this enum
 /// (brand/DESIGN.md §6).
 enum LoreMotion {
     // MARK: Durations (seconds)
 
-    /// 120 ms — touch feedback, chip toggles, pill mode switches.
+    /// 120 ms, touch feedback, chip toggles, pill mode switches.
     static let tapDuration: TimeInterval = 0.120
-    /// 320 ms — pin entrance: scale 0.6→1.0 + opacity 0→1.
+    /// 320 ms, pin entrance: scale 0.6→1.0 + opacity 0→1.
     static let bloomDuration: TimeInterval = 0.320
-    /// 420 ms — Layer-1 card rising from the pin; sheet presentations.
+    /// 420 ms, Layer-1 card rising from the pin; sheet presentations.
     static let unfurlDuration: TimeInterval = 0.420
-    /// 800 ms — ambient settles: map recenters, cluster expand.
+    /// 800 ms, ambient settles: map recenters, cluster expand.
     static let driftDuration: TimeInterval = 0.800
     /// 40 ms per pin, max 6 staggered then simultaneous.
     static let staggerPerPin: TimeInterval = 0.040
@@ -24,22 +24,22 @@ enum LoreMotion {
 
     // MARK: Animations
 
-    /// `reveal.tap` — easeOut cubic-bezier(0.2, 0, 0, 1), 120 ms.
+    /// `reveal.tap`, easeOut cubic-bezier(0.2, 0, 0, 1), 120 ms.
     static var tap: Animation {
         reduced(.timingCurve(0.2, 0, 0, 1, duration: tapDuration))
     }
 
-    /// `reveal.bloom` — spring(response 0.38, damping 0.78), ~320 ms.
+    /// `reveal.bloom`, spring(response 0.38, damping 0.78), ~320 ms.
     static var bloom: Animation {
         reduced(.spring(response: 0.38, dampingFraction: 0.78))
     }
 
-    /// `reveal.unfurl` — spring(response 0.50, damping 0.86), ~420 ms.
+    /// `reveal.unfurl`, spring(response 0.50, damping 0.86), ~420 ms.
     static var unfurl: Animation {
         reduced(.spring(response: 0.50, dampingFraction: 0.86))
     }
 
-    /// `reveal.drift` — easeInOut, 800 ms.
+    /// `reveal.drift`, easeInOut, 800 ms.
     static var drift: Animation {
         reduced(.easeInOut(duration: driftDuration))
     }
@@ -77,50 +77,50 @@ enum LoreMotion {
 /// | `slow`  | hero / ambient / arrival      | .80 · .86 (cinematic) |
 ///
 /// Every token has three forms:
-/// - `LoreSpring.snappy` — the plain `.spring`.
-/// - `LoreSpring.snappyInteractive` — the `.interactiveSpring`, for
+/// - `LoreSpring.snappy`, the plain `.spring`.
+/// - `LoreSpring.snappyInteractive`, the `.interactiveSpring`, for
 ///   gesture-tracked / interruptible motion (drag, press-and-hold).
-/// - `LoreSpring.snappy(reduceMotion:)` — Reduce-Motion-aware: returns a
+/// - `LoreSpring.snappy(reduceMotion:)`, Reduce-Motion-aware: returns a
 ///   160 ms crossfade when the flag is set. Prefer this in views, driving it
 ///   from `@Environment(\.accessibilityReduceMotion)`.
 enum LoreSpring {
     // MARK: Response / damping tokens (LUXURY-MOTION §2)
 
-    /// Buttons, chips, taps — quick, no overshoot.
+    /// Buttons, chips, taps, quick, no overshoot.
     static let snappyResponse: Double = 0.28
     static let snappyDamping: Double = 0.82
-    /// Arrivals — pins landing, card open, badge pop; visible overshoot.
+    /// Arrivals, pins landing, card open, badge pop; visible overshoot.
     static let bounceResponse: Double = 0.50
     static let bounceDamping: Double = 0.68
-    /// Sheets, panels, page transitions — settled, no overshoot.
+    /// Sheets, panels, page transitions, settled, no overshoot.
     static let smoothResponse: Double = 0.45
     static let smoothDamping: Double = 0.90
-    /// Hero / ambient / the arrival — slow and cinematic.
+    /// Hero / ambient / the arrival, slow and cinematic.
     static let slowResponse: Double = 0.80
     static let slowDamping: Double = 0.86
 
     // MARK: Plain springs
 
-    /// `spring.snappy` — response .28, damping .82. Buttons, chips, taps.
+    /// `spring.snappy`, response .28, damping .82. Buttons, chips, taps.
     static var snappy: Animation {
         .spring(response: snappyResponse, dampingFraction: snappyDamping)
     }
-    /// `spring.bounce` — response .5, damping .68. Arrivals; visible overshoot.
+    /// `spring.bounce`, response .5, damping .68. Arrivals; visible overshoot.
     static var bounce: Animation {
         .spring(response: bounceResponse, dampingFraction: bounceDamping)
     }
-    /// `spring.smooth` — response .45, damping .9. Sheets, panels, transitions.
+    /// `spring.smooth`, response .45, damping .9. Sheets, panels, transitions.
     static var smooth: Animation {
         .spring(response: smoothResponse, dampingFraction: smoothDamping)
     }
-    /// `spring.slow` — response .8, damping .86. Hero / ambient / arrival.
+    /// `spring.slow`, response .8, damping .86. Hero / ambient / arrival.
     static var slow: Animation {
         .spring(response: slowResponse, dampingFraction: slowDamping)
     }
 
     // MARK: Interactive springs (gesture-tracked, interruptible)
 
-    /// Interruptible `snappy` — for press-and-hold and gesture tracking.
+    /// Interruptible `snappy`, for press-and-hold and gesture tracking.
     static var snappyInteractive: Animation {
         .interactiveSpring(response: snappyResponse, dampingFraction: snappyDamping)
     }
@@ -128,7 +128,7 @@ enum LoreSpring {
     static var bounceInteractive: Animation {
         .interactiveSpring(response: bounceResponse, dampingFraction: bounceDamping)
     }
-    /// Interruptible `smooth` — sheet drags, panel drags.
+    /// Interruptible `smooth`, sheet drags, panel drags.
     static var smoothInteractive: Animation {
         .interactiveSpring(response: smoothResponse, dampingFraction: smoothDamping)
     }

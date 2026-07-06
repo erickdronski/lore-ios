@@ -4,7 +4,7 @@ import Observation
 /// Audio-first, hands-free narration for the scanner (docs/12 §3.2): resolving
 /// a Tier-A pin can **auto-offer** the ~20-second narrated hook so a walker
 /// never has to read while moving. "Keep walking, I'll tell you" is the docent
-/// mode, the phone talks and the user looks up at the actual building — the
+/// mode, the phone talks and the user looks up at the actual building, the
 /// accessibility win *and* the magic moment.
 ///
 /// P0 is on-device `AVSpeechSynthesizer` (TTS now, recorded voice later, docs/02
@@ -35,7 +35,7 @@ final class NarrationService {
 
     /// The ~20-second hook line for a place, docent voice. Prefers the authored
     /// Layer-1 hook; falls back to a persona-flavored orienting line built from
-    /// the place's own facts (never invents history — only reads what's there).
+    /// the place's own facts (never invents history, only reads what's there).
     static func hookText(for place: Place, register: String) -> String {
         if let hook = place.layer1?.hook, !hook.isEmpty {
             return hook
@@ -59,7 +59,7 @@ final class NarrationService {
         offered = place
     }
 
-    /// The user tapped "Keep walking, I'll tell you" — speak the hook. Sets the
+    /// The user tapped "Keep walking, I'll tell you", speak the hook. Sets the
     /// audio session to duck/ mix so it plays over the ambient world without
     /// hijacking other audio harder than it needs to.
     func speak(_ place: Place, register: String) {

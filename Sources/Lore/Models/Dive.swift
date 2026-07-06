@@ -1,6 +1,6 @@
 import Foundation
 
-/// Row shape of the `dive` table — the cached deep-dive dossier for one place
+/// Row shape of the `dive` table, the cached deep-dive dossier for one place
 /// (synthesized once, read many; lore/docs/03-ARCHITECTURE.md §7).
 ///
 /// Live PostgREST columns: `place_id`, `narrative`, `timeline`, `links`,

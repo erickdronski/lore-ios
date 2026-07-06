@@ -1,26 +1,26 @@
 import CoreLocation
 import SwiftUI
 
-/// The scanner viewfinder — **v2**, the intelligence layer over the coarse
+/// The scanner viewfinder, **v2**, the intelligence layer over the coarse
 /// GPS + compass pose (docs/12-SCANNER-INTELLIGENCE.md, on top of the docs/05
 /// §5 rung-2 geometry). What v1 did with flat bearing chips, v2 does with the
 /// full contract:
 ///
-/// - **§3 ranking** — persona-weighted (`InterestMap.relevanceScore`) +
+/// - **§3 ranking**, persona-weighted (`InterestMap.relevanceScore`) +
 ///   distance + gaze + novelty + context, only the top few rendered
 ///   (`ScannerRanking.rank`).
-/// - **§2 confidence tiers, honest** — Tier A locked pin *only* when the
+/// - **§2 confidence tiers, honest**, Tier A locked pin *only* when the
 ///   geometry earns it, Tier B floating bearing chip, Tier C directional
 ///   cluster with no on-building claim (`ScannerRanking.tier`).
-/// - **§3.1 meanwhile-nearby stories** — moments floated at their real spot,
+/// - **§3.1 meanwhile-nearby stories**, moments floated at their real spot,
 ///   *"On this spot, 1934…"* (`StoryMarker`).
-/// - **§2.1 disambiguation stack** — clustered candidates collapse into one
+/// - **§2.1 disambiguation stack**, clustered candidates collapse into one
 ///   "one of these three" chip (`StackChip`).
-/// - **reticle** — Amber corner-frame + scanline + breathing compass ring
+/// - **reticle**, Amber corner-frame + scanline + breathing compass ring
 ///   (`ScannerReticle`, `CompassRing`).
-/// - **§3.2 audio auto-offer** — a Tier-A lock offers the narrated hook
+/// - **§3.2 audio auto-offer**, a Tier-A lock offers the narrated hook
 ///   (`NarrationService`), hands-free docent mode.
-/// - **haptics** — `.rigid` on lock, `.selection` as chips pass center
+/// - **haptics**, `.rigid` on lock, `.selection` as chips pass center
 ///   (brand/ELEVATION §4).
 ///
 /// The honesty contract (docs/12 §2, docs/05 §4.2) is enforced in the ranking
@@ -78,7 +78,7 @@ struct ScannerScreen: View {
                     geoPins
                 } else {
                     lockedPin(size: proxy.size)
-                        // A lock is an arrival — the pin blooms in with `spring.bounce`
+                        // A lock is an arrival, the pin blooms in with `spring.bounce`
                         // (its `.rigid` haptic fires in the model). Reduce Motion
                         // crossfades. Keyed on identity so only a *new* lock animates.
                         .animation(
@@ -134,7 +134,7 @@ struct ScannerScreen: View {
         .onDisappear { model.stopSensors() }
     }
 
-    // MARK: Tier A — the locked pin
+    // MARK: Tier A, the locked pin
 
     /// The single Tier-A resolve: a solid Amber pin anchored where the building
     /// sits in the FOV, name below (docs/12 §2 Tier A). Only one at a time —
@@ -205,7 +205,7 @@ struct ScannerScreen: View {
         )
     }
 
-    // MARK: Tier B — bearing chips + stacks
+    // MARK: Tier B, bearing chips + stacks
 
     /// Tier-B candidates inside the FOV, positioned by bearing. Clustered
     /// candidates render as a stack chip ("one of these three"); singletons as
@@ -228,7 +228,7 @@ struct ScannerScreen: View {
                 x: chipX(fraction: cluster.screenFraction, width: size.width),
                 y: size.height * 0.24 + CGFloat(index) * 56
             )
-            // Track the bearing on an interruptible spring — a chip slides to its
+            // Track the bearing on an interruptible spring, a chip slides to its
             // new position rather than teleporting each reprojection frame.
             .animation(
                 reduceMotion ? nil : LoreSpring.smoothInteractive,
@@ -238,7 +238,7 @@ struct ScannerScreen: View {
         }
     }
 
-    // MARK: §3.1 — meanwhile-nearby story markers
+    // MARK: §3.1, meanwhile-nearby story markers
 
     @ViewBuilder
     private func storyMarkers(size: CGSize) -> some View {
@@ -257,7 +257,7 @@ struct ScannerScreen: View {
         }
     }
 
-    // MARK: Tier C + off-screen — the directional rail
+    // MARK: Tier C + off-screen, the directional rail
 
     /// Off-screen and Tier-C candidates as a distance-sorted bottom rail: the
     /// "Willis Tower ↖ 600 m" chips (docs/05 §5 rung 2) plus the Tier-C
@@ -275,7 +275,7 @@ struct ScannerScreen: View {
         .padding(.bottom, 8)
     }
 
-    // MARK: Bottom bar — compass + haunted toggle + mode
+    // MARK: Bottom bar, compass + haunted toggle + mode
 
     private var bottomBar: some View {
         HStack(spacing: 8) {
@@ -353,9 +353,9 @@ struct ScannerScreen: View {
         ))
     }
 
-    // MARK: §3.2 — the audio auto-offer
+    // MARK: §3.2, the audio auto-offer
 
-    /// "Keep walking, I'll tell you" — the hands-free offer that appears on a
+    /// "Keep walking, I'll tell you", the hands-free offer that appears on a
     /// Tier-A lock (docs/12 §3.2). We offer, never auto-play (open Q4 etiquette).
     private func audioOffer(for place: Place) -> some View {
         Button {
@@ -553,7 +553,7 @@ final class ScannerModel {
     private(set) var inViewStories: [ProjectedStory] = []
     private(set) var directionalCandidates: [ScannerRanking.Ranked] = []
 
-    /// Places the user has already opened this session — the novelty signal
+    /// Places the user has already opened this session, the novelty signal
     /// (docs/12 §3 `w_fresh`). In-memory only at P0; P1 seeds it from `visit`.
     private var seenPlaceIDs: Set<String> = []
 
@@ -570,7 +570,7 @@ final class ScannerModel {
     /// The place currently locked (Tier A), for the reticle "firm up" state.
     var lockedPlace: Place? { lockedRanked?.place }
 
-    /// True when any nearby story is haunted — gates the "Spooky nearby" toggle.
+    /// True when any nearby story is haunted, gates the "Spooky nearby" toggle.
     var hasHauntedNearby: Bool { inViewStories.contains { $0.story.isHaunted } || stories.contains(where: \.isHaunted) }
 
     var statusLine: String {
@@ -754,7 +754,7 @@ final class ScannerModel {
 
     // MARK: Projection loop
 
-    /// Re-projects at ~5 Hz — well under the 10–15 Hz AR budget, plenty for
+    /// Re-projects at ~5 Hz, well under the 10–15 Hz AR budget, plenty for
     /// compass-grade heading, cheap on battery (docs/05 §7).
     private func startProjectionLoop() {
         projectionTask?.cancel()

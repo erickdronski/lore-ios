@@ -1,7 +1,7 @@
 import CoreLocation
 import Foundation
 
-/// Row shape of the `city` table — the roster of chronicled cities.
+/// Row shape of the `city` table, the roster of chronicled cities.
 /// `GET /rest/v1/city?status=eq.live&order=sort`
 ///
 /// ```json
@@ -23,12 +23,12 @@ struct City: Codable, Identifiable, Hashable {
     let lng: Double
     /// Default MapKit / MapLibre zoom for the arrival fly-to.
     let zoom: Double?
-    /// `live` | `coming_soon` | … — only `live` cities are fetched for pins.
+    /// `live` | `coming_soon` | …, only `live` cities are fetched for pins.
     let status: String
     /// Curated display order in the city switcher.
     let sort: Int?
 
-    /// `slug` is the identity — the table has no `id` column.
+    /// `slug` is the identity, the table has no `id` column.
     var id: String { slug }
 
     var coordinate: CLLocationCoordinate2D {

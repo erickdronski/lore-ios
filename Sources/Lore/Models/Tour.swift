@@ -14,7 +14,7 @@ struct Tour: Codable, Identifiable, Hashable {
     let blurb: String?
     let durationMin: Int?
     let distanceKm: Double?
-    /// Embedded stops — present when fetched with `select=*,tour_stop(*)`.
+    /// Embedded stops, present when fetched with `select=*,tour_stop(*)`.
     let stops: [TourStop]
 
     enum CodingKeys: String, CodingKey {

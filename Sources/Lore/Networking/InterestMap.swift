@@ -5,7 +5,7 @@ import Foundation
 /// §2 note): the interest→match table is tuned here without a migration.
 ///
 /// Curation is weighting, never a wall (§3): matched pins render prominent,
-/// unmatched ones dim and cluster first — but everything can still appear, and
+/// unmatched ones dim and cluster first, but everything can still appear, and
 /// "show everything" is always one tap. `hidden_kinds` is the one hard filter.
 enum InterestMap {
 
@@ -27,7 +27,7 @@ enum InterestMap {
 
     /// How each interest maps onto the tags a place already carries (13 §2).
     /// `hidden_gems` and `trending` are computed (density / flag), so they hold
-    /// no tag list here — see `matches(place:interest:)`.
+    /// no tag list here, see `matches(place:interest:)`.
     static let interestTags: [String: [String]] = [
         "architecture": [
             "art-deco", "beaux-arts", "brutalist", "neo-gothic", "modernist",
@@ -119,7 +119,7 @@ enum InterestMap {
         }
     }
 
-    /// The set of a user's interests this place matches — drives whether a pin
+    /// The set of a user's interests this place matches, drives whether a pin
     /// renders prominent vs. dimmed.
     static func matchedInterests(place: Place, prefs: UserPrefs) -> Set<String> {
         var hits: Set<String> = []
@@ -133,7 +133,7 @@ enum InterestMap {
 
     /// Per-persona tag boosts (13 §4: each mode biases the ranking). A tag in
     /// this map adds to a place's relevance for that persona even when the user
-    /// didn't explicitly pick the matching interest — the lens itself leans.
+    /// didn't explicitly pick the matching interest, the lens itself leans.
     static let personaTagBoost: [UserPrefs.Persona: [String]] = [
         .traveler: ["skyline-icon", "monument", "observation-deck"],
         .local: ["hidden", "survivor", "dive-bar"],
@@ -159,7 +159,7 @@ enum InterestMap {
     /// term in the scanner's ranking formula, 12 §3 / 13 §3). Higher = more
     /// "for you"; unmatched places score 0 here (they still render, just quiet).
     ///
-    /// This is *only* the personalization term — callers combine it with
+    /// This is *only* the personalization term, callers combine it with
     /// proximity, prominence, gaze, and novelty for the final rank.
     static func relevanceScore(place: Place, prefs: UserPrefs) -> Double {
         var score = 0.0

@@ -3,13 +3,13 @@ import SwiftUI
 import WidgetKit
 
 /// The **active-tour Live Activity** (docs/16-APPLE-TOOLKITS.md §8): a walking
-/// tour pinned to the Lock Screen and Dynamic Island — *Stop 3 of 7 · Wrigley
+/// tour pinned to the Lock Screen and Dynamic Island, *Stop 3 of 7 · Wrigley
 /// Building · 200 m ahead*.
 ///
 /// Renders `TourActivityAttributes` (shared with the app, which starts/updates
 /// the activity). Three presentations: the Lock-Screen/banner view, the expanded
 /// Dynamic Island, and the compact + minimal Island. Updates are driven
-/// on-device from Core Location by the app (docs/16 §8 — no push token for a
+/// on-device from Core Location by the app (docs/16 §8, no push token for a
 /// self-guided walk).
 struct TourLiveActivityWidget: Widget {
     var body: some WidgetConfiguration {
@@ -20,7 +20,7 @@ struct TourLiveActivityWidget: Widget {
                 .activitySystemActionForegroundColor(LoreBrand.amber)
         } dynamicIsland: { context in
             DynamicIsland {
-                // Expanded — the rich, pulled-open state.
+                // Expanded, the rich, pulled-open state.
                 DynamicIslandExpandedRegion(.leading) {
                     Text(context.attributes.emoji)
                         .font(.system(size: 28))
@@ -64,7 +64,7 @@ struct TourLiveActivityWidget: Widget {
             } compactLeading: {
                 Text(context.attributes.emoji).font(.system(size: 15))
             } compactTrailing: {
-                // "3/7" — where we are along the walk, at a glance.
+                // "3/7", where we are along the walk, at a glance.
                 Text("\(context.state.currentStopIndex)/\(context.attributes.totalStops)")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(LoreBrand.amber)

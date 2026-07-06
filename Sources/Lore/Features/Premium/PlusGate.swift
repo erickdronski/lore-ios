@@ -2,12 +2,12 @@ import SwiftUI
 
 /// The reusable premium gate. Wrap any Lore+ surface (a tour route, an audio
 /// player, an offline-pack download) and `PlusGate` shows the real content to
-/// members and a tasteful locked state to everyone else — with an
+/// members and a tasteful locked state to everyone else, with an
 /// `UnlockButton` that presents the paywall.
 ///
 /// Doctrine (docs/00 §7 + brand/ELEVATION.md §7): the gate never modal-slams.
 /// It's the *content itself* that resolves to a lock, with docent copy naming
-/// what's behind it — "Curated walks, turn by turn" — not a generic wall. One
+/// what's behind it, "Curated walks, turn by turn", not a generic wall. One
 /// warning haptic fires the first time a locked gate appears, never repeated.
 ///
 /// Two presentation styles:
@@ -15,7 +15,7 @@ import SwiftUI
 ///   (blurred teaser + reason + unlock CTA). Use where the gated thing is the
 ///   whole screen region (audio player, offline pack).
 /// - `.overlay`: renders the content dimmed underneath with a lock veil and
-///   CTA on top — use when a *taste* of the content should still be visible
+///   CTA on top, use when a *taste* of the content should still be visible
 ///   (a tour's map with the route locked).
 ///
 /// Usage:
@@ -31,7 +31,7 @@ import SwiftUI
 struct PlusGate<Content: View>: View {
     /// `EntitlementStore.isPlus` at the call site.
     let isPlus: Bool
-    /// Which Lore+ surface this is — drives the icon + docent copy.
+    /// Which Lore+ surface this is, drives the icon + docent copy.
     let feature: PlusFeature
     /// Present the paywall.
     let onUnlock: () -> Void
@@ -63,7 +63,7 @@ struct PlusGate<Content: View>: View {
 
 /// The catalog of gate-able Lore+ surfaces, each carrying its own icon and
 /// docent copy so every gate in the app reads consistently (docs/00 §7 lists
-/// the four: tours, offline, audio, early cities — plus the dive-meter gate,
+/// the four: tours, offline, audio, early cities, plus the dive-meter gate,
 /// which has its own richer surface in `DiveGateCard`).
 enum PlusFeature {
     case tours
@@ -83,7 +83,7 @@ enum PlusFeature {
         }
     }
 
-    /// The headline on the locked panel — a noun, not a pitch.
+    /// The headline on the locked panel, a noun, not a pitch.
     var title: String {
         switch self {
         case .tours: return "Curated walks"
@@ -94,7 +94,7 @@ enum PlusFeature {
         }
     }
 
-    /// The line under it — specific, warm, docent voice (brand/ELEVATION.md §1).
+    /// The line under it, specific, warm, docent voice (brand/ELEVATION.md §1).
     /// No em dashes anywhere in displayed copy (§1 hard rule).
     var blurb: String {
         switch self {

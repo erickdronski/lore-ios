@@ -2,7 +2,7 @@ import SwiftUI
 
 /// The persona-weighted map overlay's brain (task requirement 3): turns
 /// `InterestMap.relevanceScore` into concrete per-pin visual weighting the map
-/// integrator applies to each annotation — **dimming** non-matching pins rather
+/// integrator applies to each annotation, **dimming** non-matching pins rather
 /// than removing them.
 ///
 /// Doctrine (13-CURATION-PERSONAS.md §3): *curation is weighting, never a wall.*
@@ -16,7 +16,7 @@ import SwiftUI
 /// `MapScreen` needing to change shape.
 struct MapRelevance {
     /// The user's curation profile. `nil` ⇒ no personalization (everything is
-    /// full-strength — the pre-onboarding / signed-out map).
+    /// full-strength, the pre-onboarding / signed-out map).
     let prefs: UserPrefs?
 
     /// Whether any category filter chips are actively narrowing the map. When
@@ -31,7 +31,7 @@ struct MapRelevance {
 
     // MARK: - Tunables
 
-    /// Opacity a fully-unmatched pin fades to (never 0 — it must stay tappable
+    /// Opacity a fully-unmatched pin fades to (never 0, it must stay tappable
     /// and legible; §3 "everything can still appear").
     static let dimmedOpacity: Double = 0.32
     /// Opacity a matched / relevant pin holds.
@@ -42,7 +42,7 @@ struct MapRelevance {
 
     /// Relevance at/above this counts as "matched" for the bright/dim split.
     /// Kept low so a single interest hit or persona-lens boost is enough to
-    /// stay bright — the lens *nudges*, it doesn't gatekeep.
+    /// stay bright, the lens *nudges*, it doesn't gatekeep.
     static let matchThreshold: Double = 0.5
 
     // MARK: - Per-pin weighting
@@ -74,7 +74,7 @@ struct MapRelevance {
         return isRelevant(place) ? Self.brightOpacity : Self.dimmedOpacity
     }
 
-    /// Scale factor for a pin — a gentle emphasis for matched pins under an
+    /// Scale factor for a pin, a gentle emphasis for matched pins under an
     /// active filter, identity otherwise.
     func scale(for place: Place) -> CGFloat {
         guard prefs != nil, hasActiveFilter else { return Self.matchedScale }
@@ -108,7 +108,7 @@ struct MapRelevance {
     }
 }
 
-/// The per-pin visual weighting a map annotation applies. Pure data — the map
+/// The per-pin visual weighting a map annotation applies. Pure data, the map
 /// reads it and modulates its existing `PlacePinBadge` (no `MapScreen` edit).
 struct PinWeighting: Equatable {
     let opacity: Double
@@ -142,7 +142,7 @@ extension View {
 }
 
 /// A small overlay glyph an integrator can badge onto a visited pin so the
-/// living map shows travel progress at a glance — a Brass seal tucked at the
+/// living map shows travel progress at a glance, a Brass seal tucked at the
 /// pin's shoulder. Additive; compose over `PlacePinBadge` when
 /// `VisitStore.hasVisited(place.id)` is true.
 struct VisitedPinAccent: View {

@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// "Meet {City}" — the culture surface. A warm, playful introduction to how a
+/// "Meet {City}", the culture surface. A warm, playful introduction to how a
 /// city *talks and thinks*, built entirely from the `city_culture` table:
 ///
 /// - a rotating famous **quote** at the top (the world's words),
@@ -18,7 +18,7 @@ struct CultureView: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var model = CultureModel()
-    /// Rises once on load so the Amber horizon glow swells — the meet-the-city
+    /// Rises once on load so the Amber horizon glow swells, the meet-the-city
     /// cinematic beat (LUXURY-MOTION §6, §7).
     @State private var glowRisen = false
 
@@ -66,7 +66,7 @@ struct CultureView: View {
 
     // MARK: - Cinematic sky
 
-    /// The Ink surface with an Amber horizon glow that rises on load — the same
+    /// The Ink surface with an Amber horizon glow that rises on load, the same
     /// cinematic "meet-the-city" treatment as the arrival (LUXURY-MOTION §6).
     private var cinematicSky: some View {
         ZStack {
@@ -87,7 +87,7 @@ struct CultureView: View {
     // MARK: - Loading
 
     /// Content-shaped skeleton (LUXURY-MOTION §3): a quote-card block over a row
-    /// of portrait discs — no spinner.
+    /// of portrait discs, no spinner.
     private var loadingSkeleton: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 32) {
@@ -328,9 +328,9 @@ final class CultureModel {
     /// The full culture set for the city, split by register once on load.
     private(set) var quotes: [CityCulture] = []
     private(set) var people: [CityCulture] = []
-    /// Slang words — the "Local Lingo" flip cards.
+    /// Slang words, the "Local Lingo" flip cards.
     private(set) var lingo: [CityCulture] = []
-    /// Sayings — turns of phrase, also shown as flip cards.
+    /// Sayings, turns of phrase, also shown as flip cards.
     private(set) var sayings: [CityCulture] = []
 
     /// The person whose bio sheet is presented, if any.

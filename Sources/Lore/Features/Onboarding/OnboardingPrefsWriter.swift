@@ -4,7 +4,7 @@ import Foundation
 /// through `LoreAPI` with the signed-in user's token.
 ///
 /// Signed-out is a first-class path. Onboarding runs before any account exists
-/// (browsing never requires sign-in — see `SignInView`'s copy), so when there's
+/// (browsing never requires sign-in, see `SignInView`'s copy), so when there's
 /// no session this writer **succeeds silently**: the flow's selections are
 /// still applied to the local flag, and the persona/interests are remembered in
 /// UserDefaults so a later sign-in (or the integrator) can replay the write.

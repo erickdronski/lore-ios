@@ -6,8 +6,8 @@ import Foundation
 /// a user bearer token where RLS needs `auth.uid()` (`visit`, `user_prefs`).
 ///
 /// Two calls live here:
-/// - `visits(accessToken:)` — hydrate the "Been here" set (`GET /visit`).
-/// - `updateHiddenKinds(_:accessToken:)` — persist the map filter chips'
+/// - `visits(accessToken:)`, hydrate the "Been here" set (`GET /visit`).
+/// - `updateHiddenKinds(_:accessToken:)`, persist the map filter chips'
 ///   category toggles to `user_prefs.hidden_kinds` (`PATCH /user_prefs`).
 ///
 /// When the shared client grows these (a natural addition to `LoreAPI`), the

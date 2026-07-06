@@ -53,7 +53,7 @@ struct Place: Codable, Identifiable, Hashable {
 }
 
 /// The Layer-1 card projection embedded in `place_explore.layer1` (jsonb).
-/// Hooks are authored from CC0/PD/user_cla sources only — never CC-BY-SA
+/// Hooks are authored from CC0/PD/user_cla sources only, never CC-BY-SA
 /// (lore/docs/04-DATA-SCHEMA.md §2.2); safe to render without attribution.
 struct Layer1: Codable, Hashable {
     let hook: String?

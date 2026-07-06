@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The visual grammar of a single achievement badge — the medallion, its tier
+/// The visual grammar of a single achievement badge, the medallion, its tier
 /// finish, and (when in progress) a progress ring drawn around it. Shared by
 /// the Passport wall and the unlock celebration so a badge looks identical the
 /// moment it lands and forever after on the wall.
@@ -9,7 +9,7 @@ import SwiftUI
 /// family (quiet), gold in Brass ("reserved for money and mastery"), and the
 /// top "legend" tier gets the Amber beacon. The `Achievement.Tier` enum only
 /// models bronze/silver/gold/platinum and falls back to bronze for anything
-/// unknown, so we resolve the *display* tier from a raw string here — a DB
+/// unknown, so we resolve the *display* tier from a raw string here, a DB
 /// "legend" row renders as Legend without touching the shared model.
 
 // MARK: - Tier finish
@@ -64,7 +64,7 @@ enum BadgeTier: String, CaseIterable {
     }
 
     /// Only gold + legend earn the Brass/Amber prestige treatment (a subtle
-    /// glow ring). Bronze/silver stay quiet — Brass is earned, not default.
+    /// glow ring). Bronze/silver stay quiet, Brass is earned, not default.
     var isPrestige: Bool { self == .gold || self == .legend }
 }
 
@@ -112,7 +112,7 @@ struct ProgressRing: View {
 /// - **unlocked**: full-color medallion, tier ring, name + tier label.
 /// - **inProgress**: dimmed medallion inside a progress ring, "n / target".
 /// - **locked**: greyed medallion outline, name shown, no progress.
-/// - **secret** (locked + `secret`): a mystery tile — "?" glyph, "Secret",
+/// - **secret** (locked + `secret`): a mystery tile, "?" glyph, "Secret",
 ///   the name and emoji withheld until earned (brand voice: intrigue, not
 ///   spoilers).
 struct AchievementBadge: View {

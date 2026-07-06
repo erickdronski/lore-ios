@@ -1,16 +1,16 @@
 import SwiftUI
 
-/// The viewfinder reticle — the two sanctioned ambient loops of the scanner
+/// The viewfinder reticle, the two sanctioned ambient loops of the scanner
 /// (brand/ELEVATION.md §3): the Amber **corner-frame** with a 1px **scanline**
 /// sweep (3.2s, 12% opacity) and the **breathing** center that privileges
 /// gaze. Everything is transform/opacity only and honors Reduce Motion (the
-/// loops stop, the frame stays — information delivery is never removed,
+/// loops stop, the frame stays, information delivery is never removed,
 /// brand/DESIGN.md §6).
 ///
 /// This is chrome over the live camera, so it obeys the AR color rule: only
 /// Amber/Ink/Bone in the viewfinder, no semantic colors (brand/DESIGN.md §4).
 struct ScannerReticle: View {
-    /// True while a Tier-A candidate is locked — the frame firms up (fuller
+    /// True while a Tier-A candidate is locked, the frame firms up (fuller
     /// Amber, one settle) so a lock *looks* different from a hunt (docs/12 §2).
     var isLocked: Bool
 
@@ -18,7 +18,7 @@ struct ScannerReticle: View {
     @State private var scanY: CGFloat = 0
     @State private var breathe = false
 
-    /// Reticle box is a centered square, ~62% of the shorter side — big enough
+    /// Reticle box is a centered square, ~62% of the shorter side, big enough
     /// to frame a façade, small enough to keep gaze meaningful.
     private let sideFraction: CGFloat = 0.62
     private let cornerLength: CGFloat = 28
@@ -44,7 +44,7 @@ struct ScannerReticle: View {
 
     // MARK: Corner frame
 
-    /// Four Amber L-brackets — the corner-frame, never a full box (a full box
+    /// Four Amber L-brackets, the corner-frame, never a full box (a full box
     /// reads as a QR scanner, not a lens). Firms brighter when locked.
     private func cornerFrame(in rect: CGRect) -> some View {
         ReticleCorners(cornerLength: cornerLength)
@@ -56,7 +56,7 @@ struct ScannerReticle: View {
             .position(x: rect.midX, y: rect.midY)
             .scaleEffect(breathe && !reduceMotion ? 1.02 : 1.0)
             .shadow(color: LoreColor.ink.opacity(0.35), radius: 3, x: 0, y: 1)
-            // The frame firms up on a settled spring when a lock lands — one
+            // The frame firms up on a settled spring when a lock lands, one
             // confident settle, no overshoot on chrome (LUXURY-MOTION §2, §7).
             .animation(LoreSpring.smooth(reduceMotion: reduceMotion), value: isLocked)
     }
@@ -65,7 +65,7 @@ struct ScannerReticle: View {
 
     /// The `scanline` loop (ELEVATION §3): a 1px Amber sweep at 12% opacity,
     /// 3.2s, top→bottom inside the frame. Held static (hidden) under Reduce
-    /// Motion — an idle decoration, safe to drop.
+    /// Motion, an idle decoration, safe to drop.
     @ViewBuilder
     private func scanline(in rect: CGRect) -> some View {
         if !reduceMotion {
@@ -94,7 +94,7 @@ struct ScannerReticle: View {
         withAnimation(.linear(duration: 3.2).repeatForever(autoreverses: false)) {
             scanY = top + height
         }
-        // compass.breathe — 1→1.04 sine, 2.4s (ELEVATION §3). Applied here to
+        // compass.breathe, 1→1.04 sine, 2.4s (ELEVATION §3). Applied here to
         // the frame as the "acquiring" pulse; the compass ring reuses it below.
         withAnimation(.easeInOut(duration: 2.4).repeatForever(autoreverses: true)) {
             breathe = true
@@ -102,7 +102,7 @@ struct ScannerReticle: View {
     }
 }
 
-/// The four corner L-brackets as a single `Shape` — cheaper than four views and
+/// The four corner L-brackets as a single `Shape`, cheaper than four views and
 /// it strokes as one path so the Amber weight is uniform.
 private struct ReticleCorners: Shape {
     let cornerLength: CGFloat
@@ -132,7 +132,7 @@ private struct ReticleCorners: Shape {
     }
 }
 
-/// The bottom compass ring — the second sanctioned ambient loop
+/// The bottom compass ring, the second sanctioned ambient loop
 /// (`compass.breathe`, ELEVATION §3): a thin Amber heading ring that scales
 /// 1→1.04 on a 2.4s sine, with a north tick that rotates opposite the device
 /// heading so it always points at true north. Passive; not interactive.

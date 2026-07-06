@@ -3,7 +3,7 @@ import UIKit
 
 /// The "Reveal" bounce entrance (brand/ELEVATION.md §3 `spring.bounce`,
 /// stiffness 380 / damping 22, ~8% overshoot) as a reusable modifier: pins
-/// landing, chips arriving, badge pops. Nothing pops in — things *bloom* into
+/// landing, chips arriving, badge pops. Nothing pops in, things *bloom* into
 /// place, then settle.
 ///
 /// Honors Reduce Motion (§3): the bounce becomes a 160 ms opacity crossfade
@@ -38,7 +38,7 @@ struct RevealBounce: ViewModifier {
         if reduceMotion {
             return .easeInOut(duration: LoreMotion.reducedDuration).delay(0)
         }
-        // spring.bounce: stiffness 380, damping 22 — a visible overshoot.
+        // spring.bounce: stiffness 380, damping 22, a visible overshoot.
         return .interpolatingSpring(stiffness: 380, damping: 22).delay(delay)
     }
 }

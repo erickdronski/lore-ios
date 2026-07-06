@@ -3,10 +3,10 @@ import SwiftUI
 /// Profile tab.
 ///
 /// Signed out, it carries the 5.1.1 posture in copy (reading never requires
-/// an account — docs/10 §5 row 1) and offers sign-in. Signed in, it shows the
+/// an account, docs/10 §5 row 1) and offers sign-in. Signed in, it shows the
 /// `user_profile` row: handle, trust tier (Scout → Curator ladder,
 /// docs/06-CROWDSOURCING.md), Insight points. Contributions and Lore+ are
-/// deliberate stubs — their rows state which phase ships them.
+/// deliberate stubs, their rows state which phase ships them.
 struct ProfileScreen: View {
     @Environment(AuthService.self) private var auth
     @State private var showSignIn = false
@@ -70,7 +70,7 @@ struct ProfileScreen: View {
                 // The 5.1.1 posture, stated to the user, not just the
                 // reviewer: reading is never gated on an account.
                 Text(
-                    "You don't need an account to read — the map, scanner, "
+                    "You don't need an account to read, the map, scanner, "
                     + "cards, and dives all work signed out. An account adds "
                     + "contributions, Insight points, and Lore+."
                 )
@@ -133,19 +133,19 @@ struct ProfileScreen: View {
         .frame(width: 48, height: 48)
     }
 
-    // MARK: Stubs — honest about what phase ships them
+    // MARK: Stubs, honest about what phase ships them
 
     private var stubSection: some View {
         Section("Coming") {
             StubRow(
                 icon: "plus.viewfinder",
                 title: "Contributions",
-                note: "P2 — photo + 3 fields, CLA gate, peer verification"
+                note: "P2, photo + 3 fields, CLA gate, peer verification"
             )
             StubRow(
                 icon: "crown",
                 title: "Lore+",
-                note: "P3 — unlimited dives · $4.99/mo · 7-day trial"
+                note: "P3, unlimited dives · $4.99/mo · 7-day trial"
             )
         }
     }
@@ -162,7 +162,7 @@ struct ProfileScreen: View {
             HStack {
                 Text("Pilot city").font(LoreType.body)
                 Spacer()
-                Text("Chicago — Loop · Riverwalk · Museum Campus")
+                Text("Chicago, Loop · Riverwalk · Museum Campus")
                     .font(LoreType.caption)
                     .foregroundStyle(LoreColor.ink600)
             }

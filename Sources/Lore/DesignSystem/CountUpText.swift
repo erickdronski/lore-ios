@@ -10,7 +10,7 @@ import SwiftUI
 /// interpolation runs on the render thread and every intermediate frame is
 /// formatted through the caller's `format` closure (no manual timers).
 ///
-/// Under Reduce Motion the value is shown at its target immediately — no roll
+/// Under Reduce Motion the value is shown at its target immediately, no roll
 /// (LUXURY-MOTION §7: no motion where it isn't needed; the number still arrives).
 struct CountUpText: View {
     /// The destination value.
@@ -47,7 +47,7 @@ struct CountUpText: View {
 
     var body: some View {
         // A zero-size anchor carries the AnimatableModifier that re-renders the
-        // formatted text every interpolated frame — one Text, driven on the
+        // formatted text every interpolated frame, one Text, driven on the
         // render thread.
         Color.clear
             .frame(width: 0, height: 0)
@@ -91,7 +91,7 @@ private struct CountUpAnimator: ViewModifier, Animatable {
 }
 
 extension CountUpText {
-    /// Integer convenience — rolls to `Int(value)` and formats with a rounded
+    /// Integer convenience, rolls to `Int(value)` and formats with a rounded
     /// integer (optionally a suffix like " ft", " yrs"). The most common case:
     /// years, heights, points.
     static func integer(

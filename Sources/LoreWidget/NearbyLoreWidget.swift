@@ -5,13 +5,13 @@ import WidgetKit
 ///
 /// Data path: the app writes a `LoreWidgetSnapshot` to the shared App Group
 /// after each near-me refresh; this widget's `TimelineProvider` reads it. The
-/// widget itself does **no networking** — it renders the cached snapshot, or a
+/// widget itself does **no networking**, it renders the cached snapshot, or a
 /// brand-correct sample when the App Group isn't provisioned yet / the app
 /// hasn't written one (so the gallery preview and a fresh install still look
 /// right, per docs/16 §7 "shows content, not a login wall").
 ///
-/// Families: `.systemSmall` ("daily lore" — one place, hook, emoji pin) and
-/// `.systemMedium` ("around you" — 2–3 nearest un-visited places). Every tap
+/// Families: `.systemSmall` ("daily lore", one place, hook, emoji pin) and
+/// `.systemMedium` ("around you", 2–3 nearest un-visited places). Every tap
 /// deep-links through `lore://place/{id}` so `AppRouter` opens the matching card
 /// (the router seam already exists in `LoreApp`).
 struct NearbyLoreWidget: Widget {
@@ -84,7 +84,7 @@ struct NearbyLoreEntryView: View {
     }
 }
 
-/// Small: the "daily lore" hero — one place, its emoji pin, hook, and year.
+/// Small: the "daily lore" hero, one place, its emoji pin, hook, and year.
 private struct SmallDailyLore: View {
     let snapshot: LoreWidgetSnapshot
 
@@ -125,7 +125,7 @@ private struct SmallDailyLore: View {
     }
 }
 
-/// Medium: "around you right now" — up to three nearest un-visited places.
+/// Medium: "around you right now", up to three nearest un-visited places.
 private struct MediumNearby: View {
     let snapshot: LoreWidgetSnapshot
 
@@ -218,7 +218,7 @@ extension LoreWidgetSnapshot {
             .init(id: "sample-wrigley", name: "Wrigley Building", emoji: "🏛️",
                   hook: "Chicago's terra-cotta answer to a Sevillian tower.", year: 1924),
             .init(id: "sample-cloudgate", name: "Cloud Gate", emoji: "🗿",
-                  hook: "\"The Bean\" — 168 seamless steel plates.", year: 2006),
+                  hook: "\"The Bean\", 168 seamless steel plates.", year: 2006),
         ]
     )
 }

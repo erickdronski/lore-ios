@@ -11,7 +11,7 @@ import WidgetKit
 /// **App Group is portal-gated** (docs/16 §7 / project.yml): until
 /// `group.app.lore.lore` exists in the Developer portal and is on both targets'
 /// entitlements, `LoreWidgetStore.sharedDefaults` is nil and every write is a
-/// silent no-op — the widget just shows its brand sample. Nothing here crashes
+/// silent no-op, the widget just shows its brand sample. Nothing here crashes
 /// on the un-provisioned path.
 enum WidgetPublisher {
     /// Publish the current nearest places for the widget's "around you" surface.

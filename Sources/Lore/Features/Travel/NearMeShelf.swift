@@ -1,7 +1,7 @@
 import CoreLocation
 import SwiftUI
 
-/// "Around you right now" — the near-me shelf (task requirement 4, and the
+/// "Around you right now", the near-me shelf (task requirement 4, and the
 /// first-night arrival flow's §5.4 answer to *"what am I surrounded by?"*). A
 /// horizontal shelf of the nearest N places with **live distance labels** that
 /// re-rank as the user moves, fed by `NearMeLocationProvider` and the map's
@@ -27,7 +27,7 @@ struct NearMeShelf: View {
     var onNeedsSignIn: () -> Void = {}
     /// How many cards to show.
     var maxCount: Int = 8
-    /// The city these places belong to — published to the home-screen widget
+    /// The city these places belong to, published to the home-screen widget
     /// alongside the nearest places (docs/16 §7). Defaults to the pilot city.
     var city: String = Config.defaultCity
 
@@ -148,7 +148,7 @@ struct NearMeShelf: View {
 // MARK: - Card
 
 /// One near-you card: emoji medallion, name, live distance, and an inline
-/// "been here" toggle. Compact by doctrine (brand/ELEVATION.md §5b) — a taste,
+/// "been here" toggle. Compact by doctrine (brand/ELEVATION.md §5b), a taste,
 /// not a wall; the full dossier is one tap via `onSelect`.
 struct NearMeCard: View {
     let ranked: RankedPlace
@@ -219,7 +219,7 @@ struct RankedPlace: Identifiable {
 
     var id: String { place.id }
 
-    /// "600 m" / "1.2 km" — reuses the scanner's shared formatter so distance
+    /// "600 m" / "1.2 km", reuses the scanner's shared formatter so distance
     /// labels read identically everywhere (docs/05 §5 rung 2).
     var distanceLabel: String { BearingProjector.distanceLabel(meters: meters) }
 }

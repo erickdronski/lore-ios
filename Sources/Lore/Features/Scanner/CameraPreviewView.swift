@@ -4,7 +4,7 @@ import UIKit
 
 /// Owns the single `AVCaptureSession` behind the scanner viewfinder.
 ///
-/// P0 is preview-only: no frames are read, nothing leaves the device — the
+/// P0 is preview-only: no frames are read, nothing leaves the device, the
 /// coarse scanner is pose math over the camera feed, exactly like the web
 /// scanner. The AR pipeline (ARKit + GARSession) replaces this session
 /// wholesale at P1 (docs/05 §2.2 step 1).
@@ -39,7 +39,7 @@ final class ScannerCameraService {
         session.beginConfiguration()
         defer { session.commitConfiguration() }
 
-        // 1920×1440-class is plenty — no 4K, HDR off (battery, docs/05 §7).
+        // 1920×1440-class is plenty, no 4K, HDR off (battery, docs/05 §7).
         if session.canSetSessionPreset(.hd1920x1080) {
             session.sessionPreset = .hd1920x1080
         }

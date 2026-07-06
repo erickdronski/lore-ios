@@ -1,6 +1,6 @@
 import Foundation
 
-/// One row returned by the `search_lore` RPC — a unified hit across places,
+/// One row returned by the `search_lore` RPC, a unified hit across places,
 /// stories, tours, culture, and cities.
 /// `POST /rest/v1/rpc/search_lore { "q": "...", "max_results": N }`
 ///
@@ -10,7 +10,7 @@ import Foundation
 ///   "emoji": "🌀", "score": 0.68 }
 /// ```
 struct SearchResult: Codable, Identifiable, Hashable {
-    /// What kind of thing this hit is — drives which screen a tap routes to.
+    /// What kind of thing this hit is, drives which screen a tap routes to.
     let kind: Kind
     /// The row's primary key / reference within its table (place id, story id,
     /// tour slug, …). Use with `kind` to open the right detail.
@@ -24,7 +24,7 @@ struct SearchResult: Codable, Identifiable, Hashable {
     /// The city slug this hit belongs to (for scoping / fly-to).
     let city: String?
     let emoji: String?
-    /// Relevance score from the RPC — results arrive ranked, highest first.
+    /// Relevance score from the RPC, results arrive ranked, highest first.
     let score: Double?
 
     /// Stable identity: `kind` + `ref` uniquely locate a hit.

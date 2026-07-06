@@ -1,7 +1,7 @@
 import Foundation
 
 /// Fetches portrait thumbnails for famous faces from the Wikipedia REST
-/// summary API — no external dependencies, no API key.
+/// summary API, no external dependencies, no API key.
 ///
 /// `GET https://en.wikipedia.org/api/rest_v1/page/summary/{title}` returns a
 /// JSON object whose `thumbnail.source` is a reasonably sized portrait crop and
@@ -10,7 +10,7 @@ import Foundation
 /// the original.
 ///
 /// Doctrine fit: this is the *only* network image path in the culture surface.
-/// It is best-effort — a missing portrait is never an error, the face just
+/// It is best-effort, a missing portrait is never an error, the face just
 /// keeps its emoji medallion placeholder. Results are memoized per title for
 /// the lifetime of the process (the same person never re-fetches), and misses
 /// are cached too so a person without a photo isn't retried on every scroll.

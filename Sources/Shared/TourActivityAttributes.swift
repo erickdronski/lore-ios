@@ -3,7 +3,7 @@ import Foundation
 
 /// The Live Activity contract for an **active walking tour** (docs/16 §8): a
 /// "guide in your pocket" surface pinned to the Lock Screen and Dynamic Island
-/// — *Stop 3 of 7 · Wrigley Building · 200 m ahead*.
+///, *Stop 3 of 7 · Wrigley Building · 200 m ahead*.
 ///
 /// `ActivityAttributes` must be a type **shared** between the app (which
 /// starts/updates the activity) and the widget extension (which renders it), so
@@ -13,11 +13,11 @@ import Foundation
 ///
 /// **Size discipline (docs/16 §8):** keep the combined attributes + state well
 /// under ActivityKit's 4 KB limit. These are short strings and a couple of ints
-/// — comfortably within budget.
+///, comfortably within budget.
 public struct TourActivityAttributes: ActivityAttributes {
     public typealias ContentState = TourProgress
 
-    /// The tour's stable identity — set once at `Activity.request`, never
+    /// The tour's stable identity, set once at `Activity.request`, never
     /// changes for the life of the activity.
     public let tourID: String
     public let tourTitle: String
@@ -33,7 +33,7 @@ public struct TourActivityAttributes: ActivityAttributes {
         self.totalStops = totalStops
     }
 
-    /// The live, updatable state — driven on-device from Core Location as the
+    /// The live, updatable state, driven on-device from Core Location as the
     /// walker advances (docs/16 §8: no server, no push token for a self-guided
     /// walking tour; `Activity.update` on progress).
     public struct TourProgress: Codable, Hashable {
@@ -59,7 +59,7 @@ public struct TourActivityAttributes: ActivityAttributes {
             self.distanceToNextMeters = distanceToNextMeters
         }
 
-        /// "Stop 3" — 1-based label for the current stop.
+        /// "Stop 3", 1-based label for the current stop.
         public func stopLabel(of total: Int) -> String {
             "Stop \(currentStopIndex) of \(total)"
         }

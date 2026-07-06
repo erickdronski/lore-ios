@@ -5,7 +5,7 @@ import Foundation
 /// (docs/16-APPLE-TOOLKITS.md §7). The widget can't hit the network freely, so
 /// this cached hand-off is the contract between the two targets.
 ///
-/// Kept intentionally lean — a handful of nearby places, each just enough to
+/// Kept intentionally lean, a handful of nearby places, each just enough to
 /// render a "daily lore" (small) or "around you" (medium) card and deep-link
 /// back into the app.
 public struct LoreWidgetSnapshot: Codable, Equatable {
@@ -29,7 +29,7 @@ public struct LoreWidgetSnapshot: Codable, Equatable {
         public var name: String
         /// Emoji badge (mirrors `Place.displayEmoji` in the app).
         public var emoji: String
-        /// The Layer-1 hook line — the one-sentence "why you'd care."
+        /// The Layer-1 hook line, the one-sentence "why you'd care."
         public var hook: String?
         /// Build year, when known ("1973").
         public var year: Int?
@@ -43,7 +43,7 @@ public struct LoreWidgetSnapshot: Codable, Equatable {
         }
     }
 
-    /// The first place — the "daily lore" hero for the small widget.
+    /// The first place, the "daily lore" hero for the small widget.
     public var featured: Place? { places.first }
 }
 
@@ -54,7 +54,7 @@ public struct LoreWidgetSnapshot: Codable, Equatable {
 /// to *both* the app and the widget extension entitlements before this resolves
 /// at runtime. The `project.yml` notes this; until it's provisioned,
 /// `sharedDefaults` is `nil` and every call no-ops gracefully (the widget shows
-/// its sample content, the app's write is a silent miss) — nothing crashes.
+/// its sample content, the app's write is a silent miss), nothing crashes.
 public enum LoreWidgetStore {
     /// The App Group identifier. Must match the entitlement on both targets.
     public static let appGroupID = "group.app.lore.lore"

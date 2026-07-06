@@ -7,11 +7,11 @@ import SwiftUI
 ///
 /// The integrator has two adoption paths:
 ///
-/// 1. **Overlay only** — keep the existing `MapScreen` and add
+/// 1. **Overlay only**, keep the existing `MapScreen` and add
 ///    `.overlay(alignment: .bottom) { TravelMapControls(...) }`, passing the
 ///    map's loaded `places`. This lands the chips + shelf + visit toggles.
 ///
-/// 2. **Weighted pins** — additionally read `relevance.weighting(for:)` per
+/// 2. **Weighted pins**, additionally read `relevance.weighting(for:)` per
 ///    annotation and apply `.relevanceWeighted(_:)` to `PlacePinBadge`, and
 ///    badge visited pins with `VisitedPinAccent`. That realizes the persona
 ///    dimming on the pins themselves. (`MapScreen` composes these; it isn't
@@ -72,7 +72,7 @@ struct TravelMapControls: View {
 ///
 /// This is the "shared notification/closure" the task asks for: a visit logged
 /// anywhere (map toggle, shelf card) flows into `pendingUnlocks`, which the host
-/// observes to raise the celebration overlay — the same one the Passport tab
+/// observes to raise the celebration overlay, the same one the Passport tab
 /// uses. Whether the host routes it through `PassportModel.recomputeAndCelebrate`
 /// or drops a standalone `UnlockCelebration` over the map is the host's call.
 @Observable
@@ -86,7 +86,7 @@ final class TravelSession {
     var pendingUnlocks: [Achievement] = []
 
     /// - Parameter credentials: `(userID, accessToken)` or `nil` when signed
-    ///   out — usually `{ auth.session.map { ($0.user.id, $0.accessToken) } }`.
+    ///   out, usually `{ auth.session.map { ($0.user.id, $0.accessToken) } }`.
     init(credentials: @escaping () -> (userID: String, accessToken: String)?) {
         self.visits = VisitStore(credentials: credentials)
         self.filters = MapFilterStore(credentials: credentials)

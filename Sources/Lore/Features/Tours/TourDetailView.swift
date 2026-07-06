@@ -100,7 +100,7 @@ struct TourDetailView: View {
         )
     }
 
-    /// A display name for the stop at `index` — the resolved place name, else a
+    /// A display name for the stop at `index`, the resolved place name, else a
     /// "Stop N" fallback. Returns "" past the end (no next stop).
     private func liveStopName(at index: Int) -> String {
         guard tour.stops.indices.contains(index) else { return "" }
@@ -109,7 +109,7 @@ struct TourDetailView: View {
     }
 
     /// Straight-line distance (m) from the current stop's place to the next
-    /// stop's place, when both resolve — a scaffold stand-in for the real
+    /// stop's place, when both resolve, a scaffold stand-in for the real
     /// user→next-stop distance a Core Location fix would give (docs/16 §8 TODO).
     private func liveDistanceToNext() -> Double? {
         guard
@@ -155,7 +155,7 @@ struct TourDetailView: View {
         }
     }
 
-    /// Amber node rail — one dot per stop, filled up to the current one. The
+    /// Amber node rail, one dot per stop, filled up to the current one. The
     /// current dot swells (a spring pop) so the route reads its position; tapping
     /// a dot springs the stepper to that stop (LUXURY-MOTION §6 tour stepper).
     private var progressRail: some View {

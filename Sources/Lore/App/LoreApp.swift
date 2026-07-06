@@ -1,11 +1,11 @@
 import SwiftUI
 
-/// Lore — every place has a story.
+/// Lore, every place has a story.
 ///
-/// The composed P0 app. A `TabView` root — Map (the living Explorer, with the
+/// The composed P0 app. A `TabView` root, Map (the living Explorer, with the
 /// Travel filter chips + near-me shelf + persona-weighted pins composed in),
 /// Scanner (the v2 intelligence viewfinder), Tours, Passport (the reward wall),
-/// and Profile — under a first-run Onboarding cover, with a global search entry
+/// and Profile, under a first-run Onboarding cover, with a global search entry
 /// and city switcher in the map header. The AR pipeline proper (ARKit + ARCore
 /// Geospatial + RealityKit) replaces the Scanner tab's internals at P1; the tab
 /// structure and everything wired here survives that swap.
@@ -14,26 +14,26 @@ import SwiftUI
 /// (`AuthService`, `AppRouter`, `EntitlementStore`, `PrefsCoordinator`,
 /// `TravelSession`), injects them into the environment, and installs
 /// `router.onRoute` so search / city-switcher selections open the right surface.
-/// No feature view imports the tab structure — they all take injected closures
+/// No feature view imports the tab structure, they all take injected closures
 /// or read the environment.
 @main
 struct LoreApp: App {
-    /// The UIKit delegate adaptor — its only job is the APNs token callbacks
+    /// The UIKit delegate adaptor, its only job is the APNs token callbacks
     /// (docs/16 §5). It owns the shared `PushService`, which we lift into the
     /// SwiftUI environment below.
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
-    /// Single auth instance for the whole app — every signed-in surface reads it
+    /// Single auth instance for the whole app, every signed-in surface reads it
     /// from the environment.
     @State private var auth: AuthService
     /// The shared selection/navigation router search + the switcher route through.
     @State private var router = AppRouter()
     /// The single "is this user Lore+?" source of truth (docs/00 §7).
     @State private var entitlements = EntitlementStore()
-    /// The StoreKit 2 client path — the on-device transaction engine and the
+    /// The StoreKit 2 client path, the on-device transaction engine and the
     /// offline entitlement read `EntitlementStore` unions in (docs/16 §1).
     @State private var store = StoreKitService()
-    /// The one shared `user_prefs` load — persona weighting + hidden kinds.
+    /// The one shared `user_prefs` load, persona weighting + hidden kinds.
     @State private var prefs = PrefsCoordinator()
     /// Owns the Travel stores (visits + filters) and the unlock bridge.
     @State private var travel: TravelSession
@@ -69,7 +69,7 @@ struct LoreApp: App {
                     entitlements.storeKit = store
                     store.start()
                 }
-                // App chrome is the app's words — Ink/Brass, never Amber
+                // App chrome is the app's words, Ink/Brass, never Amber
                 // (Amber is reserved for the world: pins, outlines, beacon —
                 // brand/DESIGN.md §4). brass700 is the AA-safe brass on Bone.
                 .tint(LoreColor.brass700)
@@ -133,12 +133,12 @@ struct RootTabView: View {
                 .tabItem { Label("Profile", systemImage: "person.crop.circle") }
                 .tag(Tab.profile)
         }
-        // Global search — resolves a `LoreRoute` and hands it to the router.
+        // Global search, resolves a `LoreRoute` and hands it to the router.
         .sheet(isPresented: $showSearch) {
             SearchView(router: router)
                 .presentationDetents([.large])
         }
-        // City switcher — writes `router.selectedCity`, which re-scopes the map.
+        // City switcher, writes `router.selectedCity`, which re-scopes the map.
         .sheet(isPresented: $showCitySwitcher) {
             CitySwitcherView(router: router)
                 .presentationDetents([.medium, .large])
@@ -150,7 +150,7 @@ struct RootTabView: View {
                 .presentationBackground(.regularMaterial)
                 .presentationCornerRadius(24)
         }
-        // Meet-the-City — the culture surface, raised from the map header, the
+        // Meet-the-City, the culture surface, raised from the map header, the
         // PlaceCard, or a culture search hit.
         .sheet(item: meetCityBinding) { route in
             NavigationStack { CultureView(city: route.slug) }
@@ -180,7 +180,7 @@ struct RootTabView: View {
 
     /// Wire the shared router once: every route search / the switcher emit lands
     /// here, and we open the matching surface. This is the single switch the
-    /// AppRouter doc calls for — no feature view navigates on its own.
+    /// AppRouter doc calls for, no feature view navigates on its own.
     private func installRouter() {
         router.onRoute = { route in
             switch route {
@@ -191,7 +191,7 @@ struct RootTabView: View {
             case .place(let id, _):
                 Task { await openPlace(id: id) }
             case .story:
-                // No standalone story screen at P0 — route to the map, where the
+                // No standalone story screen at P0, route to the map, where the
                 // meanwhile-nearby markers live (scanner) / pins do. `AppRouter`
                 // already followed the hit's city into `selectedCity`.
                 selection = .map
@@ -210,7 +210,7 @@ struct RootTabView: View {
     private func openPlace(id: String) async {
         selection = .map
         // Try the city the router is scoped to first (the common case), then a
-        // broad fetch is unnecessary — `place_explore` is city-filtered, and the
+        // broad fetch is unnecessary, `place_explore` is city-filtered, and the
         // router already followed a cross-city hit's `city` into `selectedCity`.
         let places = (try? await LoreAPI.shared.places(city: router.selectedCity)) ?? []
         if let match = places.first(where: { $0.id == id }) {

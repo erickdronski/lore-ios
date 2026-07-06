@@ -22,11 +22,11 @@ import Observation
 struct PaywallView: View {
     /// The store to update on a successful purchase (optimistic + refresh).
     let entitlements: EntitlementStore
-    /// The StoreKit 2 client path — products, purchase, restore, eligibility.
+    /// The StoreKit 2 client path, products, purchase, restore, eligibility.
     let store: StoreKitService
     /// Auth for the access token (refresh) and user id (optimistic row).
     let auth: AuthService
-    /// Optional context line — "Unlock this tour", "Keep reading" — so the
+    /// Optional context line, "Unlock this tour", "Keep reading", so the
     /// paywall knows what brought the user here. Purely for the subhead.
     var context: PaywallContext = .general
 
@@ -161,7 +161,7 @@ struct PaywallView: View {
     @ViewBuilder
     private var purchaseButton: some View {
         if entitlements.isPlus {
-            // Already a member — no sell, just acknowledge.
+            // Already a member, no sell, just acknowledge.
             HStack(spacing: 8) {
                 Image(systemName: "checkmark.seal.fill")
                 Text(entitlements.isTrialing ? "You're on the Lore+ trial" : "You're a Lore+ member")
@@ -269,7 +269,7 @@ struct PaywallView: View {
             Haptics.play(.badgeEarned)  // the unlock is a reward moment
             dismiss()
         case .pending:
-            // Ask-to-Buy / SCA — the grant arrives later via Transaction.updates.
+            // Ask-to-Buy / SCA, the grant arrives later via Transaction.updates.
             // Leave the sheet up with the model's informational message.
             break
         case .userCancelled:
@@ -288,7 +288,7 @@ struct PaywallView: View {
     }
 }
 
-/// What brought the user to the paywall — tunes the subhead only.
+/// What brought the user to the paywall, tunes the subhead only.
 enum PaywallContext {
     case general
     case fourthDive
@@ -450,7 +450,7 @@ final class PaywallModel {
 
         /// The App Store Connect / StoreKit product identifier (docs/16 §1).
         /// These are the live IDs the `Configuration.storekit` file and ASC
-        /// both define — not placeholders.
+        /// both define, not placeholders.
         var productID: String {
             switch self {
             case .monthly: return StoreKitService.ProductID.monthly
@@ -502,7 +502,7 @@ final class PaywallModel {
     }
 
     /// The StoreKit 2 client path, injected from the view's `onAppear`. Nil in
-    /// previews / before injection — the model degrades to hardcoded prices and
+    /// previews / before injection, the model degrades to hardcoded prices and
     /// an honest "unavailable" purchase error.
     var store: StoreKitService?
 
@@ -515,14 +515,14 @@ final class PaywallModel {
     private(set) var isEligibleForTrial = true
 
     /// Reload intro-offer eligibility for the selected plan (call after products
-    /// load, and whenever the plan changes if you want per-plan precision — the
+    /// load, and whenever the plan changes if you want per-plan precision, the
     /// two products share a subscription group, so eligibility is the same).
     func refreshEligibility() async {
         guard let store else { return }
         isEligibleForTrial = await store.isEligibleForIntroOffer(productID: selectedPlan.productID)
     }
 
-    /// The CTA title — promises the trial only when eligible.
+    /// The CTA title, promises the trial only when eligible.
     var ctaTitle: String {
         isEligibleForTrial ? "Start 7-day free trial" : "Subscribe"
     }

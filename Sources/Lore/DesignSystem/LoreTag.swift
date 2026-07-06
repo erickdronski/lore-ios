@@ -1,12 +1,12 @@
 import SwiftUI
 
-/// The tag vocabulary — one place-tag slug → (color, SF Symbol, display label)
+/// The tag vocabulary, one place-tag slug → (color, SF Symbol, display label)
 /// so every surface renders a tag identically (map filter chips, dossier tag
 /// row, scanner context). Colors stay inside the brand ramp (brand/DESIGN.md
 /// §4); tags are Bone-surface chrome, so text colors are AA on Bone.
 ///
 /// Tags the DB emits that we don't recognize fall back to a neutral Ink style
-/// via `LoreTagStyle.default(for:)` — an unknown tag is never a crash, just a
+/// via `LoreTagStyle.default(for:)`, an unknown tag is never a crash, just a
 /// plain chip.
 enum LoreTagStyle {
     /// A resolved tag style: the accent color, an SF Symbol glyph, and the

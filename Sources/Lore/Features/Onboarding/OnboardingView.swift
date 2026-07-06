@@ -6,11 +6,11 @@ import UserNotifications
 /// on first launch (gate: `OnboardingStore.shouldPresent`). Four moments plus a
 /// send-off, on the brand dusk sky:
 ///
-/// 1. **Arrival** — "Every place has a story." (ELEVATION §5.1)
-/// 2. **Interests + persona** — the real curation signal (13 §4.1)
-/// 3. **Location** — plain-English why (13 §4.2)
-/// 4. **Notifications** — optional nudges (13 §4.3)
-/// 5. **Finish** — the send-off, writes `user_prefs` (13 §4)
+/// 1. **Arrival**, "Every place has a story." (ELEVATION §5.1)
+/// 2. **Interests + persona**, the real curation signal (13 §4.1)
+/// 3. **Location**, plain-English why (13 §4.2)
+/// 4. **Notifications**, optional nudges (13 §4.3)
+/// 5. **Finish**, the send-off, writes `user_prefs` (13 §4)
 ///
 /// Skippable from any step → broad traveler default (13 §4.4). This view owns no
 /// navigation of its own; `onFinished` fires exactly once when the flow is done
@@ -19,7 +19,7 @@ struct OnboardingView: View {
     @State var store: OnboardingStore
     /// The injected prefs writer (real one is `OnboardingPrefsWriter`).
     let prefsWriter: PrefsWriting
-    /// Called once when the flow completes or is skipped — dismiss here.
+    /// Called once when the flow completes or is skipped, dismiss here.
     let onFinished: () -> Void
 
     var body: some View {
@@ -75,14 +75,14 @@ private struct ArrivalStep: View {
             progress: store.progress,
             primaryTitle: "Begin",
             onBack: nil,
-            onSkip: { store.advance() }, // arrival "skip" just enters — nothing set yet
+            onSkip: { store.advance() }, // arrival "skip" just enters, nothing set yet
             onPrimary: { store.advance() }
         ) {
             VStack(alignment: .leading, spacing: 20) {
                 Spacer(minLength: 40)
 
                 // "Every place has a story." with the final full stop in Amber
-                // (the ELEVATION "Chicago." — Amber full stop treatment).
+                // (the ELEVATION "Chicago.", Amber full stop treatment).
                 (
                     Text("Every place has a story")
                         .foregroundColor(LoreColor.bone)
@@ -101,7 +101,7 @@ private struct ArrivalStep: View {
             }
             .opacity(appeared ? 1 : 0)
             .offset(y: appeared ? 0 : 16)
-            // Arrival is the cinematic beat — the headline rises on `spring.slow`.
+            // Arrival is the cinematic beat, the headline rises on `spring.slow`.
             .animation(LoreSpring.slow(reduceMotion: reduceMotion), value: appeared)
             .onAppear { appeared = true }
         }
@@ -149,7 +149,7 @@ private struct InterestsStep: View {
                 }
                 .padding(.top, 4)
 
-                // Preset row — "…or I'm here as a".
+                // Preset row, "…or I'm here as a".
                 Text(OnboardingContent.personaRowTitle)
                     .font(LoreType.displayM)
                     .foregroundStyle(LoreColor.bone)
@@ -181,7 +181,7 @@ private struct InterestsStep: View {
                 }
 
                 if !store.canAdvanceInterests {
-                    Text("Pick at least \(OnboardingContent.minInterests) to continue — or Skip for the classic city view.")
+                    Text("Pick at least \(OnboardingContent.minInterests) to continue, or Skip for the classic city view.")
                         .font(LoreType.caption)
                         .foregroundStyle(LoreColor.bone.opacity(0.6))
                         .padding(.top, 4)
@@ -241,7 +241,7 @@ private struct LocationStep: View {
         case .authorizedWhenInUse, .authorizedAlways:
             return "Located. The map will center on you."
         case .denied, .restricted:
-            return "No problem — the map still works, just without the “around me” view. You can enable location later in Settings."
+            return "No problem, the map still works, just without the “around me” view. You can enable location later in Settings."
         default:
             return nil
         }
@@ -305,7 +305,7 @@ private struct NotificationsStep: View {
         case .authorized, .provisional, .ephemeral:
             return "You'll get the occasional great-story nudge."
         case .denied:
-            return "All good — Lore stays quiet. Turn nudges on anytime in Settings."
+            return "All good, Lore stays quiet. Turn nudges on anytime in Settings."
         default:
             return nil
         }

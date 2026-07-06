@@ -22,7 +22,7 @@ struct ToursScreen: View {
                         "No tours yet",
                         systemImage: "figure.walk",
                         description: Text(
-                            "Curated walks land with the Chicago seed — "
+                            "Curated walks land with the Chicago seed, "
                             + "the Loop, the Riverwalk, Museum Campus."
                         )
                     )
@@ -37,7 +37,7 @@ struct ToursScreen: View {
     }
 
     /// Content-shaped loading list (LUXURY-MOTION §3): shimmer rows shaped like
-    /// tour rows, cascading in — no spinner.
+    /// tour rows, cascading in, no spinner.
     private var loadingList: some View {
         ScrollView {
             StaggeredReveal(spacing: 8) {

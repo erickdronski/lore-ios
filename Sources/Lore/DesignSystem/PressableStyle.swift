@@ -16,7 +16,7 @@ import SwiftUI
 struct PressableStyle: ButtonStyle {
     /// The scale the button rests at while pressed (LUXURY-MOTION §5: 0.96).
     var pressedScale: CGFloat = 0.96
-    /// Opacity while pressed — a subtle dim that also reads under Reduce Motion.
+    /// Opacity while pressed, a subtle dim that also reads under Reduce Motion.
     var pressedOpacity: Double = 0.92
     /// Fire a light haptic on press-down. On by default (taps should be felt);
     /// turn off for dense/rapid controls where a tick per press would nag.
@@ -43,7 +43,7 @@ extension ButtonStyle where Self == PressableStyle {
     /// The default press feedback (scale 0.96 + light haptic, spring back).
     static var pressable: PressableStyle { PressableStyle() }
 
-    /// Press feedback with no haptic — for dense or rapidly-tapped controls.
+    /// Press feedback with no haptic, for dense or rapidly-tapped controls.
     static var pressableSilent: PressableStyle { PressableStyle(haptics: false) }
 }
 

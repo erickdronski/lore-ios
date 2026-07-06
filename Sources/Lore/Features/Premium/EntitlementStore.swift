@@ -4,28 +4,28 @@ import Observation
 /// The single source of truth for "is this user Lore+?" across the app.
 ///
 /// It reads the signed-in user's `entitlements` rows (RLS: own rows only) and
-/// exposes `isPlus` — true when any grant's status is `active` or `trialing`
+/// exposes `isPlus`, true when any grant's status is `active` or `trialing`
 /// (docs/00-DECISIONS.md §7; the backend contract, `Entitlement.isActive`).
 ///
 /// **Two paths, unioned (docs/16-APPLE-TOOLKITS.md §1).** RevenueCat remains the
 /// planned server-side truth: its webhook writes the `entitlements` row this
-/// store reads over the network. StoreKit 2 is the client path — a
+/// store reads over the network. StoreKit 2 is the client path, a
 /// `StoreKitService` reads `Transaction.currentEntitlements` on-device, which
 /// works offline and survives an RC outage or a first-launch-before-network.
 /// `isPlus` is the **union**: either source may *open* the gate, neither can
 /// subtract from the other (docs/16 §1: "Read it locally, union it with the RC
 /// answer, never subtract"). TODO(P3): when the RevenueCat SDK lands, RC becomes
 /// the primary purchase driver and this union narrows to RC-truth + StoreKit's
-/// offline belt-and-suspenders — the seam here does not change.
+/// offline belt-and-suspenders, the seam here does not change.
 ///
 /// Doctrine (docs/00 §7): the app is generous by default. `isPlus == false`
-/// gates only the four Lore+ surfaces — the 4th deep dive of a day, tours,
+/// gates only the four Lore+ surfaces, the 4th deep dive of a day, tours,
 /// offline packs, audio narration. Scanning, Layer-1 cards, and the first three
 /// dives are never gated (that generosity lives in `DiveMeter`, not here).
 ///
 /// **Failing open vs. closed.** Reads fail *closed*: a network error or a
 /// signed-out user leaves `isPlus == false`, so we never hand out Lore+ we
-/// can't confirm. But the app stays fully usable without it — a free user is a
+/// can't confirm. But the app stays fully usable without it, a free user is a
 /// first-class citizen, not a locked-out one.
 ///
 /// Lifecycle mirrors `AuthService`: `@Observable @MainActor`, one instance,
@@ -40,7 +40,7 @@ final class EntitlementStore {
     private(set) var entitlement: Entitlement?
 
     /// The StoreKit 2 client path (`Transaction.currentEntitlements`). When set,
-    /// its on-device answer is *unioned* into `isPlus` — it can open the gate the
+    /// its on-device answer is *unioned* into `isPlus`, it can open the gate the
     /// server hasn't confirmed yet (offline / RC-outage), never close one it has.
     /// Injected once from `LoreApp`. Weak-by-contract: both are `@MainActor`
     /// app-lifetime singletons, so a plain reference is fine.
@@ -49,7 +49,7 @@ final class EntitlementStore {
     /// True while a `refresh` is in flight (paywall/profile can show a spinner).
     private(set) var isRefreshing = false
 
-    /// Set when the last refresh failed. Non-fatal — `isPlus` simply stays
+    /// Set when the last refresh failed. Non-fatal, `isPlus` simply stays
     /// closed. Surfaced only where it helps (a quiet "couldn't verify" note),
     /// never as a blocking error.
     private(set) var lastError: String?
@@ -69,7 +69,7 @@ final class EntitlementStore {
         return server || onDevice
     }
 
-    /// True specifically during the 7-day free trial — lets surfaces show
+    /// True specifically during the 7-day free trial, lets surfaces show
     /// "Trial · 4 days left" style affordances distinct from a paid member.
     /// (The day-count itself isn't in the `entitlements` contract yet; this is
     /// just the status distinction. TODO(P1): expose `trial_ends_at`.)
@@ -90,7 +90,7 @@ final class EntitlementStore {
     ///
     /// Call this: on sign-in, on app foreground, and after a purchase settles.
     func refresh(accessToken: String?) async {
-        // Always re-read the on-device StoreKit path — it's valid even when
+        // Always re-read the on-device StoreKit path, it's valid even when
         // signed out of Supabase (the purchase lives on the Apple ID, not the
         // account) and needs no token.
         await storeKit?.refreshEntitlements()
@@ -114,7 +114,7 @@ final class EntitlementStore {
         }
     }
 
-    /// Clear the *server* grant on sign-out — the next Supabase user starts from
+    /// Clear the *server* grant on sign-out, the next Supabase user starts from
     /// free. The StoreKit path is deliberately **not** cleared: the purchase
     /// belongs to the Apple ID, not the account, so `isPlus` can still resolve
     /// from `Transaction.currentEntitlements` for a signed-out purchaser

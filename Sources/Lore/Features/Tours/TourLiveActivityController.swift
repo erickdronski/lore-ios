@@ -8,7 +8,7 @@ import Observation
 /// (`TourLiveActivityWidget`); this is the app-side driver.
 ///
 /// Update model (docs/16 §8): for a self-guided walking tour we drive updates
-/// **on-device** — every time the walker advances a stop (or Core Location
+/// **on-device**, every time the walker advances a stop (or Core Location
 /// reports a new distance to the next stop) the app calls `updateProgress`. No
 /// push token, no server. `Activity.update` mutates the `ContentState` and the
 /// Lock-Screen / Dynamic Island re-render.
@@ -69,10 +69,10 @@ final class TourLiveActivityController {
             activity = try Activity.request(
                 attributes: attributes,
                 content: ActivityContent(state: state, staleDate: nil),
-                pushType: nil // on-device driven — no push token (docs/16 §8)
+                pushType: nil // on-device driven, no push token (docs/16 §8)
             )
         } catch {
-            // Starting can fail (budget, disabled mid-flight). Non-fatal — the
+            // Starting can fail (budget, disabled mid-flight). Non-fatal, the
             // tour stepper works without the Live Activity.
             activity = nil
         }
@@ -80,7 +80,7 @@ final class TourLiveActivityController {
 
     /// Push a new progress state as the walker advances. No-op if not running.
     ///
-    /// TODO(P1): wire the live distance from Core Location — a `CLLocationManager`
+    /// TODO(P1): wire the live distance from Core Location, a `CLLocationManager`
     /// in the tour session recomputes `distanceToNextMeters` on each fix and
     /// calls this (docs/16 §8: "drive updates on-device from Core Location").
     func updateProgress(

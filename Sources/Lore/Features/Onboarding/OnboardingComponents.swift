@@ -8,17 +8,17 @@ import SwiftUI
 /// "all gradients stay inside the brand family").
 ///
 /// The cinematic layer (LUXURY-MOTION §6, §7 "the arrival gets the slow
-/// treatment — grain + Amber horizon glow rising"): a fine film grain sits over
+/// treatment, grain + Amber horizon glow rising"): a fine film grain sits over
 /// the sky, and the Amber horizon glow *rises* once, slowly, on first appear
-/// (`spring.slow`). Reduce Motion holds the glow at its risen rest — no rise, no
-/// shimmer — so the still image is identical, just without the motion.
+/// (`spring.slow`). Reduce Motion holds the glow at its risen rest, no rise, no
+/// shimmer, so the still image is identical, just without the motion.
 struct OnboardingBackground: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var glowRisen = false
 
     var body: some View {
         ZStack {
-            // grad.dusk — linear(180°, #0A0F1D → #0F1626 → #1B2A4A → amber 16%)
+            // grad.dusk, linear(180°, #0A0F1D → #0F1626 → #1B2A4A → amber 16%)
             LinearGradient(
                 stops: [
                     .init(color: Color(hex: 0x0A0F1D), location: 0.0),
@@ -29,7 +29,7 @@ struct OnboardingBackground: View {
                 startPoint: .top,
                 endPoint: .bottom
             )
-            // grad.horizon — radial Amber city-glow rising from the bottom edge.
+            // grad.horizon, radial Amber city-glow rising from the bottom edge.
             // On first appear it swells up from a low ember to full glow over a
             // slow spring, so arrival reads cinematic (the "wow" beat, §6).
             RadialGradient(
@@ -42,7 +42,7 @@ struct OnboardingBackground: View {
             .blendMode(.screen)
             .allowsHitTesting(false)
 
-            // Film grain — a fine, static Ink/Bone speckle at low opacity so the
+            // Film grain, a fine, static Ink/Bone speckle at low opacity so the
             // sky has photographic texture, not a flat digital fill. Static by
             // design (grain that moves is noise); safe under Reduce Motion.
             FilmGrain()
@@ -66,7 +66,7 @@ struct OnboardingBackground: View {
 /// the dusk sky a subtle photographic tooth. Kept in the Bone family so it never
 /// tints the sky, only textures it.
 struct FilmGrain: View {
-    /// Speck count — dense enough to read as grain, sparse enough to stay cheap.
+    /// Speck count, dense enough to read as grain, sparse enough to stay cheap.
     var count: Int = 900
 
     var body: some View {
@@ -95,7 +95,7 @@ struct FilmGrain: View {
 // MARK: - Page scaffold
 
 /// The chrome shared by every step: a top row (back + progress rail + skip), a
-/// scrollable content column, and a pinned bottom primary CTA — honoring the
+/// scrollable content column, and a pinned bottom primary CTA, honoring the
 /// HIG one-handed rule (primary actions in the bottom 60%, brand/DESIGN.md §8).
 ///
 /// Content is Bone on the Ink sky, so text colors here are the on-Ink variants.
@@ -188,7 +188,7 @@ struct OnboardingScaffold<Content: View>: View {
     }
 }
 
-/// The slim top progress rail — a Bone track with an Amber fill that eases as
+/// The slim top progress rail, a Bone track with an Amber fill that eases as
 /// steps advance.
 struct ProgressRail: View {
     let progress: Double
@@ -293,7 +293,7 @@ struct PersonaChip: View {
 // MARK: - Flow-layout wrap (chips wrap to multiple rows)
 
 /// A minimal flow layout so interest chips wrap naturally without a fixed grid
-/// (chips are variable width). iOS 17's `Layout` protocol — no dependencies.
+/// (chips are variable width). iOS 17's `Layout` protocol, no dependencies.
 struct WrapLayout: Layout {
     var spacing: CGFloat = 8
 

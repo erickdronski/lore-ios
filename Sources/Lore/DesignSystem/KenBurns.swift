@@ -3,7 +3,7 @@ import SwiftUI
 /// The Ken-Burns drift (brand/LUXURY-MOTION.md §4 depth/parallax family ·
 /// ELEVATION.md §7: the arrival + dossier headers get "the slow, cinematic
 /// treatment"). A hero image slowly, continuously scales and pans so a still
-/// photograph breathes — the signature "this is premium" ambient motion on
+/// photograph breathes, the signature "this is premium" ambient motion on
 /// arrival heroes and dossier header medallions.
 ///
 /// It is the one sanctioned *ambient* image loop (alongside scanline/compass in

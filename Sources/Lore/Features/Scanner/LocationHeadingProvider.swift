@@ -5,7 +5,7 @@ import Observation
 /// GPS + compass source for the coarse scanner (docs/05 §5, rung 2).
 ///
 /// Publishes location, true heading, and their accuracy figures every update.
-/// The accuracy numbers aren't decoration — they drive the honesty contract:
+/// The accuracy numbers aren't decoration, they drive the honesty contract:
 /// ±10–30 m position and ±10–25° heading in an urban canyon is exactly why
 /// this mode renders *directional labels*, never on-building claims
 /// (docs/05 §4.2 refuse-to-guess threshold).
@@ -40,7 +40,7 @@ final class LocationHeadingProvider: NSObject, CLLocationManagerDelegate {
         super.init()
         manager.delegate = self
         manager.desiredAccuracy = kCLLocationAccuracyBest
-        manager.headingFilter = 2 // degrees between callbacks — cheap smoothing
+        manager.headingFilter = 2 // degrees between callbacks, cheap smoothing
     }
 
     func start() {

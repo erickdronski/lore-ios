@@ -13,9 +13,9 @@ import SwiftUI
 /// information still arrives, just without the choreography (LUXURY-MOTION §7).
 ///
 /// Two ways to use it:
-/// - `StaggeredReveal { A(); B(); C() }` — wrap a fixed set of children in a
+/// - `StaggeredReveal { A(); B(); C() }`, wrap a fixed set of children in a
 ///   `VStack`-style cascade.
-/// - `StaggeredReveal(data) { item in Row(item) }` — cascade over a collection.
+/// - `StaggeredReveal(data) { item in Row(item) }`, cascade over a collection.
 struct StaggeredReveal<Content: View>: View {
     /// Per-item stagger (ELEVATION §3 `fade.rise`: 40ms).
     var step: TimeInterval = LoreMotion.staggerPerPin
@@ -56,7 +56,7 @@ struct StaggeredReveal<Content: View>: View {
             content
         }
         // The container flips `appeared`; children read it through the modifier
-        // applied by the caller (`.staggerChild(index:)`) — see below.
+        // applied by the caller (`.staggerChild(index:)`), see below.
         .environment(\.staggerAppeared, appeared)
         .onAppear {
             if reduceMotion {

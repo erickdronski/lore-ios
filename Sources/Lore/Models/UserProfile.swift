@@ -8,7 +8,7 @@ struct UserProfile: Codable, Identifiable, Hashable {
     let displayName: String?
     let avatarURL: String?
     let bio: String?
-    /// 'scout' | 'guide' | 'historian' | 'curator' — the trust ladder
+    /// 'scout' | 'guide' | 'historian' | 'curator', the trust ladder
     /// (lore/docs/06-CROWDSOURCING.md).
     let trustTier: String
     let insightPoints: Int

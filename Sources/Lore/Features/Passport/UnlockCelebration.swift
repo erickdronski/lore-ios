@@ -1,7 +1,7 @@
 import SwiftUI
 import UIKit
 
-/// The unlock celebration — the reward moment when `recompute_achievements`
+/// The unlock celebration, the reward moment when `recompute_achievements`
 /// returns newly-earned badges. A dimmed Ink scrim, a confetti-ish burst in the
 /// brand ramp (Amber/Brass/Bone, never rainbow slop, brand/ELEVATION.md §1),
 /// and the freshly-earned medallion blooming in with `spring.bounce` and a
@@ -9,7 +9,7 @@ import UIKit
 ///
 /// Multiple unlocks queue: the overlay steps through them one at a time (tap to
 /// advance, or an 8-count "Continue"), so a session that unlocks three badges
-/// is three beats, not a pile. Honors Reduce Motion — the confetti falls back
+/// is three beats, not a pile. Honors Reduce Motion, the confetti falls back
 /// to a still Amber ring and the bounce to a crossfade.
 struct UnlockCelebration: View {
     /// The queue of newly-unlocked achievements to celebrate, in order.
@@ -33,7 +33,7 @@ struct UnlockCelebration: View {
 
     var body: some View {
         ZStack {
-            // Scrim — tap anywhere to advance.
+            // Scrim, tap anywhere to advance.
             LoreColor.ink950.opacity(0.86)
                 .ignoresSafeArea()
                 .contentShape(Rectangle())
@@ -129,7 +129,7 @@ struct UnlockCelebration: View {
         Haptics.play(.badgeEarned)
         bloom = false
         burst = false
-        // Bloom the medallion + copy in on `spring.bounce` — the reward arrival
+        // Bloom the medallion + copy in on `spring.bounce`, the reward arrival
         // (LUXURY-MOTION §6: unlock uses .bounce + Haptics.success).
         withAnimation(LoreSpring.bounce(reduceMotion: reduceMotion)) {
             bloom = true
@@ -169,7 +169,7 @@ struct UnlockCelebration: View {
 
 // MARK: - Confetti
 
-/// A one-shot confetti burst kept inside the brand ramp — Amber, Brass, Bone
+/// A one-shot confetti burst kept inside the brand ramp, Amber, Brass, Bone
 /// flecks that fall and fade. Deterministic-per-appearance, GPU-cheap (a fixed
 /// set of `TimelineView`-free spring-animated rects), and silent under Reduce
 /// Motion (the parent simply doesn't mount it).
@@ -180,7 +180,7 @@ struct ConfettiBurst: View {
 
     private let count = 46
 
-    /// Palette — the legend/gold tiers lean Amber; quieter tiers lean Brass.
+    /// Palette, the legend/gold tiers lean Amber; quieter tiers lean Brass.
     private var palette: [Color] {
         tier.isPrestige
             ? [LoreColor.amber, LoreColor.brass300, LoreColor.bone, LoreColor.amber600]

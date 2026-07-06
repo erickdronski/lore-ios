@@ -10,7 +10,7 @@ import UserNotifications
 ///
 /// Doctrine: `lore/docs/13-CURATION-PERSONAS.md` §4 (steps + skip default) and
 /// `brand/ELEVATION.md` §5 ("first night" arrival, "skippable instantly, never
-/// shown again — UserDefaults flag"). Gating is deliberately two-key: a local
+/// shown again, UserDefaults flag"). Gating is deliberately two-key: a local
 /// UserDefaults flag (so a returning signed-out user isn't re-onboarded) *and*
 /// the server's `user_prefs.onboarded` (so a fresh install of an existing
 /// account skips it). Either being true means "done".
@@ -146,7 +146,7 @@ final class OnboardingStore: NSObject, CLLocationManagerDelegate {
     }
 
     /// Apply a preset: set the lens and *merge in* its seed interests (never
-    /// clobbering interests the user already picked — the preset is additive so
+    /// clobbering interests the user already picked, the preset is additive so
     /// tapping it after hand-picking feels like a helper, not a reset).
     func applyPreset(_ preset: OnboardingContent.Preset) {
         Haptics.play(.chipTap)
@@ -159,7 +159,7 @@ final class OnboardingStore: NSObject, CLLocationManagerDelegate {
     // MARK: - Location permission (13 §4.2)
 
     /// Request when-in-use location. The result arrives on the delegate; the
-    /// view advances regardless (permission is never a wall — the map degrades
+    /// view advances regardless (permission is never a wall, the map degrades
     /// honestly without it, docs/05 §5).
     func requestLocation() {
         guard locationStatus == .notDetermined else { return }
@@ -178,7 +178,7 @@ final class OnboardingStore: NSObject, CLLocationManagerDelegate {
     // MARK: - Notification permission (13 §4.3)
 
     /// Ask for notification authorization. Optional and off-by-default in spirit
-    /// — we only request when the user taps "Turn on nudges".
+    ///, we only request when the user taps "Turn on nudges".
     ///
     /// On grant, also **register for remote notifications** so APNs issues a
     /// device token (docs/16 §5). The token arrives asynchronously in

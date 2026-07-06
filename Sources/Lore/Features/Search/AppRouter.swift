@@ -7,7 +7,7 @@ import Observation
 /// threading a callback per surface.
 ///
 /// The router deliberately carries the *whole* `SearchResult` (or `City`) for
-/// each case, not just an id — the destination screens (`PlaceCardView`,
+/// each case, not just an id, the destination screens (`PlaceCardView`,
 /// `CityCulture` shelf, nearby-story list) need the label/emoji/city to render
 /// a header before their own fetch resolves, and a search hit already has them.
 enum LoreRoute: Hashable {
@@ -16,10 +16,10 @@ enum LoreRoute: Hashable {
     case city(slug: String)
     /// Open the Layer-1 place card for this place. `ref` is the `place.id`.
     case place(id: String, city: String?)
-    /// A "meanwhile-nearby" story — route to the story's city, scroll to it in
+    /// A "meanwhile-nearby" story, route to the story's city, scroll to it in
     /// the nearby list. `ref` is the `story.id`.
     case story(id: String, city: String?)
-    /// A culture note (slang / saying / quote / person) — route to that city's
+    /// A culture note (slang / saying / quote / person), route to that city's
     /// culture shelf. `ref` is the `city_culture.id`.
     case culture(id: String, city: String?)
     /// A curated tour. `ref` is the `tour.slug` (tours key on slug, not id).
@@ -46,7 +46,7 @@ enum LoreRoute: Hashable {
 }
 
 /// The shared selection/navigation observable the integrator hooks once at the
-/// app root. Search and the city switcher *never* navigate directly — they call
+/// app root. Search and the city switcher *never* navigate directly, they call
 /// `route(_:)`, and whatever the host installed as `onRoute` does the actual
 /// tab-switch / sheet-present / map-fly-to.
 ///
@@ -72,7 +72,7 @@ final class AppRouter {
     /// never in a city-less state before the switcher is ever opened.
     var selectedCity: String = Config.defaultCity
 
-    /// The last route requested — exposed so a host that prefers to *observe*
+    /// The last route requested, exposed so a host that prefers to *observe*
     /// rather than take a callback can `.onChange(of: router.lastRoute)`.
     private(set) var lastRoute: LoreRoute?
 
@@ -137,7 +137,7 @@ final class AppRouter {
             route(.tour(slug: ident, city: nil))
             return true
         case "map":
-            // Nothing to resolve — the host's onRoute for a city no-op keeps the
+            // Nothing to resolve, the host's onRoute for a city no-op keeps the
             // map foremost. Emit a city route to the current city to surface it.
             route(.city(slug: selectedCity))
             return true

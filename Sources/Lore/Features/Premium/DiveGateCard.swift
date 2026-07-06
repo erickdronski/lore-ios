@@ -11,7 +11,7 @@ import UIKit
 /// name still shows above it (the caller keeps the dossier chrome), so the
 /// wonder isn't yanked away, only the fourth read is deferred.
 struct DiveGateCard: View {
-    /// The place the user was about to dive into — named so the copy stays
+    /// The place the user was about to dive into, named so the copy stays
     /// specific ("More on the Rookery is a tap away").
     let placeName: String
     /// Present the paywall.
@@ -63,7 +63,7 @@ struct DiveGateCard: View {
             RoundedRectangle(cornerRadius: 24)
                 .strokeBorder(LoreColor.brass.opacity(0.35), lineWidth: 1)
         )
-        // spring.settle flip-in (brand/ELEVATION.md §7) — no bounce on a gate.
+        // spring.settle flip-in (brand/ELEVATION.md §7), no bounce on a gate.
         .opacity(appeared ? 1 : 0)
         .scaleEffect(appeared ? 1 : 0.97)
         .animation(

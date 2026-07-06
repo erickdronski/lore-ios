@@ -15,7 +15,7 @@ import SwiftUI
 ///
 /// Signed-out is honest: the pill still shows and, on tap, calls `onNeedsSignIn`
 /// (a warning haptic + the integrator's sign-in nudge) rather than silently
-/// failing — reading/marking intent is never a dead end.
+/// failing, reading/marking intent is never a dead end.
 struct VisitToggle: View {
     let place: Place
     /// How this visit should be attributed if logged from here.
@@ -106,7 +106,7 @@ struct VisitToggle: View {
     private func tap() {
         guard !visited, !inFlight else { return }
         guard store.canLogVisits else {
-            Haptics.play(.meterGate) // one warning tap — a gentle "sign in" cue
+            Haptics.play(.meterGate) // one warning tap, a gentle "sign in" cue
             onNeedsSignIn()
             return
         }

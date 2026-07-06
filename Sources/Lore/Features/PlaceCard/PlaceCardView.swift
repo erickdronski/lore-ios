@@ -2,7 +2,7 @@ import SwiftUI
 
 /// The Layer-1 card (brand/DESIGN.md §7 `Card`): place name in display type,
 /// year chip, the italic hook line, tag chips, and the dive affordance.
-/// Renders from chunk-cached data only — identical online and offline.
+/// Renders from chunk-cached data only, identical online and offline.
 struct PlaceCardView: View {
     let place: Place
     /// Open "Meet {City}" (the culture surface) for this place's city. Injected
@@ -21,7 +21,7 @@ struct PlaceCardView: View {
 
     var body: some View {
         ZStack {
-            // Layer-1 card — the surface the dossier *grows from*. It stays
+            // Layer-1 card, the surface the dossier *grows from*. It stays
             // mounted (scaled/faded back) beneath the dossier so the morph reads
             // as one continuous surface, not a cut to a new screen.
             layerOneCard
@@ -110,7 +110,7 @@ struct PlaceCardView: View {
         ZStack(alignment: .topLeading) {
             DiveView(place: place, morphNamespace: morph, medallionID: medallionID)
 
-            // Dismiss affordance — springs the dossier back down into the card.
+            // Dismiss affordance, springs the dossier back down into the card.
             Button {
                 showDive = false
             } label: {
@@ -143,7 +143,7 @@ struct PlaceCardView: View {
 
     private var header: some View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
-            // The morph *source* medallion — carries the shared id so it becomes
+            // The morph *source* medallion, carries the shared id so it becomes
             // the dossier header disc. Sized to the Layer-1 card's 34pt emoji.
             Text(place.displayEmoji)
                 .font(.system(size: 34))
@@ -180,7 +180,7 @@ struct PlaceCardView: View {
     }
 }
 
-/// A `FactRow` whose value is a number that counts up on first view — the
+/// A `FactRow` whose value is a number that counts up on first view, the
 /// height/measurement ticker (LUXURY-MOTION §5). Same layout as `FactRow` so it
 /// sits flush in the fact list. Reduce Motion shows the final value (no roll,
 /// handled inside `CountUpText`).

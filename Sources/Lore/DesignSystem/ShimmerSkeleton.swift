@@ -7,14 +7,14 @@ import SwiftUI
 /// that will land.
 ///
 /// Under Reduce Motion the sweep is dropped for a **static** muted block
-/// (LUXURY-MOTION §3, §7) — still clearly a placeholder, just not animated.
+/// (LUXURY-MOTION §3, §7), still clearly a placeholder, just not animated.
 ///
 /// Compose skeletons from `ShimmerBlock`s laid out like the real content, or
 /// use the `SkeletonCard` / `SkeletonRow` presets.
 struct Shimmer: ViewModifier {
     /// Length of one sweep, seconds (LUXURY-MOTION §3: 1.4s).
     var duration: Double = 1.4
-    /// Tint of the traveling highlight — Amber, per doctrine.
+    /// Tint of the traveling highlight, Amber, per doctrine.
     var highlight: Color = LoreColor.amber
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -75,7 +75,7 @@ struct ShimmerBlock: View {
     var width: CGFloat? = nil
     var height: CGFloat = 14
     var cornerRadius: CGFloat = 6
-    /// Base fill — defaults to the recessed light surface (`bone200`). Pass an
+    /// Base fill, defaults to the recessed light surface (`bone200`). Pass an
     /// Ink-ramp value on dark surfaces.
     var fill: Color = LoreColor.bone200
 
@@ -124,7 +124,7 @@ struct SkeletonCard: View {
     }
 }
 
-/// A content-shaped row skeleton — a compact list item (near-you shelf, search
+/// A content-shaped row skeleton, a compact list item (near-you shelf, search
 /// result, tour stop): a leading thumbnail/disc + two text bars. Use several
 /// stacked (optionally via `StaggeredReveal`) for a loading list.
 struct SkeletonRow: View {

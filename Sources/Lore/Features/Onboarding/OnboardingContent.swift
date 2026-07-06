@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Static content for the first-run flow — the persona presets, their default
-/// interest sets, and the copy register — kept out of the views so the words
+/// Static content for the first-run flow, the persona presets, their default
+/// interest sets, and the copy register, kept out of the views so the words
 /// and the weighting live in one auditable place.
 ///
 /// Source doctrine: `lore/docs/13-CURATION-PERSONAS.md` §1/§4 (lens + interests,
@@ -14,31 +14,31 @@ enum OnboardingContent {
     // MARK: - Arrival copy (ELEVATION §5.1)
 
     /// The huge Fraunces headline on the arrival screen. The full stop is set in
-    /// Amber (the "Chicago." — Amber full stop treatment, applied in the view).
+    /// Amber (the "Chicago.", Amber full stop treatment, applied in the view).
     static let arrivalHeadline = "Every place has a story."
     /// The single supporting line under the headline.
-    static let arrivalSubhead = "You're standing in 200 years of it. Point your phone at a building and Lore tells you what happened here — who built it, what burned, who walked past."
+    static let arrivalSubhead = "You're standing in 200 years of it. Point your phone at a building and Lore tells you what happened here, who built it, what burned, who walked past."
 
     // MARK: - Interest step copy (13 §4.1)
 
     static let interestsTitle = "What are you into?"
-    static let interestsSubtitle = "Pick a few. We'll make the map lean toward what you love — but everything's always one tap away."
+    static let interestsSubtitle = "Pick a few. We'll make the map lean toward what you love, but everything's always one tap away."
     static let personaRowTitle = "…or I'm here as a"
     /// Minimum interests before the interest step lets you continue (13 §4.1:
     /// "multi-select, 2+ to continue"). Skipping bypasses this entirely.
     static let minInterests = 2
 
-    // MARK: - Location step copy (13 §4.2 — plain-English why)
+    // MARK: - Location step copy (13 §4.2, plain-English why)
 
     static let locationTitle = "Find your block"
-    static let locationBody = "Lore is about the ground under your feet. With your location we can show what's around you right now and point the scanner at the right buildings. We never track you in the background — only while the app is open and pointed at the world."
+    static let locationBody = "Lore is about the ground under your feet. With your location we can show what's around you right now and point the scanner at the right buildings. We never track you in the background, only while the app is open and pointed at the world."
     static let locationAllow = "Use my location"
     static let locationSkip = "Not now"
 
-    // MARK: - Notifications step copy (13 §4.3 — optional)
+    // MARK: - Notifications step copy (13 §4.3, optional)
 
     static let notificationsTitle = "A tap on the shoulder"
-    static let notificationsBody = "When you wander near a place with a great story — a hidden gem, a spot that matches what you're into — we can nudge you. Rare, and only for the good stuff. Off by default; you're in control."
+    static let notificationsBody = "When you wander near a place with a great story, a hidden gem, a spot that matches what you're into, we can nudge you. Rare, and only for the good stuff. Off by default; you're in control."
     static let notificationsAllow = "Turn on nudges"
     static let notificationsSkip = "Maybe later"
 
@@ -48,7 +48,7 @@ enum OnboardingContent {
     static let finishBody = "The city's waiting. Point, wander, listen."
     static let finishCTA = "Start exploring"
 
-    // MARK: - Persona presets (13 §1 — six presets shown in onboarding)
+    // MARK: - Persona presets (13 §1, six presets shown in onboarding)
 
     /// The onboarding preset row. Each preset picks a `UserPrefs.Persona` (the
     /// stored lens) and pre-checks a sensible interest set (13 §4.1). The six

@@ -1,6 +1,6 @@
 import Foundation
 
-/// Thin async PostgREST client over `URLSession` — no external dependencies
+/// Thin async PostgREST client over `URLSession`, no external dependencies
 /// (docs/03 §2 names the Supabase Swift client for ContentKit at P1; at P0 the
 /// read surface is anonymous GETs + a handful of RPCs and a hand-rolled client
 /// keeps the scaffold dependency-free).
