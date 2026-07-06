@@ -5,6 +5,8 @@
 # provisioning profiles on the runner. No fastlane match, no certs repo, no
 # match password. The only secrets are the three ASC_* API-key values.
 
+require "base64"
+
 default_platform(:ios)
 
 BUNDLE_ID = "app.lore.lore"
@@ -23,6 +25,16 @@ platform :ios do
       is_key_content_base64: true,
     )
 
+    # Write the .p8 to disk so xcodebuild's -allowProvisioningUpdates can
+    # authenticate to App Store Connect and cloud-create the distribution
+    # certificate + app-store profiles for the app AND the widget. build_app
+    # itself takes no api_key param, the auth goes to xcodebuild directly.
+    key_path = File.expand_path("AuthKey.p8", __dir__)
+    File.write(key_path, Base64.decode64(ENV.fetch("ASC_KEY_CONTENT")))
+    auth = "-authenticationKeyPath #{key_path} " \
+           "-authenticationKeyID #{ENV.fetch('ASC_KEY_ID')} " \
+           "-authenticationKeyIssuerID #{ENV.fetch('ASC_ISSUER_ID')}"
+
     # A monotonic build number per CI run so TestFlight never rejects a
     # duplicate. Falls back to 1 for a local run.
     build_number = ENV["GITHUB_RUN_NUMBER"] || "1"
@@ -32,14 +44,9 @@ platform :ios do
       scheme: "Lore",
       configuration: "Release",
       export_method: "app-store",
-      # Pass the ASC API key to gym so it forwards -authenticationKeyPath/ID/
-      # IssuerID to xcodebuild. Without this, -allowProvisioningUpdates has no
-      # account to talk to ("No Accounts" / "No profiles found") and signing
-      # fails. With it, Xcode cloud-creates the distribution cert + app-store
-      # profiles for both the app and the widget on the runner.
-      api_key: api_key,
-      xcargs: "-allowProvisioningUpdates DEVELOPMENT_TEAM=#{TEAM_ID} CURRENT_PROJECT_VERSION=#{build_number}",
-      export_xcargs: "-allowProvisioningUpdates",
+      xcargs: "-allowProvisioningUpdates #{auth} " \
+              "DEVELOPMENT_TEAM=#{TEAM_ID} CURRENT_PROJECT_VERSION=#{build_number}",
+      export_xcargs: "-allowProvisioningUpdates #{auth}",
       output_directory: "build",
       clean: true,
     )

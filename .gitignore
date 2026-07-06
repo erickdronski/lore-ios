@@ -10,3 +10,8 @@ fastlane/README.md
 fastlane/test_output/
 *.ipa
 *.dSYM.zip
+
+# Fastlane cloud-signing temp key (written from secret at CI time)
+fastlane/AuthKey.p8
+fastlane/*.p8
+**/*.p8
