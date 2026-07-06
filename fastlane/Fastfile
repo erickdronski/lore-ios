@@ -1,14 +1,20 @@
 # Lore, cloud build to TestFlight (see CI-SETUP.md).
 #
-# Signing is cloud-managed: the App Store Connect API key plus
-# -allowProvisioningUpdates lets Xcode create the distribution certificate and
-# provisioning profiles on the runner. No fastlane match, no certs repo, no
-# match password. The only secrets are the three ASC_* API-key values.
+# Signing uses fastlane match (git storage) with the App Store Connect API key:
+# match creates + stores an Apple Distribution certificate and App Store
+# provisioning profiles for the app and the widget (encrypted in the lore-certs
+# repo), and installs them into the CI keychain correctly. The project is then
+# switched to MANUAL app-store signing so the archive uses those profiles.
+#
+# Secrets: ASC_KEY_ID / ASC_ISSUER_ID / ASC_KEY_CONTENT (the API key),
+# MATCH_PASSWORD (decrypts the certs), MATCH_GIT_BASIC_AUTHORIZATION (repo auth).
 
 default_platform(:ios)
 
 BUNDLE_ID = "app.lore.lore"
+WIDGET_ID = "app.lore.lore.LoreWidget"
 TEAM_ID = "J9DMDH4S58"
+CERTS_REPO = "https://github.com/erickdronski/lore-certs.git"
 
 platform :ios do
   desc "Build Lore and upload the build to TestFlight"
@@ -23,6 +29,36 @@ platform :ios do
       is_key_content_base64: true,
     )
 
+    # Cert + App Store profiles for both bundle ids. readonly:false so the first
+    # run creates and stores them; later runs just fetch and install.
+    match(
+      type: "appstore",
+      api_key: api_key,
+      app_identifier: [BUNDLE_ID, WIDGET_ID],
+      git_url: CERTS_REPO,
+      readonly: false,
+    )
+
+    # Force MANUAL app-store signing on the freshly generated project so the
+    # archive uses the match profiles directly (no development profile, no
+    # device requirement).
+    update_code_signing_settings(
+      path: "Lore.xcodeproj",
+      use_automatic_signing: false,
+      team_id: TEAM_ID,
+      code_sign_identity: "Apple Distribution",
+      targets: ["Lore"],
+      profile_name: "match AppStore #{BUNDLE_ID}",
+    )
+    update_code_signing_settings(
+      path: "Lore.xcodeproj",
+      use_automatic_signing: false,
+      team_id: TEAM_ID,
+      code_sign_identity: "Apple Distribution",
+      targets: ["LoreWidget"],
+      profile_name: "match AppStore #{WIDGET_ID}",
+    )
+
     # A monotonic build number per CI run so TestFlight never rejects a
     # duplicate. Falls back to 1 for a local run.
     build_number = ENV["GITHUB_RUN_NUMBER"] || "1"
@@ -32,11 +68,18 @@ platform :ios do
       scheme: "Lore",
       configuration: "Release",
       export_method: "app-store",
-      # Cloud-managed signing on both the archive and the export.
-      xcargs: "-allowProvisioningUpdates DEVELOPMENT_TEAM=#{TEAM_ID} CURRENT_PROJECT_VERSION=#{build_number}",
-      export_xcargs: "-allowProvisioningUpdates",
+      xcargs: "CURRENT_PROJECT_VERSION=#{build_number}",
       output_directory: "build",
       clean: true,
+      export_options: {
+        method: "app-store",
+        signingStyle: "manual",
+        teamID: TEAM_ID,
+        provisioningProfiles: {
+          BUNDLE_ID => "match AppStore #{BUNDLE_ID}",
+          WIDGET_ID => "match AppStore #{WIDGET_ID}",
+        },
+      },
     )
 
     upload_to_testflight(
