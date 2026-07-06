@@ -3,3 +3,10 @@ xcuserdata/
 .DS_Store
 build/
 DerivedData/
+
+# fastlane generated
+fastlane/report.xml
+fastlane/README.md
+fastlane/test_output/
+*.ipa
+*.dSYM.zip

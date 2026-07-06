@@ -1,0 +1,50 @@
+# Lore, cloud build to TestFlight (see CI-SETUP.md).
+#
+# Signing is cloud-managed: the App Store Connect API key plus
+# -allowProvisioningUpdates lets Xcode create the distribution certificate and
+# provisioning profiles on the runner. No fastlane match, no certs repo, no
+# match password. The only secrets are the three ASC_* API-key values.
+
+default_platform(:ios)
+
+BUNDLE_ID = "app.lore.lore"
+TEAM_ID = "J9DMDH4S58"
+
+platform :ios do
+  desc "Build Lore and upload the build to TestFlight"
+  lane :beta do
+    # A clean, throwaway keychain on CI so codesign has somewhere to live.
+    setup_ci
+
+    api_key = app_store_connect_api_key(
+      key_id: ENV.fetch("ASC_KEY_ID"),
+      issuer_id: ENV.fetch("ASC_ISSUER_ID"),
+      key_content: ENV.fetch("ASC_KEY_CONTENT"),
+      is_key_content_base64: true,
+    )
+
+    # A monotonic build number per CI run so TestFlight never rejects a
+    # duplicate. Falls back to 1 for a local run.
+    build_number = ENV["GITHUB_RUN_NUMBER"] || "1"
+
+    build_app(
+      project: "Lore.xcodeproj",
+      scheme: "Lore",
+      configuration: "Release",
+      export_method: "app-store",
+      # Cloud-managed signing on both the archive and the export.
+      xcargs: "-allowProvisioningUpdates DEVELOPMENT_TEAM=#{TEAM_ID} CURRENT_PROJECT_VERSION=#{build_number}",
+      export_xcargs: "-allowProvisioningUpdates",
+      output_directory: "build",
+      clean: true,
+    )
+
+    upload_to_testflight(
+      api_key: api_key,
+      app_identifier: BUNDLE_ID,
+      # Do not block the runner waiting for Apple to finish processing; the
+      # build shows up in TestFlight a few minutes later.
+      skip_waiting_for_build_processing: true,
+    )
+  end
+end

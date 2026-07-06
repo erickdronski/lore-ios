@@ -1,0 +1,4 @@
+# Auth is via the App Store Connect API key (see Fastfile + CI-SETUP.md), so no
+# apple_id is needed here. These just name the app for fastlane actions.
+app_identifier("app.lore.lore")
+team_id("J9DMDH4S58")

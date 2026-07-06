@@ -1,0 +1,69 @@
+name: iOS · TestFlight
+
+# Push to main (or run manually) and this builds Lore in the cloud on a macOS
+# runner and uploads it to TestFlight. No local Xcode, ever. The Nalee/EAS
+# experience for a native SwiftUI app.
+#
+# One-time setup is in CI-SETUP.md: add an App Store Connect API key as three
+# repo secrets. Cloud-managed signing (-allowProvisioningUpdates) handles the
+# certificate and profiles, so there is no certs repo and no match password.
+
+on:
+  push:
+    branches: [main]
+    # Skip doc-only pushes; the build is for source/spec changes.
+    paths:
+      - "Sources/**"
+      - "project.yml"
+      - "StoreKit/**"
+      - "fastlane/**"
+      - "Gemfile*"
+      - ".github/workflows/ios-testflight.yml"
+  workflow_dispatch: {}
+
+concurrency:
+  group: ios-testflight
+  cancel-in-progress: false
+
+jobs:
+  testflight:
+    runs-on: macos-14
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select the latest stable Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate the Xcode project
+        run: xcodegen generate
+
+      - name: Ruby + Fastlane (cached)
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.2"
+          bundler-cache: true
+
+      - name: Build and upload to TestFlight
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_CONTENT: ${{ secrets.ASC_KEY_CONTENT }}
+        run: bundle exec fastlane beta
+
+      - name: Save the build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: |
+            ~/Library/Logs/gym/*.log
+            fastlane/report.xml
+          if-no-files-found: ignore
+          retention-days: 7
