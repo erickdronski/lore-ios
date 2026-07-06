@@ -1,15 +1,16 @@
 # Lore, cloud build to TestFlight (see CI-SETUP.md).
 #
-# Signing is cloud-managed: the App Store Connect API key plus
-# -allowProvisioningUpdates lets Xcode create the distribution certificate and
-# provisioning profiles on the runner. No fastlane match, no certs repo, no
-# match password. The only secrets are the three ASC_* API-key values.
-
-require "base64"
+# Signing: the App Store Connect API key creates an Apple Distribution
+# certificate (cert) and App Store provisioning profiles (sigh) for the app and
+# the widget, then the generated project is switched to MANUAL app-store signing
+# so the archive never asks for a development profile (which would need
+# registered devices). No fastlane match, no certs repo. Secrets are only the
+# three ASC_* API-key values.
 
 default_platform(:ios)
 
 BUNDLE_ID = "app.lore.lore"
+WIDGET_ID = "app.lore.lore.LoreWidget"
 TEAM_ID = "J9DMDH4S58"
 
 platform :ios do
@@ -25,15 +26,33 @@ platform :ios do
       is_key_content_base64: true,
     )
 
-    # Write the .p8 to disk so xcodebuild's -allowProvisioningUpdates can
-    # authenticate to App Store Connect and cloud-create the distribution
-    # certificate + app-store profiles for the app AND the widget. build_app
-    # itself takes no api_key param, the auth goes to xcodebuild directly.
-    key_path = File.expand_path("AuthKey.p8", __dir__)
-    File.write(key_path, Base64.decode64(ENV.fetch("ASC_KEY_CONTENT")))
-    auth = "-authenticationKeyPath #{key_path} " \
-           "-authenticationKeyID #{ENV.fetch('ASC_KEY_ID')} " \
-           "-authenticationKeyIssuerID #{ENV.fetch('ASC_ISSUER_ID')}"
+    # An Apple Distribution certificate into the CI keychain (reuses one from
+    # the account if its key is present, else creates it via the API key).
+    cert(api_key: api_key)
+
+    # App Store profiles for both bundle ids (registers the App IDs if missing).
+    app_profile = sigh(api_key: api_key, app_identifier: BUNDLE_ID)
+    widget_profile = sigh(api_key: api_key, app_identifier: WIDGET_ID)
+
+    # Force MANUAL app-store signing on the freshly generated project so the
+    # archive uses the distribution profiles directly, no dev profile, no
+    # device requirement.
+    update_code_signing_settings(
+      path: "Lore.xcodeproj",
+      use_automatic_signing: false,
+      team_id: TEAM_ID,
+      code_sign_identity: "Apple Distribution",
+      targets: ["Lore"],
+      profile_name: app_profile,
+    )
+    update_code_signing_settings(
+      path: "Lore.xcodeproj",
+      use_automatic_signing: false,
+      team_id: TEAM_ID,
+      code_sign_identity: "Apple Distribution",
+      targets: ["LoreWidget"],
+      profile_name: widget_profile,
+    )
 
     # A monotonic build number per CI run so TestFlight never rejects a
     # duplicate. Falls back to 1 for a local run.
@@ -44,11 +63,18 @@ platform :ios do
       scheme: "Lore",
       configuration: "Release",
       export_method: "app-store",
-      xcargs: "-allowProvisioningUpdates #{auth} " \
-              "DEVELOPMENT_TEAM=#{TEAM_ID} CURRENT_PROJECT_VERSION=#{build_number}",
-      export_xcargs: "-allowProvisioningUpdates #{auth}",
+      xcargs: "CURRENT_PROJECT_VERSION=#{build_number}",
       output_directory: "build",
       clean: true,
+      export_options: {
+        method: "app-store",
+        signingStyle: "manual",
+        teamID: TEAM_ID,
+        provisioningProfiles: {
+          BUNDLE_ID => app_profile,
+          WIDGET_ID => widget_profile,
+        },
+      },
     )
 
     upload_to_testflight(
