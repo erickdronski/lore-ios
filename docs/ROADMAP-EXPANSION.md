@@ -89,3 +89,23 @@ Small Supabase additions these depend on: `user_location` (the gated locate
 ping), `list` + `list_item`, and later `list_item_media` + Storage buckets with
 RLS. I'll spec the DDL and apply it as versioned migrations, same as the Mount
 Laurel seed.
+
+## Save / Lists — build state (the next massive step)
+
+**DONE — backend is live + verified.** `saved_place` table shipped via migration:
+`id, user_id (default auth.uid()), place_id → place, saved_at, note, rating`,
+`unique(user_id, place_id)`, owner-only RLS (read/insert/update/delete on
+`user_id = auth.uid()`), mirroring the `visit` table. A `place_id`-only POST
+satisfies RLS via the `auth.uid()` default (same shape as `logVisit`).
+
+**READY — iOS build (staged, not blind-shipped onto the crashing/unshippable
+build).** Each piece is a faithful mirror of the proven visit path:
+1. `LoreAPI.savePlace(placeID:accessToken:)` → `write("saved_place", POST, {place_id}, prefer:"return=minimal")`; `unsavePlace(...)` → DELETE `saved_place?place_id=eq.{id}`; read via a `TravelReads.saved(accessToken:)` mirroring `visits(...)` (`select=place_id,saved_at&order=saved_at.desc`).
+2. `SaveStore` — exact copy of `VisitStore` (savedPlaceIDs set, inFlight, load(force:), save/unsave optimistic + rollback, credentials closure, reset()).
+3. `TravelSession` — add `let saves: SaveStore`, wire the same credentials closure; `bootstrap` calls `saves.load()`.
+4. `LoreApp` — `.environment(travel.saves)`; `syncSession` resets saves on sign-out.
+5. `SaveButton` (heart) — mirror `VisitToggle`; place on the PlaceCardView header **before** Share (roadmap: archive-first), and on NearMeCard + search rows.
+6. `ProfileScreen` — a "Saved" section listing saved places grouped by city.
+
+Ship this the moment CI billing is restored (and ideally after the city-switch
+crash fix), verified together in one green build.
