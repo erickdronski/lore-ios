@@ -213,7 +213,10 @@ struct PassportSummary: View {
             Text(caption.uppercased())
                 .loreLabelStyle()
                 .tracking(0.8)
-                .foregroundStyle(LoreColor.ink600)
+                // Bone, not ink600: the Passport card is dark (ink800), so the
+                // caption needs a light tone to be readable (TestFlight feedback:
+                // "contrast here, I can't read all the text").
+                .foregroundStyle(LoreColor.bone.opacity(0.72))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -254,7 +257,7 @@ struct CategorySection: View {
                 Spacer()
                 Text("\(section.unlockedCount)/\(section.badges.count)")
                     .font(LoreType.caption)
-                    .foregroundStyle(LoreColor.ink600)
+                    .foregroundStyle(LoreColor.bone.opacity(0.6))
             }
             .padding(.horizontal, 16)
 
