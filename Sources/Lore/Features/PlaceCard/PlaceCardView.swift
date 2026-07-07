@@ -111,23 +111,42 @@ struct PlaceCardView: View {
     // MARK: Dossier (morph target)
 
     private var dossier: some View {
-        ZStack(alignment: .topLeading) {
+        ZStack(alignment: .top) {
             DiveView(place: place, morphNamespace: morph, medallionID: medallionID)
 
-            // Dismiss affordance, springs the dossier back down into the card.
-            Button {
-                showDive = false
-            } label: {
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(LoreColor.bone)
-                    .frame(width: 40, height: 40)
-                    .background(.ultraThinMaterial, in: Circle())
+            HStack {
+                // Dismiss affordance, springs the dossier back down into the card.
+                Button {
+                    showDive = false
+                } label: {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(LoreColor.bone)
+                        .frame(width: 40, height: 40)
+                        .background(.ultraThinMaterial, in: Circle())
+                }
+                .buttonStyle(.pressable)
+                .accessibilityLabel(Text("Close dossier"))
+
+                Spacer()
+
+                // Share the dossier (same poster composer as the card), so a
+                // reader can post the deep dive without closing it first.
+                Button {
+                    Haptics.play(.chipTap)
+                    showShare = true
+                } label: {
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(LoreColor.bone)
+                        .frame(width: 40, height: 40)
+                        .background(.ultraThinMaterial, in: Circle())
+                }
+                .buttonStyle(.pressable)
+                .accessibilityLabel(Text("Share \(place.name)"))
             }
-            .buttonStyle(.pressable)
-            .padding(.leading, 16)
+            .padding(.horizontal, 16)
             .padding(.top, 8)
-            .accessibilityLabel(Text("Close dossier"))
         }
     }
 

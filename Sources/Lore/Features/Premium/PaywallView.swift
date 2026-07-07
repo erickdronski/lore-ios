@@ -219,13 +219,7 @@ struct PaywallView: View {
     }
 
     private var finePrint: some View {
-        Text(
-            (model.isEligibleForTrial
-                ? "7 days free, then \(model.displayPriceLine(for: model.selectedPlan)). "
-                : "\(model.displayPriceLine(for: model.selectedPlan)). ")
-            + "Cancel anytime in Settings. Your free daily dives and unlimited "
-            + "scanning never expire."
-        )
+        Text(model.finePrintText)
         .font(LoreType.caption)
         .foregroundStyle(LoreColor.ink600)
         .multilineTextAlignment(.center)
@@ -445,6 +439,7 @@ final class PaywallModel {
     enum Plan: String, CaseIterable, Identifiable {
         case monthly
         case annual
+        case lifetime
 
         var id: String { rawValue }
 
@@ -455,6 +450,7 @@ final class PaywallModel {
             switch self {
             case .monthly: return StoreKitService.ProductID.monthly
             case .annual: return StoreKitService.ProductID.annual
+            case .lifetime: return StoreKitService.ProductID.lifetime
             }
         }
 
@@ -462,6 +458,7 @@ final class PaywallModel {
             switch self {
             case .monthly: return "Monthly"
             case .annual: return "Annual"
+            case .lifetime: return "Lifetime"
             }
         }
 
@@ -472,6 +469,7 @@ final class PaywallModel {
             switch self {
             case .monthly: return "$5.99 / month"
             case .annual: return "$34.99 / year"
+            case .lifetime: return "$99.99 once"
             }
         }
 
@@ -480,6 +478,7 @@ final class PaywallModel {
             switch self {
             case .monthly: return "then $5.99/mo"
             case .annual: return "then $34.99/yr"
+            case .lifetime: return "one-time · yours forever"
             }
         }
 
@@ -488,6 +487,7 @@ final class PaywallModel {
             switch self {
             case .monthly: return nil
             case .annual: return "Save 51%"
+            case .lifetime: return "Founder"
             }
         }
 
@@ -497,6 +497,7 @@ final class PaywallModel {
             switch self {
             case .monthly: return " / month"
             case .annual: return " / year"
+            case .lifetime: return ""
             }
         }
     }
@@ -519,12 +520,27 @@ final class PaywallModel {
     /// two products share a subscription group, so eligibility is the same).
     func refreshEligibility() async {
         guard let store else { return }
+        // Lifetime is a non-consumable: no intro offer ever applies to it.
+        guard selectedPlan != .lifetime else { isEligibleForTrial = false; return }
         isEligibleForTrial = await store.isEligibleForIntroOffer(productID: selectedPlan.productID)
     }
 
-    /// The CTA title, promises the trial only when eligible.
+    /// The CTA title. Lifetime is a one-time unlock; the subscriptions promise
+    /// the trial only when the Apple ID is actually eligible.
     var ctaTitle: String {
-        isEligibleForTrial ? "Start 7-day free trial" : "Subscribe"
+        if selectedPlan == .lifetime { return "Unlock Lore+ forever" }
+        return isEligibleForTrial ? "Start 7-day free trial" : "Subscribe"
+    }
+
+    /// The fine print under the CTA, correct per plan (no trial/cancel language
+    /// on the lifetime one-time purchase).
+    var finePrintText: String {
+        let price = displayPriceLine(for: selectedPlan)
+        if selectedPlan == .lifetime {
+            return "\(price). One payment, unlocked forever. Your free daily dives and unlimited scanning never expire."
+        }
+        let lead = isEligibleForTrial ? "7 days free, then \(price). " : "\(price). "
+        return lead + "Cancel anytime in Settings. Your free daily dives and unlimited scanning never expire."
     }
 
     /// The best price line for a plan: the localized StoreKit `displayPrice`
