@@ -23,18 +23,29 @@ struct AuthUser: Codable {
     let email: String?
 }
 
-/// Email/password auth against Supabase GoTrue REST, no SDK.
+/// Email/password + OAuth auth against Supabase GoTrue REST, no SDK.
 ///
-/// P0 scope: session lives in memory only (relaunch = signed out). P1 adds
-/// Keychain persistence + refresh-token rotation, the **anonymous sign-in**
-/// device identity for the dive meter (docs/03 §5), and native Sign in with
-/// Apple (docs/11-AUTH-SETUP.md §B.2).
+/// The session is **persisted to the Keychain** and restored on launch (with a
+/// refresh-token exchange for a fresh access token), so relaunching keeps the
+/// user signed in. Remaining P1: the **anonymous sign-in** device identity for
+/// the dive meter (docs/03 §5).
 @Observable
 @MainActor
 final class AuthService {
-    private(set) var session: AuthSession?
+    private(set) var session: AuthSession? {
+        didSet {
+            if let session {
+                SessionStore.save(session)
+            } else {
+                SessionStore.clear()
+            }
+        }
+    }
     private(set) var profile: UserProfile?
     private(set) var isBusy = false
+    /// True until the first launch restore attempt finishes, so signed-out UI
+    /// doesn't flash before a persisted session is rehydrated.
+    private(set) var isRestoring = true
     var lastError: String?
 
     /// Runs the `ASWebAuthenticationSession` for Supabase OAuth providers.
@@ -103,6 +114,51 @@ final class AuthService {
         }
         session = nil
         profile = nil
+    }
+
+    /// Restore a persisted session on launch: load it from the Keychain, show
+    /// signed-in immediately, then exchange the refresh token for a fresh access
+    /// token and hydrate the profile. If nothing is stored (or the refresh
+    /// token is dead), we end up signed out cleanly. Idempotent, no-ops if
+    /// already signed in.
+    func restore() async {
+        defer { isRestoring = false }
+        guard session == nil, let saved = SessionStore.load() else { return }
+        session = saved
+        await refreshSession()
+        await refreshProfile()
+    }
+
+    /// Exchange the current refresh token for a fresh GoTrue session
+    /// (`grant_type=refresh_token`). On an invalid/expired refresh token we sign
+    /// out; on a network blip we keep the restored session so a later call can
+    /// retry rather than bouncing the user to sign-in.
+    private func refreshSession() async {
+        guard let refreshToken = session?.refreshToken else { return }
+        do {
+            var components = URLComponents(
+                url: Config.authURL.appending(path: "token"),
+                resolvingAgainstBaseURL: false
+            )
+            components?.queryItems = [URLQueryItem(name: "grant_type", value: "refresh_token")]
+            guard let url = components?.url else { return }
+
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue(Config.supabaseAnonKey, forHTTPHeaderField: "apikey")
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try JSONEncoder().encode(["refresh_token": refreshToken])
+
+            let (data, response) = try await URLSession.shared.data(for: request)
+            if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+                // The refresh token is dead; sign out so the UI is honest.
+                session = nil
+                return
+            }
+            session = try JSONDecoder().decode(AuthSession.self, from: data)
+        } catch {
+            // Transient failure: keep the restored session (a later 401 re-auths).
+        }
     }
 
     /// Loads the signed-in user's `user_profile` row (trust tier, points).

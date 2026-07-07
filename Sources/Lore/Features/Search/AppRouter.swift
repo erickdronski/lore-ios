@@ -72,6 +72,12 @@ final class AppRouter {
     /// never in a city-less state before the switcher is ever opened.
     var selectedCity: String = Config.defaultCity
 
+    /// True once the user has explicitly chosen a city (switcher, a search hit,
+    /// or a deep link). Location-based auto-selection never overrides an
+    /// explicit choice (TestFlight feedback: "it says Chicago but I'm in Mount
+    /// Laurel, it should follow my location").
+    private(set) var userDidChooseCity = false
+
     /// The last route requested, exposed so a host that prefers to *observe*
     /// rather than take a callback can `.onChange(of: router.lastRoute)`.
     private(set) var lastRoute: LoreRoute?
@@ -93,6 +99,7 @@ final class AppRouter {
         switch route {
         case .city(let slug):
             selectedCity = slug
+            userDidChooseCity = true
         case .place(_, let city),
              .story(_, let city),
              .culture(_, let city),
@@ -111,6 +118,15 @@ final class AppRouter {
     /// Switch the active city by slug (the city switcher's primary action).
     func switchCity(to slug: String) {
         route(.city(slug: slug))
+    }
+
+    /// Snap the active city to the user's nearest city (location-based), unless
+    /// they've already chosen one. Sets `selectedCity` directly (no route emit)
+    /// so it silently re-scopes the map without a jump; a later explicit choice
+    /// still wins because this checks `userDidChooseCity`.
+    func autoSelectCity(_ slug: String) {
+        guard !userDidChooseCity, slug != selectedCity else { return }
+        selectedCity = slug
     }
 
     /// Handle a `lore://` deep link from a **widget tap** or a **Live Activity**

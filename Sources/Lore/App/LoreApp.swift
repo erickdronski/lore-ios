@@ -1,3 +1,4 @@
+import CoreLocation
 import SwiftUI
 
 /// Lore, every place has a story.
@@ -104,6 +105,12 @@ struct RootTabView: View {
 
     @State private var selection: Tab = .map
 
+    /// One-shot location source used only to snap the active city to the user's
+    /// nearest city on launch (TestFlight feedback: "it says Chicago but I'm in
+    /// Mount Laurel"). Shares CoreLocation permission with the near-me shelf.
+    @State private var locator = NearMeLocationProvider()
+    @State private var autoCityDone = false
+
     // Router-raised presentations.
     @State private var showSearch = false
     @State private var showCitySwitcher = false
@@ -171,11 +178,42 @@ struct RootTabView: View {
             SignInView()
                 .presentationDetents([.large])
         }
-        .onAppear { installRouter() }
+        .onAppear {
+            installRouter()
+            locator.start()
+        }
+        // Follow the user's location to the nearest city on launch, unless they
+        // have chosen one. Resolves once, then leaves the city under user control.
+        .onChange(of: locator.location) { _, newLocation in
+            resolveNearestCity(newLocation)
+        }
         // Widget taps + Live Activity taps arrive as `lore://` deep links.
         .onOpenURL { url in router.handleDeepLink(url) }
+        // Restore a persisted sign-in on launch (Keychain + token refresh) so
+        // returning users are not asked to sign in again.
+        .task { await auth.restore() }
         // Session changes ripple to every dependent store.
         .task(id: auth.session?.accessToken) { await syncSession() }
+    }
+
+    /// Resolve the nearest live city to a fresh location fix and hand it to the
+    /// router (which ignores it if the user already picked a city). Runs at most
+    /// once per launch.
+    private func resolveNearestCity(_ location: CLLocation?) {
+        guard let location, !autoCityDone, !router.userDidChooseCity else { return }
+        autoCityDone = true
+        Task {
+            guard let cities = try? await LoreAPI.shared.cities(), !cities.isEmpty else {
+                autoCityDone = false
+                return
+            }
+            let nearest = cities.min {
+                location.distance(from: $0.location) < location.distance(from: $1.location)
+            }
+            if let nearest {
+                router.autoSelectCity(nearest.slug)
+            }
+        }
     }
 
     /// Present "Meet {City}" as a sheet keyed by slug.
