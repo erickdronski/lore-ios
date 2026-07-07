@@ -95,14 +95,17 @@ struct DiveView: View {
             // feedback: "go deeper exposes all the text; keep it compact with a
             // read more button so everything below is pushed up and visible").
             ExpandableNarrative(text: narrative)
+                .diveEntrance(index: 0)
         }
 
         if let wikipediaTitle = dive.media.wikipediaTitle {
             DiveGallery(wikipediaTitle: wikipediaTitle)
+                .diveEntrance(index: 1)
         }
 
         if !dive.timeline.isEmpty {
             TimelineStrip(events: dive.timeline)
+                .diveEntrance(index: 2)
         }
     }
 
