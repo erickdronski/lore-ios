@@ -24,6 +24,24 @@ struct Tour: Codable, Identifiable, Hashable {
         case stops = "tour_stop"
     }
 
+    /// Memberwise init for tours built in code (the generated "1 Hour In" walk),
+    /// since the custom decoder below suppresses the synthesized one.
+    init(
+        id: String, slug: String, title: String, city: String,
+        emoji: String?, blurb: String?, durationMin: Int?, distanceKm: Double?,
+        stops: [TourStop]
+    ) {
+        self.id = id
+        self.slug = slug
+        self.title = title
+        self.city = city
+        self.emoji = emoji
+        self.blurb = blurb
+        self.durationMin = durationMin
+        self.distanceKm = distanceKm
+        self.stops = stops
+    }
+
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(String.self, forKey: .id)
