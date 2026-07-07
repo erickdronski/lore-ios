@@ -31,6 +31,10 @@ struct MapScreen: View {
     var onNeedsSignIn: () -> Void = {}
 
     @Environment(MapFilterStore.self) private var filters
+    /// Read to gate the header's "locate me" control: finding yourself on the
+    /// map is a signed-in feature (founder steer: gate it so we can track and
+    /// store the user's location).
+    @Environment(AuthService.self) private var auth
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var model = MapScreenModel()
     @State private var position: MapCameraPosition = .automatic
@@ -83,6 +87,7 @@ struct MapScreen: View {
             .safeAreaInset(edge: .top) {
                 MapHeader(
                     cityName: model.cityDisplayName(for: city),
+                    onLocate: locateMe,
                     onSearch: onOpenSearch,
                     onSwitchCity: onOpenCitySwitcher,
                     onMeetCity: { onMeetCity(city) }
@@ -189,15 +194,6 @@ struct MapScreen: View {
     /// toggle. Quiet and top-trailing; 3D is the moment people screen-record.
     private var mapControls: some View {
         VStack(spacing: 10) {
-            // Recenter on the user (TestFlight feedback: "current location icon").
-            // MapKit follows the fix natively; falls back to the city frame if
-            // location isn't authorized yet.
-            mapControlButton(
-                system: "location.fill",
-                on: false,
-                label: "Center on my location"
-            ) { centerOnUser() }
-
             mapControlButton(
                 system: dimensional ? "view.2d" : "view.3d",
                 on: dimensional,
@@ -232,6 +228,21 @@ struct MapScreen: View {
         }
         .buttonStyle(.pressable)
         .accessibilityLabel(Text(label))
+    }
+
+    /// The header "locate me" tap. Finding yourself on the map is a signed-in
+    /// feature (founder steer: gate it so we can track + store where users are);
+    /// signed out, it nudges sign-in instead of silently doing nothing.
+    private func locateMe() {
+        guard auth.isSignedIn else {
+            Haptics.play(.chipTap)
+            onNeedsSignIn()
+            return
+        }
+        centerOnUser()
+        // TODO(backend): persist a location ping here once the `user_location`
+        // table + authenticated write land, so the signed-in locate feature is
+        // tracked (founder steer). The gate + recenter ship now.
     }
 
     /// Follow the user's live location. MapKit resolves + tracks the fix; if
@@ -360,6 +371,8 @@ final class MapScreenModel {
 /// affordance. App chrome, so Ink/Brass, never Amber (Amber is the world's).
 struct MapHeader: View {
     let cityName: String
+    /// Center the map on the user (gated to signed-in upstream).
+    var onLocate: () -> Void = {}
     let onSearch: () -> Void
     let onSwitchCity: () -> Void
     let onMeetCity: () -> Void
@@ -385,6 +398,20 @@ struct MapHeader: View {
             .accessibilityHint(Text("Switch cities."))
 
             Spacer(minLength: 8)
+
+            // Locate me: center the map on the user's live position. Amber (the
+            // world's color) marks it as "you on the map"; gated to signed-in
+            // upstream so tapping it signed-out nudges sign-in.
+            Button(action: onLocate) {
+                Image(systemName: "location.fill")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(LoreColor.ink)
+                    .frame(width: 40, height: 40)
+                    .background(.ultraThinMaterial, in: Circle())
+                    .overlay(Circle().strokeBorder(LoreColor.amber.opacity(0.55), lineWidth: 1.5))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text("Show my location on the map"))
 
             Button(action: onMeetCity) {
                 Image(systemName: "quote.bubble")
