@@ -145,7 +145,7 @@ struct ProfileScreen: View {
             StubRow(
                 icon: "crown",
                 title: "Lore+",
-                note: "P3, unlimited dives · $4.99/mo · 7-day trial"
+                note: "Unlimited dives · $5.99/mo · 7-day trial"
             )
         }
     }

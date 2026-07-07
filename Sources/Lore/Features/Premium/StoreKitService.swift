@@ -37,13 +37,16 @@ import StoreKit
 @Observable
 @MainActor
 final class StoreKitService {
-    /// The two Lore+ subscription products, App Store Connect identifiers
-    /// (docs/16 §1, and the ASC setup in docs/10 §6). These are the *real* IDs
-    /// the `Configuration.storekit` file and ASC both define, not placeholders.
+    /// The Lore+ products, App Store Connect identifiers (docs/16 §1). Ids are
+    /// price-agnostic on purpose: pricing is $5.99/mo, $34.99/yr, $99.99 lifetime
+    /// (locked 2026-07-06), and a future price change must never require a new
+    /// id. `lifetime` is a non-consumable Founder unlock; the subs auto-renew.
+    /// Any owned product confers Lore+ (see `isPlus`).
     enum ProductID {
-        static let monthly = "lore_plus_monthly_4_99"
-        static let annual = "lore_plus_annual_29_99"
-        static let all: [String] = [monthly, annual]
+        static let monthly = "lore_plus_monthly"
+        static let annual = "lore_plus_annual"
+        static let lifetime = "lore_plus_lifetime"
+        static let all: [String] = [monthly, annual, lifetime]
     }
 
     /// The `entitlements` grant name these products confer. Matches the row

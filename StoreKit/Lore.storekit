@@ -1,7 +1,23 @@
 {
   "identifier" : "A1B2C3D4-0000-0000-0000-LOREPLUS0001",
   "nonRenewingSubscriptions" : [],
-  "products" : [],
+  "products" : [
+    {
+      "displayPrice" : "99.99",
+      "familyShareable" : false,
+      "internalID" : "LOREPLUS_LIFETIME_0001",
+      "localizations" : [
+        {
+          "description" : "Every Lore+ feature, forever. A one-time Founder unlock.",
+          "displayName" : "Lore+ Lifetime (Founder)",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "lore_plus_lifetime",
+      "referenceName" : "Lore+ Lifetime Founder",
+      "type" : "NonConsumable"
+    }
+  ],
   "settings" : {
     "_applicationInternalID" : "",
     "_developerTeamID" : "J9DMDH4S58",
@@ -20,7 +36,7 @@
         {
           "adHocOffers" : [],
           "codeOffers" : [],
-          "displayPrice" : "4.99",
+          "displayPrice" : "5.99",
           "familyShareable" : false,
           "groupNumber" : 1,
           "internalID" : "LOREPLUS_MONTHLY_0001",
@@ -36,7 +52,7 @@
               "locale" : "en_US"
             }
           ],
-          "productID" : "lore_plus_monthly_4_99",
+          "productID" : "lore_plus_monthly",
           "recurringSubscriptionPeriod" : "P1M",
           "referenceName" : "Lore+ Monthly",
           "subscriptionGroupID" : "LOREPLUS_GROUP_0001",
@@ -45,7 +61,7 @@
         {
           "adHocOffers" : [],
           "codeOffers" : [],
-          "displayPrice" : "29.99",
+          "displayPrice" : "34.99",
           "familyShareable" : false,
           "groupNumber" : 1,
           "internalID" : "LOREPLUS_ANNUAL_0001",
@@ -56,12 +72,12 @@
           },
           "localizations" : [
             {
-              "description" : "Unlimited deep dives, curated walks, offline cities, and audio narration. Save 50% vs monthly.",
+              "description" : "Unlimited deep dives, curated walks, offline cities, and audio narration. Save over 50% vs monthly.",
               "displayName" : "Lore+ Annual",
               "locale" : "en_US"
             }
           ],
-          "productID" : "lore_plus_annual_29_99",
+          "productID" : "lore_plus_annual",
           "recurringSubscriptionPeriod" : "P1Y",
           "referenceName" : "Lore+ Annual",
           "subscriptionGroupID" : "LOREPLUS_GROUP_0001",

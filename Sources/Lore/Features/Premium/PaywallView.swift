@@ -470,24 +470,24 @@ final class PaywallModel {
         /// prefers the localized `Product.displayPrice`.
         var priceLine: String {
             switch self {
-            case .monthly: return "$4.99 / month"
-            case .annual: return "$29.99 / year"
+            case .monthly: return "$5.99 / month"
+            case .annual: return "$34.99 / year"
             }
         }
 
-        /// Sub-line under the CTA after the trial ("then $4.99/mo").
+        /// Sub-line under the CTA after the trial ("then $5.99/mo").
         var ctaSubtitle: String {
             switch self {
-            case .monthly: return "then $4.99/mo"
-            case .annual: return "then $29.99/yr"
+            case .monthly: return "then $5.99/mo"
+            case .annual: return "then $34.99/yr"
             }
         }
 
-        /// The "save 50%" style badge on annual. $29.99 vs $59.88 ≈ 50% off.
+        /// The "save 51%" style badge on annual. $34.99 vs $71.88 ≈ 51% off.
         var savingsBadge: String? {
             switch self {
             case .monthly: return nil
-            case .annual: return "Save 50%"
+            case .annual: return "Save 51%"
             }
         }
 

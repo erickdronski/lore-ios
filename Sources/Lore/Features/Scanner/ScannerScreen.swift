@@ -1,5 +1,6 @@
 import CoreLocation
 import SwiftUI
+import UIKit
 
 /// The scanner viewfinder, **v2**, the intelligence layer over the coarse
 /// GPS + compass pose (docs/12-SCANNER-INTELLIGENCE.md, on top of the docs/05
@@ -122,6 +123,9 @@ struct ScannerScreen: View {
                 .presentationDetents([.medium, .large])
                 .presentationBackground(.regularMaterial)
                 .presentationCornerRadius(24)
+        }
+        .sheet(item: $model.capturedShot) { shot in
+            ARCaptureSheet(shot: shot)
         }
         .task {
             model.apply(prefs: prefs)
@@ -281,6 +285,10 @@ struct ScannerScreen: View {
         HStack(spacing: 8) {
             CompassRing(headingDegrees: model.pose.headingDegrees)
             Spacer()
+            if !model.preciseMode {
+                shutterButton
+            }
+            Spacer()
             if model.canLockOn || model.preciseMode {
                 lockOnToggle
             }
@@ -310,6 +318,31 @@ struct ScannerScreen: View {
         }
         .padding(.horizontal, 16)
         .padding(.bottom, 16)
+    }
+
+    /// The camera shutter (Phase 2 "magic capture"): freeze the real facade +
+    /// the Lore pin into a shareable AR postcard. Coarse mode only for now, the
+    /// precise-mode ARSession owns the frame.
+    private var shutterButton: some View {
+        Button {
+            Haptics.play(.scannerLock)
+            Task { await model.captureMoment() }
+        } label: {
+            ZStack {
+                Circle()
+                    .strokeBorder(LoreColor.bone.opacity(0.9), lineWidth: 3)
+                    .frame(width: 58, height: 58)
+                Circle()
+                    .fill(LoreColor.bone)
+                    .frame(width: 46, height: 46)
+                Image(systemName: "camera.fill")
+                    .font(.system(size: 17))
+                    .foregroundStyle(LoreColor.ink)
+            }
+            .shadow(color: LoreColor.ink.opacity(0.4), radius: 6, x: 0, y: 2)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text("Capture this view"))
     }
 
     /// The precise-mode affordance (docs/05 §5): offered only when the
@@ -559,6 +592,8 @@ final class ScannerModel {
 
     var selectedPlace: Place?
     var selectedStory: Story?
+    /// A frozen frame awaiting the AR-postcard share sheet. Nil when idle.
+    var capturedShot: CapturedShot?
 
     /// The night/haunted layer toggle (docs/12 §3.1 layer 3). Opt-in only.
     private(set) var hauntedOnly = false
@@ -730,6 +765,21 @@ final class ScannerModel {
         Haptics.play(.dossierOpen)
         seenPlaceIDs.insert(place.id)
         selectedPlace = place
+    }
+
+    /// Freeze the viewfinder into a shareable AR postcard, tagged with the
+    /// currently-locked place + city (Phase 2 "magic capture"). Coarse mode only
+    /// (precise mode's ARSession owns the camera). No-op on failure, never
+    /// crashes the scan.
+    func captureMoment() async {
+        guard !preciseMode,
+              let data = await camera.capturePhotoData(),
+              let image = UIImage(data: data) else { return }
+        capturedShot = CapturedShot(
+            image: image,
+            place: lockedRanked?.place,
+            city: loadedCity ?? Config.defaultCity
+        )
     }
 
     /// A stack candidate the user confirmed → it becomes the locked pin and

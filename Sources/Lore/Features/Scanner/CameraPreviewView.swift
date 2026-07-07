@@ -12,6 +12,11 @@ final class ScannerCameraService {
     let session = AVCaptureSession()
     private let sessionQueue = DispatchQueue(label: "com.erickdronski.lore.camera-session")
     private var configured = false
+    /// Still-photo output for the "AR postcard" capture (the un-fakeable hero
+    /// image: the real facade + the Lore pin, composited in `ARCaptureSheet`).
+    private let photoOutput = AVCapturePhotoOutput()
+    /// Retains the in-flight capture delegate until the photo comes back.
+    private var captureDelegate: PhotoCaptureDelegate?
 
     /// Requests camera permission if needed, then configures + starts the
     /// session off the main thread.
@@ -55,7 +60,37 @@ final class ScannerCameraService {
         else { return }
 
         session.addInput(input)
+
+        // The still-photo output for AR postcard capture. Preview keeps working
+        // exactly as before; this just lets the user freeze a shareable frame.
+        if session.canAddOutput(photoOutput) {
+            session.addOutput(photoOutput)
+        }
         configured = true
+    }
+
+    /// Freeze the current viewfinder frame as EXIF-oriented JPEG `Data`, for the
+    /// shareable AR postcard. Returns `Data` (Sendable) rather than a UIImage so
+    /// nothing non-Sendable crosses the capture queue into the caller's actor;
+    /// the caller builds the `UIImage`. Nil if the session isn't running or the
+    /// capture fails; the caller degrades gracefully (no postcard, no crash).
+    func capturePhotoData() async -> Data? {
+        await withCheckedContinuation { (cont: CheckedContinuation<Data?, Never>) in
+            sessionQueue.async { [weak self] in
+                guard let self, self.session.isRunning,
+                      self.session.outputs.contains(self.photoOutput) else {
+                    cont.resume(returning: nil)
+                    return
+                }
+                let settings = AVCapturePhotoSettings()
+                let delegate = PhotoCaptureDelegate { [weak self] data in
+                    self?.captureDelegate = nil
+                    cont.resume(returning: data)
+                }
+                self.captureDelegate = delegate
+                self.photoOutput.capturePhoto(with: settings, delegate: delegate)
+            }
+        }
     }
 
     /// Approximate horizontal field of view of the active camera, degrees.
@@ -92,4 +127,23 @@ struct CameraPreviewView: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: PreviewView, context: Context) {}
+}
+
+/// One-shot `AVCapturePhotoOutput` delegate that resolves a single capture into
+/// an EXIF-oriented `UIImage`. Retained by `ScannerCameraService` for the life
+/// of the capture, then released.
+private final class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate {
+    private let completion: (Data?) -> Void
+
+    init(completion: @escaping (Data?) -> Void) {
+        self.completion = completion
+    }
+
+    func photoOutput(
+        _ output: AVCapturePhotoOutput,
+        didFinishProcessingPhoto photo: AVCapturePhoto,
+        error: Error?
+    ) {
+        completion(error == nil ? photo.fileDataRepresentation() : nil)
+    }
 }
