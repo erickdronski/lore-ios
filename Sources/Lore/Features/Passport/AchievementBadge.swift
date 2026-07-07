@@ -66,6 +66,39 @@ enum BadgeTier: String, CaseIterable {
     /// Only gold + legend earn the Brass/Amber prestige treatment (a subtle
     /// glow ring). Bronze/silver stay quiet, Brass is earned, not default.
     var isPrestige: Bool { self == .gold || self == .legend }
+
+    /// The metal color stops for this tier, brightest → base, used to build a
+    /// brushed-metal angular sheen on the medallion ring.
+    private var metalStops: [Color] {
+        switch self {
+        case .bronze: return [LoreColor.brass, LoreColor.brass700, Color(red: 0.42, green: 0.28, blue: 0.14)]
+        case .silver: return [LoreColor.bone, LoreColor.ink600, LoreColor.ink700]
+        case .gold:   return [LoreColor.amber, LoreColor.brass, LoreColor.brass700]
+        case .legend: return [LoreColor.amber, LoreColor.amber600, LoreColor.brass]
+        }
+    }
+
+    /// A brushed-metal angular gradient for the medallion ring. Locked badges
+    /// use a flat Ink so only earned badges shine.
+    func metalGradient(unlocked: Bool) -> AngularGradient {
+        let base = unlocked
+            ? metalStops
+            : [LoreColor.ink700, LoreColor.ink800, LoreColor.ink700]
+        // Repeat the sequence so the sheen sweeps twice around for a richer
+        // metallic reflection, and close the loop back to the first stop.
+        let sweep = base + base.reversed() + [base[0]]
+        return AngularGradient(gradient: Gradient(colors: sweep), center: .center)
+    }
+
+    /// The icon tint on the Ink enamel disc, a light/warm tone that reads on dark.
+    var iconColor: Color {
+        switch self {
+        case .bronze: return LoreColor.bone
+        case .silver: return LoreColor.bone
+        case .gold:   return LoreColor.amber
+        case .legend: return LoreColor.amber
+        }
+    }
 }
 
 // MARK: - Progress ring
@@ -154,41 +187,79 @@ struct AchievementBadge: View {
 
     private var medallion: some View {
         ZStack {
-            // Progress ring only while in progress; unlocked shows a solid tier
-            // ring, locked/mystery a faint hairline.
+            // In-progress badges keep the tier progress ring, sized just outside
+            // the metal medallion.
             if isInProgress {
                 ProgressRing(fraction: fraction, tier: tier, animates: appeared)
-                    .frame(width: 72, height: 72)
-            } else {
-                Circle()
-                    .stroke(ringColor, lineWidth: isUnlocked ? 3 : 1.5)
-                    .frame(width: 72, height: 72)
+                    .frame(width: 80, height: 80)
             }
 
+            // The metal medallion: a brushed-metal angular sheen with a beveled
+            // rim highlight, and a prestige glow for gold/legend.
             Circle()
-                .fill(discColor)
-                .frame(width: 60, height: 60)
+                .fill(tier.metalGradient(unlocked: isUnlocked))
+                .frame(width: 68, height: 68)
+                .overlay(
+                    Circle().strokeBorder(
+                        LinearGradient(
+                            colors: [.white.opacity(isUnlocked ? 0.55 : 0.12), .clear, .black.opacity(0.18)],
+                            startPoint: .topLeading, endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1.5
+                    )
+                )
+                .shadow(
+                    color: (isUnlocked && tier.isPrestige) ? tier.ring.opacity(0.5) : .black.opacity(0.28),
+                    radius: (isUnlocked && tier.isPrestige) ? 10 : 4,
+                    x: 0, y: 2
+                )
+
+            // The Ink enamel center, with a little radial depth and a tier rim.
+            Circle()
+                .fill(
+                    RadialGradient(
+                        colors: [LoreColor.ink900, LoreColor.ink800],
+                        center: .init(x: 0.5, y: 0.42), startRadius: 2, endRadius: 30
+                    )
+                )
+                .frame(width: 52, height: 52)
+                .overlay(
+                    Circle().strokeBorder(tier.ring.opacity(isUnlocked ? 0.6 : 0.2), lineWidth: 1)
+                )
 
             glyph
+
+            // Glossy top-left sheen so the medallion catches light. Unlocked only.
+            if isUnlocked {
+                Circle()
+                    .fill(
+                        RadialGradient(
+                            colors: [.white.opacity(0.38), .clear],
+                            center: .init(x: 0.3, y: 0.24), startRadius: 1, endRadius: 26
+                        )
+                    )
+                    .frame(width: 66, height: 66)
+                    .blendMode(.screen)
+                    .allowsHitTesting(false)
+            }
         }
-        // Gold + legend get a soft prestige glow when unlocked.
-        .shadow(
-            color: (isUnlocked && tier.isPrestige) ? tier.ring.opacity(0.45) : .clear,
-            radius: 10
-        )
+        // Locked/mystery medallions read quieter (desaturated + dimmed).
+        .saturation(isUnlocked ? 1 : 0.25)
+        .opacity(isUnlocked ? 1 : 0.82)
     }
 
     @ViewBuilder
     private var glyph: some View {
         if isMystery {
             Image(systemName: "questionmark")
-                .font(.system(size: 26, weight: .semibold))
+                .font(.system(size: 24, weight: .bold))
                 .foregroundStyle(LoreColor.ink600)
         } else {
-            Text(achievement.displayEmoji)
-                .font(.system(size: 30))
-                .grayscale(isUnlocked ? 0 : 0.9)
-                .opacity(isUnlocked ? 1 : 0.55)
+            Image(systemName: achievement.symbolName)
+                .font(.system(size: 25, weight: .semibold))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(isUnlocked ? tier.iconColor : LoreColor.bone.opacity(0.5))
+                .shadow(color: .black.opacity(isUnlocked ? 0.3 : 0), radius: 1, y: 1)
         }
     }
 

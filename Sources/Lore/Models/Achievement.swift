@@ -82,6 +82,66 @@ struct Achievement: Codable, Identifiable, Hashable {
         return "🏅"
     }
 
+    /// A crisp SF Symbol per badge, drawn on the medallion instead of an emoji
+    /// (scalable, tintable, professional). Unknown slugs fall back by category,
+    /// then a rosette; an unknown symbol renders blank rather than crashing.
+    var symbolName: String {
+        switch slug {
+        case "first-steps": return "shoeprints.fill"
+        case "getting-around": return "figure.walk"
+        case "city-slicker": return "building.2.fill"
+        case "seasoned-wanderer": return "safari.fill"
+        case "centurion": return "trophy.fill"
+        case "living-atlas": return "map.fill"
+        case "two-cities": return "building.2.crop.circle.fill"
+        case "city-hopper": return "airplane"
+        case "passport-stamped": return "airplane.circle.fill"
+        case "globetrotter": return "globe.americas.fill"
+        case "grand-tour": return "globe.europe.africa.fill"
+        case "windy-city-native": return "wind"
+        case "empire-explorer": return "building.fill"
+        case "city-of-brotherly-love": return "bell.fill"
+        case "bridge-walker": return "figure.walk.motion"
+        case "park-ranger": return "leaf.fill"
+        case "forest-bather": return "tree.fill"
+        case "statue-spotter": return "figure.stand"
+        case "museum-member": return "building.columns.fill"
+        case "deco-detective": return "magnifyingglass"
+        case "gothic-soul": return "building.columns.fill"
+        case "sky-high": return "building.2.fill"
+        case "engineer-eye": return "gearshape.fill"
+        case "star-map": return "film.fill"
+        case "encore": return "guitars.fill"
+        case "encore-encore": return "music.mic"
+        case "record-keeper": return "rosette"
+        case "patron": return "paintpalette.fill"
+        case "survivor-seeker": return "shield.fill"
+        case "ghost-hunter", "night-owl": return "moon.stars.fill"
+        case "last-call": return "wineglass.fill"
+        case "stage-door": return "theatermasks.fill"
+        case "take-me-out": return "baseball.fill"
+        case "curious-mind": return "book.fill"
+        case "scholar": return "graduationcap.fill"
+        case "docent": return "books.vertical.fill"
+        case "local-lingo": return "text.bubble.fill"
+        case "star-struck": return "star.fill"
+        case "on-a-roll", "unstoppable": return "flame.fill"
+        case "weekend-wanderer": return "calendar"
+        case "completionist": return "checkmark.seal.fill"
+        case "first-to-chronicle": return "square.and.pencil"
+        default:
+            switch category {
+            case "collector": return "square.stack.3d.up.fill"
+            case "milestone": return "flag.checkered"
+            case "city": return "building.2.fill"
+            case "knowledge": return "book.fill"
+            case "streak": return "flame.fill"
+            case "special": return "sparkles"
+            default: return "rosette"
+            }
+        }
+    }
+
     /// The `type` field inside `criteria` (`visit_count`, `city_count`, …),
     /// if the criteria is an object with a string `type`.
     var criteriaType: String? {
