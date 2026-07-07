@@ -15,6 +15,9 @@ import SwiftUI
 struct SettingsView: View {
     @Environment(StoreKitService.self) private var store
     @Environment(EntitlementStore.self) private var entitlements
+    /// The same store the map's filter chips use, so a toggle here persists to
+    /// `user_prefs.hidden_kinds` and re-filters the map + nearby lists live.
+    @Environment(MapFilterStore.self) private var filters
     @Environment(\.openURL) private var openURL
 
     /// The master haptics switch, read by `Haptics.play` via the same key.
@@ -28,6 +31,7 @@ struct SettingsView: View {
 
     var body: some View {
         List {
+            whatYouSeeSection
             preferencesSection
             permissionsSection
             subscriptionSection
@@ -37,6 +41,62 @@ struct SettingsView: View {
         .background(LoreColor.bone100)
         .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    // MARK: What you see (category preferences → user_prefs.hidden_kinds)
+
+    /// The standard catalog plus any extra kinds the current city surfaced,
+    /// de-duplicated in a stable order.
+    private var allCategories: [KindCategory] {
+        var seen = Set<String>()
+        var out: [KindCategory] = []
+        for category in KindCategory.catalog + filters.categories {
+            if seen.insert(category.kind).inserted { out.append(category) }
+        }
+        return out
+    }
+
+    /// Founder steer: let users control what they see so the map isn't
+    /// information overload. Onboarding sets these; this is where they change
+    /// them anytime. Toggling a category off hides that kind of place on the
+    /// map and in nearby lists (persists to `user_prefs.hidden_kinds`).
+    private var whatYouSeeSection: some View {
+        Section {
+            ForEach(allCategories) { category in
+                Toggle(isOn: Binding(
+                    get: { filters.isOn(category) },
+                    set: { newOn in
+                        if newOn != filters.isOn(category) { filters.toggle(category) }
+                    }
+                )) {
+                    Label {
+                        Text(category.label)
+                            .font(LoreType.body)
+                            .foregroundStyle(LoreColor.ink)
+                    } icon: {
+                        Text(category.emoji)
+                    }
+                }
+                .tint(LoreColor.brass700)
+            }
+
+            if filters.hasActiveFilter {
+                Button {
+                    filters.clear()
+                } label: {
+                    Label("Show everything", systemImage: "eye")
+                        .font(LoreType.body)
+                        .foregroundStyle(LoreColor.brass700)
+                }
+                .buttonStyle(.plain)
+            }
+        } header: {
+            Text("What you see")
+        } footer: {
+            Text("Turn off the kinds of places you're not interested in — hidden ones won't clutter your map or nearby lists. You picked these in onboarding; change them here anytime.")
+                .font(LoreType.caption)
+                .foregroundStyle(LoreColor.ink600)
+        }
     }
 
     // MARK: Preferences

@@ -173,6 +173,14 @@ struct KindCategory: Identifiable, Hashable {
         "bridge", "park", "nature", "venue", "stadium", "church", "temple",
     ]
 
+    /// The full standard catalog offered in the Profile preferences editor, so a
+    /// user can tune what they see even before any city's places have loaded.
+    /// Covers every `place_kind` the schema defines.
+    static let catalog: [KindCategory] = [
+        "building", "monument", "statue", "mural", "bridge", "park", "plaza",
+        "infrastructure", "district", "stadium", "venue", "nature", "market", "other",
+    ].map { KindCategory(kind: $0) }
+
     /// Human, pluralized chip label.
     var label: String {
         switch kind {
