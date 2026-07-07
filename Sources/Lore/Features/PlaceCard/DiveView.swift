@@ -90,11 +90,11 @@ struct DiveView: View {
     @ViewBuilder
     private func diveBody(_ dive: Dive) -> some View {
         if let narrative = dive.narrative {
-            Text(narrative)
-                .font(LoreType.reader)
-                .lineSpacing(7)
-                .foregroundStyle(LoreColor.bone)
-                .fixedSize(horizontal: false, vertical: true)
+            // Compact by default with a Read more toggle, so the gallery and
+            // timeline sit close instead of below a wall of text (TestFlight
+            // feedback: "go deeper exposes all the text; keep it compact with a
+            // read more button so everything below is pushed up and visible").
+            ExpandableNarrative(text: narrative)
         }
 
         if let wikipediaTitle = dive.media.wikipediaTitle {
@@ -103,6 +103,48 @@ struct DiveView: View {
 
         if !dive.timeline.isEmpty {
             TimelineStrip(events: dive.timeline)
+        }
+    }
+
+    // MARK: Narrative
+
+    /// The dossier narrative, collapsed to a few lines with a Read more toggle
+    /// when it's long, so the gallery + timeline stay near the top.
+    private struct ExpandableNarrative: View {
+        let text: String
+        @State private var expanded = false
+        @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+        /// Roughly longer than the collapsed window; only then do we truncate +
+        /// offer Read more.
+        private var isLong: Bool { text.count > 300 }
+
+        var body: some View {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(text)
+                    .font(LoreType.reader)
+                    .lineSpacing(7)
+                    .foregroundStyle(LoreColor.bone)
+                    .lineLimit(expanded || !isLong ? nil : 6)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if isLong {
+                    Button {
+                        withAnimation(LoreSpring.smooth(reduceMotion: reduceMotion)) {
+                            expanded.toggle()
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(expanded ? "Read less" : "Read more")
+                            Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                                .font(.system(size: 11, weight: .bold))
+                        }
+                        .font(LoreType.button)
+                        .foregroundStyle(LoreColor.amber)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
         }
     }
 
