@@ -35,6 +35,11 @@ struct MapScreen: View {
     @State private var model = MapScreenModel()
     @State private var position: MapCameraPosition = .automatic
     @State private var selectedPlaceID: String?
+    /// Apple Maps registers (founder steer: Apple Maps base, 3D is critical).
+    /// `satellite` swaps the Ink standard style for hybrid imagery; `dimensional`
+    /// pitches the camera into the 3D / Flyover read (the cinematic payoff).
+    @State private var satellite = false
+    @State private var dimensional = false
     // Day/night + 2D/3D, mirroring the web map controls (docs/17 §2.4). These
     // drive the native MapLibre map (LoreMapLibreView); the MapKit map ignores
     // them for now. Night + tilted is Lore's signature first impression, the
@@ -88,6 +93,10 @@ struct MapScreen: View {
                     StatusChip(text: status)
                         .padding(.top, 56)
                 }
+            }
+            .overlay(alignment: .topTrailing) {
+                mapControls
+                    .padding(.top, 110)
             }
             .safeAreaInset(edge: .bottom) {
                 // The composed Travel controls: filter chips over the near-me
@@ -151,7 +160,7 @@ struct MapScreen: View {
                     .tag(place.id)
                 }
             }
-            .mapStyle(.standard(pointsOfInterest: .excludingAll))
+            .mapStyle(mapKitStyle)
         }
     }
 
@@ -161,6 +170,79 @@ struct MapScreen: View {
             get: { model.places.first { $0.id == selectedPlaceID } },
             set: { newValue in selectedPlaceID = newValue?.id }
         )
+    }
+
+    // MARK: Apple Maps registers (Ink / Satellite / 3D)
+
+    /// The Apple Maps style for the current registers. `pointOfInterestFilter =
+    /// .excludingAll` is the single line that makes it read as OUR map, not
+    /// Apple's, only Lore's pins populate. 3D lifts elevation to realistic so
+    /// Flyover geometry stands up under the pitched camera.
+    private var mapKitStyle: MapStyle {
+        let elevation: MapStyle.Elevation = dimensional ? .realistic : .flat
+        return satellite
+            ? .hybrid(elevation: elevation, pointsOfInterest: .excludingAll)
+            : .standard(elevation: elevation, pointsOfInterest: .excludingAll)
+    }
+
+    /// The floating register controls: a 3D/flat toggle and an Ink/Satellite
+    /// toggle. Quiet and top-trailing; 3D is the moment people screen-record.
+    private var mapControls: some View {
+        VStack(spacing: 10) {
+            mapControlButton(
+                system: dimensional ? "view.2d" : "view.3d",
+                on: dimensional,
+                label: dimensional ? "Flatten map" : "3D map"
+            ) { toggleDimensional() }
+
+            mapControlButton(
+                system: satellite ? "map.fill" : "globe.americas.fill",
+                on: satellite,
+                label: satellite ? "Standard map" : "Satellite map"
+            ) {
+                Haptics.play(.chipTap)
+                satellite.toggle()
+            }
+        }
+        .padding(.trailing, 14)
+    }
+
+    private func mapControlButton(
+        system: String, on: Bool, label: String, action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: system)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(LoreColor.ink)
+                .frame(width: 42, height: 42)
+                .background(
+                    on ? AnyShapeStyle(LoreColor.amber) : AnyShapeStyle(.ultraThinMaterial),
+                    in: Circle()
+                )
+                .overlay(Circle().strokeBorder(LoreColor.ink.opacity(0.08), lineWidth: 1))
+        }
+        .buttonStyle(.pressable)
+        .accessibilityLabel(Text(label))
+    }
+
+    /// Pitch into 3D (or flatten) around the current city centre with a settled
+    /// spring, the cinematic-arrival read (LUXURY-MOTION §2, §7).
+    private func toggleDimensional() {
+        Haptics.play(.chipTap)
+        dimensional.toggle()
+        let center = model.cameraTarget?.center
+        withAnimation(LoreSpring.smooth(reduceMotion: reduceMotion)) {
+            if dimensional, let center {
+                position = .camera(MapCamera(
+                    centerCoordinate: center,
+                    distance: 1_500,
+                    heading: 0,
+                    pitch: 60
+                ))
+            } else if let region = model.cameraTarget {
+                position = .region(region)
+            }
+        }
     }
 }
 
