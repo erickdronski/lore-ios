@@ -264,7 +264,25 @@ struct LingoFlipCard: View {
             }
         }
         .frame(width: 180, height: 150)
-        // Long-press reads the full entry without disturbing tap-to-flip.
+        // A visible expand affordance (long-press also works) so it's obvious
+        // you can read the full entry (TestFlight feedback: "still can't read
+        // more in the slang tiles"). The button sits above the flip so tapping
+        // it opens the detail instead of flipping.
+        .overlay(alignment: .topTrailing) {
+            Button {
+                Haptics.play(.chipTap)
+                showExpanded = true
+            } label: {
+                Image(systemName: "arrow.up.left.and.arrow.down.right")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(LoreColor.ink900)
+                    .frame(width: 26, height: 26)
+                    .background(LoreColor.amber, in: Circle())
+            }
+            .buttonStyle(.plain)
+            .padding(6)
+            .accessibilityLabel("Read the full meaning")
+        }
         .onLongPressGesture(minimumDuration: 0.4) {
             Haptics.play(.chipTap)
             showExpanded = true

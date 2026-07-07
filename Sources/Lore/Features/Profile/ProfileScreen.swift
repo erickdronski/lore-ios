@@ -9,7 +9,10 @@ import SwiftUI
 /// deliberate stubs, their rows state which phase ships them.
 struct ProfileScreen: View {
     @Environment(AuthService.self) private var auth
+    @Environment(EntitlementStore.self) private var entitlements
+    @Environment(StoreKitService.self) private var store
     @State private var showSignIn = false
+    @State private var showPaywall = false
 
     var body: some View {
         NavigationStack {
@@ -29,7 +32,7 @@ struct ProfileScreen: View {
                     signedOutHeader
                 }
 
-                stubSection
+                membershipSection
 
                 settingsSection
 
@@ -53,6 +56,9 @@ struct ProfileScreen: View {
             .sheet(isPresented: $showSignIn) {
                 SignInView()
                     .presentationDetents([.large])
+            }
+            .sheet(isPresented: $showPaywall) {
+                PaywallView(entitlements: entitlements, store: store, auth: auth)
             }
             .task {
                 if auth.isSignedIn { await auth.refreshProfile() }
@@ -135,20 +141,53 @@ struct ProfileScreen: View {
         .frame(width: 48, height: 48)
     }
 
-    // MARK: Stubs, honest about what phase ships them
+    // MARK: Membership (Lore+ is live, not a "coming" stub)
 
-    private var stubSection: some View {
-        Section("Coming") {
-            StubRow(
-                icon: "plus.viewfinder",
-                title: "Contributions",
-                note: "P2, photo + 3 fields, CLA gate, peer verification"
-            )
-            StubRow(
-                icon: "crown",
-                title: "Lore+",
-                note: "Unlimited dives · $5.99/mo · 7-day trial"
-            )
+    /// Lore+ is a real, purchasable membership, so this opens the live paywall
+    /// (TestFlight feedback: "Coming? Isn't this stuff live?"). Members see an
+    /// active badge instead.
+    @ViewBuilder
+    private var membershipSection: some View {
+        Section("Membership") {
+            if entitlements.isPlus {
+                HStack(spacing: 12) {
+                    Image(systemName: "crown.fill")
+                        .foregroundStyle(LoreColor.brass700)
+                        .frame(width: 24)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(entitlements.isTrialing ? "Lore+ (trial)" : "Lore+ member")
+                            .font(LoreType.body)
+                            .foregroundStyle(LoreColor.ink)
+                        Text("Unlimited dives, every tour, offline cities, audio")
+                            .font(LoreType.caption)
+                            .foregroundStyle(LoreColor.ink600)
+                    }
+                    Spacer()
+                }
+            } else {
+                Button {
+                    showPaywall = true
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "crown.fill")
+                            .foregroundStyle(LoreColor.brass700)
+                            .frame(width: 24)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Unlock Lore+")
+                                .font(LoreType.body)
+                                .foregroundStyle(LoreColor.brass700)
+                            Text("Unlimited dives, every tour, offline cities, audio")
+                                .font(LoreType.caption)
+                                .foregroundStyle(LoreColor.ink600)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(LoreColor.ink600)
+                    }
+                }
+                .buttonStyle(.plain)
+            }
         }
     }
 

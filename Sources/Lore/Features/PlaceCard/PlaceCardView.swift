@@ -19,6 +19,10 @@ struct PlaceCardView: View {
     /// empty frame.
     @State private var heroURL: URL?
     @State private var heroResolved = false
+    /// The place's dive, loaded once for both the hero photo and a story teaser
+    /// that fills the card for free users (TestFlight feedback: "wasted real
+    /// estate, fill the white space below with more fun").
+    @State private var dive: Dive?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// The shared-element morph namespace (LUXURY-MOTION §6): the medallion + the
@@ -71,6 +75,8 @@ struct PlaceCardView: View {
 
                     factChips
 
+                    storyTeaser
+
                     Button {
                         Haptics.play(.dossierOpen)
                         showDive = true
@@ -118,6 +124,30 @@ struct PlaceCardView: View {
         }
     }
 
+    // MARK: Story teaser
+
+    /// A few lines of the dive narrative, filling the card with real content for
+    /// free users; the Go deeper button opens the full dossier. Self-hides when
+    /// there is no dive.
+    @ViewBuilder
+    private var storyTeaser: some View {
+        if let narrative = dive?.narrative, !narrative.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("THE STORY")
+                    .loreLabelStyle()
+                    .foregroundStyle(LoreColor.brass700)
+                Text(narrative)
+                    .font(LoreType.body)
+                    .foregroundStyle(LoreColor.ink)
+                    .lineLimit(4)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(14)
+            .background(LoreColor.bone200, in: RoundedRectangle(cornerRadius: 14))
+        }
+    }
+
     // MARK: Hero photo
 
     /// The place's lead image at the top of the card. Shows a shimmer while it
@@ -141,8 +171,9 @@ struct PlaceCardView: View {
     /// `heroURL` nil and marks the hero resolved so it hides.
     private func resolveHero() async {
         heroResolved = false
-        let dive = (try? await LoreAPI.shared.dive(placeID: place.id)) ?? nil
-        if let title = dive?.media.wikipediaTitle, !title.isEmpty {
+        let loaded = (try? await LoreAPI.shared.dive(placeID: place.id)) ?? nil
+        dive = loaded
+        if let title = loaded?.media.wikipediaTitle, !title.isEmpty {
             heroURL = await WikipediaService.shared.portraitURL(for: title)
         }
         heroResolved = true
