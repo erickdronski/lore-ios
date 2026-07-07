@@ -31,6 +31,10 @@ struct MapScreen: View {
     var onNeedsSignIn: () -> Void = {}
 
     @Environment(MapFilterStore.self) private var filters
+    /// Read here (a normal view that inherits the environment) so the pin
+    /// annotations receive `isVisited` as a plain value, never reading the
+    /// Observable environment inside the MapKit-hosted annotation (which crashes).
+    @Environment(VisitStore.self) private var visits
     /// Read to gate the header's "locate me" control: finding yourself on the
     /// map is a signed-in feature (founder steer: gate it so we can track and
     /// store the user's location).
@@ -159,7 +163,8 @@ struct MapScreen: View {
                             place: place,
                             weighting: relevance.weighting(for: place),
                             index: index,
-                            isSelected: selectedPlaceID == place.id
+                            isSelected: selectedPlaceID == place.id,
+                            isVisited: visits.hasVisited(place.id)
                         )
                     }
                     .tag(place.id)
@@ -455,8 +460,14 @@ struct PlacePinBadge: View {
     /// True while this pin's place sheet is open, the selected pin lifts with a
     /// spring so a tap reads as "this one" (LUXURY-MOTION §5 pin scale).
     var isSelected: Bool = false
+    /// Whether the user has visited this place. Passed in from `MapScreen` (which
+    /// reads `VisitStore` from the environment) rather than read here: a Map
+    /// annotation is hosted in a separate view tree that does NOT inherit the
+    /// `@Environment` Observable objects, so reading `@Environment(VisitStore.self)`
+    /// inside a pin crashes (EXC_BREAKPOINT) when annotations rebuild on a city
+    /// switch. Passing a plain value keeps the seal without the crash.
+    var isVisited: Bool = false
 
-    @Environment(VisitStore.self) private var visits
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var bloomed = false
 
@@ -477,7 +488,7 @@ struct PlacePinBadge: View {
             }
             .frame(width: 32, height: 32)
 
-            if visits.hasVisited(place.id) {
+            if isVisited {
                 VisitedPinAccent()
                     .offset(x: 4, y: -4)
             }
@@ -503,7 +514,7 @@ struct PlacePinBadge: View {
             }
         }
         .accessibilityLabel(Text(place.name))
-        .accessibilityValue(Text(visits.hasVisited(place.id) ? "Visited" : ""))
+        .accessibilityValue(Text(isVisited ? "Visited" : ""))
     }
 
     /// Rest 0.6 → landed 1.0 → selected 1.18 (Reduce Motion: no scale, always 1).
