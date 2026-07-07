@@ -1,4 +1,5 @@
 import CoreLocation
+import MapKit
 import SwiftUI
 
 /// One tour as a stop stepper: progress rail, current stop's place card
@@ -31,6 +32,7 @@ struct TourDetailView: View {
                         .transition(stopTransition)
                         .animation(LoreSpring.smooth(reduceMotion: reduceMotion), value: stopIndex)
                     liveActivityControl
+                    directionsControl
                     stepperControls
                 }
             }
@@ -76,6 +78,46 @@ struct TourDetailView: View {
             }
             .buttonStyle(.pressable)
         }
+    }
+
+    // MARK: Directions (TestFlight feedback: "don't we need directions here?")
+
+    /// The `Place` for the currently-shown stop, when it has resolved.
+    private var currentStopPlace: Place? {
+        guard tour.stops.indices.contains(stopIndex) else { return nil }
+        return model.place(id: tour.stops[stopIndex].placeID)
+    }
+
+    /// Hand off walking directions to the current stop to Apple Maps. Shown only
+    /// once the stop's place (and its coordinate) has loaded.
+    @ViewBuilder
+    private var directionsControl: some View {
+        if currentStopPlace != nil {
+            Button {
+                Haptics.play(.chipTap)
+                openDirections()
+            } label: {
+                Label("Walking directions to this stop", systemImage: "figure.walk")
+                    .font(LoreType.button)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 44)
+                    .foregroundStyle(LoreColor.ink)
+                    .overlay(Capsule().strokeBorder(LoreColor.ink, lineWidth: 1.5))
+            }
+            .buttonStyle(.pressable)
+            .accessibilityLabel(Text("Walking directions to this stop"))
+        }
+    }
+
+    /// Open Apple Maps with walking directions from the user's location to the
+    /// current stop. Apple handles the routing + turn-by-turn.
+    private func openDirections() {
+        guard let place = currentStopPlace else { return }
+        let mapItem = MKMapItem(placemark: MKPlacemark(coordinate: place.coordinate))
+        mapItem.name = place.name
+        mapItem.openInMaps(launchOptions: [
+            MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeWalking
+        ])
     }
 
     /// Kick off the Live Activity from the current stop.
