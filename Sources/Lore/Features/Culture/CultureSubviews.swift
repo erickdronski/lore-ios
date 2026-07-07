@@ -225,6 +225,10 @@ struct FamousFaceView: View {
 /// "used in a sentence" example the seed writes inline).
 struct LingoFlipCard: View {
     let entry: CityCulture
+    /// Long-press opens the full definition (TestFlight feedback: "more text
+    /// here I can't click into or read further"). The compact card caps the
+    /// back at a few lines; this reads the whole entry.
+    @State private var showExpanded = false
 
     var body: some View {
         StatefulFlipCard {
@@ -260,9 +264,17 @@ struct LingoFlipCard: View {
             }
         }
         .frame(width: 180, height: 150)
+        // Long-press reads the full entry without disturbing tap-to-flip.
+        .onLongPressGesture(minimumDuration: 0.4) {
+            Haptics.play(.chipTap)
+            showExpanded = true
+        }
+        .sheet(isPresented: $showExpanded) {
+            LingoDetailSheet(entry: entry)
+        }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityLabel)
-        .accessibilityHint("Double tap to flip between the word and its meaning")
+        .accessibilityHint("Double tap to flip. Touch and hold to read the full meaning.")
     }
 
     /// The shared tile chrome for both faces so the flip looks like one card.
@@ -288,6 +300,49 @@ struct LingoFlipCard: View {
             return "\(entry.headline). \(body)"
         }
         return entry.headline
+    }
+}
+
+// MARK: - Lingo detail sheet
+
+/// The full read of a lingo / saying entry, opened by a long-press on its flip
+/// card: the word big in the display face, then the complete meaning + example
+/// with no line cap. Ink surface, matching `PersonBioSheet`.
+struct LingoDetailSheet: View {
+    let entry: CityCulture
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(alignment: .center, spacing: 12) {
+                    Text(entry.displayEmoji)
+                        .font(.system(size: 44))
+                    Text(entry.headline)
+                        .font(LoreType.display(size: 26, weight: .semibold))
+                        .foregroundStyle(LoreColor.amber)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                }
+                .padding(.top, 24)
+
+                if let body = entry.body {
+                    Text(body)
+                        .font(LoreType.body)
+                        .foregroundStyle(LoreColor.bone)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 24)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 24)
+        }
+        .background(LoreColor.ink900.ignoresSafeArea())
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Text(entry.body.map { "\(entry.headline). \($0)" } ?? entry.headline))
     }
 }
 

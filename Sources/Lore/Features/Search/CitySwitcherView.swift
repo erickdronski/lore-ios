@@ -179,11 +179,18 @@ struct CityRow: View {
 
 // MARK: - Region grouping
 
-/// US-then-International split for the switcher, plus country-code display
-/// names. Kept tiny and local, the roster is small and curated; this is copy,
-/// not a locale engine.
+/// Continent grouping for the switcher (TestFlight feedback: "filters should be
+/// here for USA, Asia, Europe, etc."), plus country-code display names. Kept
+/// tiny and local, the roster is small and curated; this is copy, not a locale
+/// engine. US stays its own section (the home market); everything else groups
+/// by continent, with an "More places" catch-all so no city is ever dropped.
 enum CityRegion: String, CaseIterable, Identifiable {
     case unitedStates
+    case europe
+    case asia
+    case americas
+    case middleEastAfrica
+    case oceania
     case international
 
     var id: String { rawValue }
@@ -192,23 +199,49 @@ enum CityRegion: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .unitedStates: return "United States"
-        case .international: return "International"
+        case .europe: return "Europe"
+        case .asia: return "Asia"
+        case .americas: return "Americas"
+        case .middleEastAfrica: return "Middle East & Africa"
+        case .oceania: return "Oceania"
+        case .international: return "More places"
         }
     }
 
-    /// Curated order: US first, then International.
+    /// Curated order: US first, then the continents, catch-all last.
     var sortIndex: Int {
         switch self {
         case .unitedStates: return 0
-        case .international: return 1
+        case .europe: return 1
+        case .asia: return 2
+        case .americas: return 3
+        case .middleEastAfrica: return 4
+        case .oceania: return 5
+        case .international: return 6
         }
     }
 
-    /// Which region a city's ISO country code belongs to. Missing/blank codes
-    /// default to International (never crash, never drop a city).
+    /// Which region a city's ISO country code belongs to. Missing/blank or
+    /// unmapped codes fall to "More places" (never crash, never drop a city).
     static func region(forCountry code: String?) -> CityRegion {
         guard let code, !code.isEmpty else { return .international }
-        return code.uppercased() == "US" ? .unitedStates : .international
+        switch code.uppercased() {
+        case "US":
+            return .unitedStates
+        case "GB", "UK", "FR", "DE", "IT", "ES", "NL", "SE", "IE", "PT",
+             "CH", "AT", "BE", "DK", "NO", "FI", "PL", "CZ", "GR", "HU", "RO":
+            return .europe
+        case "JP", "CN", "IN", "KR", "SG", "TH", "HK", "TW", "VN", "MY", "ID", "PH":
+            return .asia
+        case "CA", "MX", "BR", "AR", "CL", "CO", "PE":
+            return .americas
+        case "AE", "SA", "QA", "IL", "TR", "EG", "ZA", "MA", "NG", "KE":
+            return .middleEastAfrica
+        case "AU", "NZ":
+            return .oceania
+        default:
+            return .international
+        }
     }
 
     /// A friendly country label for the row subtitle. Falls back to the raw

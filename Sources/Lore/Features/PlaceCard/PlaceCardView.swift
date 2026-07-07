@@ -12,6 +12,14 @@ struct PlaceCardView: View {
     @State private var showDive = false
     @State private var showShare = false
 
+    /// The place's lead photo (TestFlight feedback: "photo of the place should
+    /// be in the first tile"). Resolved from the dive's `media.wikipedia_title`
+    /// through the same Wikipedia summary API the culture portraits use; the
+    /// hero self-hides on a confirmed miss so a place without a photo leaves no
+    /// empty frame.
+    @State private var heroURL: URL?
+    @State private var heroResolved = false
+
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// The shared-element morph namespace (LUXURY-MOTION §6): the medallion + the
     /// card surface morph between the Layer-1 card and the full dossier.
@@ -50,6 +58,8 @@ struct PlaceCardView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
+                    heroPhoto
+
                     header
 
                     if let hook = place.layer1?.hook {
@@ -106,6 +116,36 @@ struct PlaceCardView: View {
             }
             .background(LoreColor.bone100)
         }
+    }
+
+    // MARK: Hero photo
+
+    /// The place's lead image at the top of the card. Shows a shimmer while it
+    /// resolves, cross-fades to the photo, and collapses cleanly if the place
+    /// has no image. Kept to the light-card surface (no dark "Gallery" heading).
+    @ViewBuilder
+    private var heroPhoto: some View {
+        if !heroResolved || heroURL != nil {
+            BlurUpAsyncImage(url: heroURL)
+                .frame(height: 200)
+                .frame(maxWidth: .infinity)
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .loreElevation(.elev1)
+                .accessibilityLabel(Text("Photo of \(place.name)"))
+                .task(id: place.id) { await resolveHero() }
+        }
+    }
+
+    /// Fetch the place's dive to read its curated `wikipedia_title`, then resolve
+    /// that to a photo URL. A miss (no dive, no title, or no image) leaves
+    /// `heroURL` nil and marks the hero resolved so it hides.
+    private func resolveHero() async {
+        heroResolved = false
+        let dive = (try? await LoreAPI.shared.dive(placeID: place.id)) ?? nil
+        if let title = dive?.media.wikipediaTitle, !title.isEmpty {
+            heroURL = await WikipediaService.shared.portraitURL(for: title)
+        }
+        heroResolved = true
     }
 
     // MARK: Dossier (morph target)

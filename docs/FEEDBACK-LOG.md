@@ -17,6 +17,23 @@ Legend: ✅ shipped · 🟡 already fixed in a later build (update to verify) ·
 | 3 | "Don't we need directions wired up here? Total distance? Total time? Significance?" | Directions button shipped earlier (`07836af`). Now added a **facts strip** to the tour header: total walking distance, estimated time, and stop count. "Significance" already lives in the tour blurb/summary line above it. |
 | 10 | "There should be a 'current location' icon here in the header" | Added a **center-on-my-location** control to the map's floating controls (top-right, with 3D/Satellite). Follows the live GPS fix; falls back to the city frame if location isn't granted yet. Put it with the other map controls rather than the header, which already holds city/Meet/Search — say the word if you want it moved into the header row. |
 
+## Shipped — second pass (scoped backlog, after "keep going")
+
+| # | Note | What shipped |
+|---|------|--------------|
+| 5 | "How does a user change the city here? So they can see city-specific tours?" | Tours now follows the **shared active city**. A Brass city chip in the "Made for you" header opens the city switcher; picking a city re-scopes both the "1 Hour In {city}" hero and the curated tour list. (Previously Tours was locked to Chicago.) |
+| 12 | "Photo of the place should be in the first tile when clicked on" | Place cards now show a **Wikipedia lead photo** at the top (same curated source the deep-dive gallery uses), with a shimmer while it loads and a clean self-hide when a place has no image. |
+| 15 | "There's more text on these slang tiles that I can't click into or read further" | **Touch-and-hold** a Local Lingo / Sayings card to open the full definition + example in a sheet (no line cap). Tap-to-flip still works as before. |
+| 8 | "Filters should be here for USA, Asia, Europe, etc." | The city switcher now groups cities by **region — United States, Europe, Asia, Americas, Middle East & Africa, Oceania** — from each city's country code (was just US / International). |
+| 13 (partial) | "Profile needs preferences, permissions, manage subscription, haptics…" | New **Settings** screen off Profile: a working **haptics on/off** toggle (gates every haptic app-wide), **Permissions** deep-links (Location / Camera / Notifications → iOS Settings), **Manage subscription** (Apple's subscriptions page) and **Restore purchases**. |
+
+> **Not shipped — dark/light toggle (part of #13, and #17):** deliberately held.
+> The app pins light mode because the fixed Ink/Bone/Brass palette isn't yet an
+> adaptive dark theme — flipping to dark re-creates the exact "can't read the
+> tiles" contrast bug you reported. A real dark mode is a separate design-system
+> pass (making every surface adaptive), not a one-line toggle. Tracked for that
+> pass rather than shipped broken.
+
 ## Already fixed in a later build — update your TestFlight app to confirm
 
 | # | Note | Status |
@@ -31,20 +48,15 @@ Legend: ✅ shipped · 🟡 already fixed in a later build (update to verify) ·
 > ahead and already carries the dark-mode fix, the directions button, the app
 > icon with the globe, Google sign-in, tour totals, and the locate control.
 
-## Scoped features — real work, need a proper build + your review (not shipped blind)
+## Scoped features — still open (need your screenshot or a bigger build)
 
 | # | Note | Plan |
 |---|------|------|
 | 1 | "SO much more areas to explore in Philadelphia / all our cities" | Content depth, not code. Philadelphia is sparse vs. our flagship cities. Queued against the seed pipeline. |
-| 5 | "How does a user change the city here? (Tours) so they see city-specific tours" | Tours is locked to the default city for the "1 Hour In" hero. Wire the shared city selection (we already have `CitySwitcherView`) into the Tours screen + hero. |
+| 7 | "Swipe down on 'Around you right now' to give the map more space — draggable, hideable" | Convert the fixed bottom near-me shelf into a drag-to-collapse panel. Fully spec'd and buildable, but it changes the map's bottom layout, so I want to build + eyeball it rather than ship it blind overnight. Next build. |
 | 6 | "Allow a user to click on these and open the place tile/card" | Map pins, near-me cards, and famous faces are already tappable — need your screenshot to see which list isn't. Likely the Meet-the-City places or search results. |
-| 7 | "Swipe down on 'Around you right now' to give the map more space — draggable, hideable" | Convert the fixed bottom near-me shelf into a draggable/collapsible sheet with detents. Nice ask; it's a real interaction change to the map's bottom layout, so I want to build + test it, not guess. |
-| 8 | "Filters should be here for USA, Asia, Europe, etc." | Add a region field to the city model + region filter UI on the explore/cities list. |
-| 11 | "Dropdown icon is overlapping the emoji/icon on the tile" | Couldn't find the exact tile in code (the map header's chevron sits next to text, no emoji). Need the screenshot to pinpoint which tile. |
-| 12 | "Photo of the place should be in the first tile when clicked" | Place data has no photo field today; we resolve Wikipedia imagery for the deep dive and famous faces. Add an async hero image to the place card using the same Wikipedia service. |
-| 13 | "Profile needs preferences, permissions, dark/white mode, manage portal (Stripe) policies, haptics…" | Biggest item — a real Settings build-out. Includes a proper **dark-mode toggle** (right now we force light to dodge the contrast bug; the correct fix is to make dark mode readable and let the user choose). Manage-subscription links to the App Store / RevenueCat portal, not Stripe, on iOS. |
-| 15 | "More text on these slang tiles that I can't click into / read further" | Lingo flip cards cap the back at 6 lines. Add tap-to-expand to a full definition sheet. |
-| 4 / 16 | "You need to be able to swipe here" / "Make this swippable" | Ambiguous without the screenshots — need to see which surfaces. |
+| 11 | "Dropdown icon is overlapping the emoji/icon on the tile" | The prime suspect (map-header chevron) sits next to text, not an emoji, so the guess is weak. Need the screenshot to pinpoint the exact tile. |
+| 4 / 16 | "You need to be able to swipe here" / "Make this swippable" | Ambiguous without the screenshots — need to see which surfaces. Likely resolved by the #7 draggable panel if they point at the near-me shelf. |
 
 ## Needs you (I can't do these from here)
 

@@ -3,11 +3,17 @@ import SwiftUI
 /// Curated walking tours, listed by city, each opening a stop-by-stop
 /// stepper detail.
 struct ToursScreen: View {
+    /// The shared active city (same source the map reads). Switching it here
+    /// re-scopes the whole Tours surface, the 1-Hour hero and the curated list.
+    @Environment(AppRouter.self) private var router
     @State private var model = ToursModel()
     /// The generated "1 Hour In" walk, presented in a sheet once routed.
     @State private var generatedTour: Tour?
     /// The city whose walk is currently being routed (drives the hero spinner).
     @State private var generatingCity: String?
+    /// The city switcher sheet (TestFlight feedback: "how does a user change
+    /// the city here?").
+    @State private var showCitySwitcher = false
 
     var body: some View {
         NavigationStack {
@@ -52,8 +58,19 @@ struct ToursScreen: View {
             .sheet(item: $generatedTour) { tour in
                 NavigationStack { TourDetailView(tour: tour) }
             }
-            .task { await model.load() }
+            .sheet(isPresented: $showCitySwitcher) {
+                CitySwitcherView(router: router)
+                    .presentationDetents([.medium, .large])
+            }
+            // Load (and reload) the selected city's tours; switching cities in
+            // the sheet re-scopes the list without leaving Tours.
+            .task(id: router.selectedCity) { await model.load(city: router.selectedCity) }
         }
+    }
+
+    /// City slug → display name, e.g. "san-francisco" → "San Francisco".
+    private func cityLabel(_ slug: String) -> String {
+        slug.replacingOccurrences(of: "-", with: " ").capitalized
     }
 
     /// The always-available generated walk (strategy Phase 2). Works in every
@@ -61,22 +78,51 @@ struct ToursScreen: View {
     private var madeForYouSection: some View {
         Section {
             OneHourHero(
-                city: Config.defaultCity,
-                isGenerating: generatingCity == Config.defaultCity
+                city: router.selectedCity,
+                isGenerating: generatingCity == router.selectedCity
             ) {
-                generatingCity = Config.defaultCity
+                let city = router.selectedCity
+                generatingCity = city
                 Task {
-                    let tour = await model.oneHourTour(city: Config.defaultCity)
+                    let tour = await model.oneHourTour(city: city)
                     generatingCity = nil
                     generatedTour = tour
                 }
             }
         } header: {
-            Text("Made for you")
-                .font(LoreType.displayM)
-                .foregroundStyle(LoreColor.ink)
-                .textCase(nil)
+            HStack(spacing: 10) {
+                Text("Made for you")
+                    .font(LoreType.displayM)
+                    .foregroundStyle(LoreColor.ink)
+                    .textCase(nil)
+                Spacer(minLength: 8)
+                citySwitcherChip
+            }
         }
+    }
+
+    /// The Brass city chip in the section header: shows the active city and
+    /// opens the switcher so Tours can be re-scoped to any city.
+    private var citySwitcherChip: some View {
+        Button {
+            Haptics.play(.chipTap)
+            showCitySwitcher = true
+        } label: {
+            HStack(spacing: 6) {
+                Text(cityLabel(router.selectedCity))
+                    .font(LoreType.display(size: 14, weight: .medium))
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 10, weight: .semibold))
+            }
+            .foregroundStyle(LoreColor.brass700)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(LoreColor.bone200, in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .textCase(nil)
+        .accessibilityLabel(Text("Current city, \(cityLabel(router.selectedCity))"))
+        .accessibilityHint(Text("Switch cities to see their tours."))
     }
 }
 
@@ -167,14 +213,21 @@ final class ToursModel {
 
     private(set) var state: State = .loading
     private(set) var toursByCity: [String: [Tour]] = [:]
+    /// The city the current `toursByCity` was loaded for, so a re-scope reloads
+    /// and the same city doesn't refetch.
+    private var loadedCity: String?
 
     var cities: [String] { toursByCity.keys.sorted() }
 
-    func load() async {
-        guard toursByCity.isEmpty else { return }
+    /// Load the curated tours for `city`. Reloads when the city changes;
+    /// re-selecting the same city is a no-op.
+    func load(city: String) async {
+        guard city != loadedCity else { return }
+        state = .loading
         do {
-            let tours = try await LoreAPI.shared.tours()
+            let tours = try await LoreAPI.shared.tours(city: city)
             toursByCity = Dictionary(grouping: tours, by: \.city)
+            loadedCity = city
             state = tours.isEmpty ? .empty : .loaded
         } catch {
             state = .failed("Check your connection and try again.")

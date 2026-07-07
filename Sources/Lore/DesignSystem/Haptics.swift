@@ -45,9 +45,21 @@ enum Haptics {
         case timelineSnap
     }
 
+    /// The UserDefaults key behind the Settings → "Haptic feedback" toggle.
+    /// Absent means on (haptics default to seasoning-on).
+    static let enabledDefaultsKey = "lore.haptics.enabled"
+
+    /// The user's master haptics switch. On unless they turned it off in
+    /// Settings; read fresh per call so the toggle takes effect immediately.
+    static var isEnabled: Bool {
+        UserDefaults.standard.object(forKey: enabledDefaultsKey) as? Bool ?? true
+    }
+
     /// Play the haptic for a doctrine event. Safe to call from any view;
-    /// on devices without a Taptic Engine the generators quietly no-op.
+    /// on devices without a Taptic Engine the generators quietly no-op, and
+    /// the whole vocabulary is gated by the user's Settings toggle.
     static func play(_ event: Event) {
+        guard isEnabled else { return }
         switch event {
         case .pinTap, .chipTap:
             impact(.light)

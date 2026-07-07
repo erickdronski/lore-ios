@@ -31,6 +31,8 @@ struct ProfileScreen: View {
 
                 stubSection
 
+                settingsSection
+
                 aboutSection
 
                 if auth.isSignedIn {
@@ -147,6 +149,21 @@ struct ProfileScreen: View {
                 title: "Lore+",
                 note: "Unlimited dives · $5.99/mo · 7-day trial"
             )
+        }
+    }
+
+    /// Settings entry: preferences, permissions, subscription (TestFlight
+    /// feedback #13). Available signed in or out, permissions + haptics apply
+    /// to everyone.
+    private var settingsSection: some View {
+        Section {
+            NavigationLink {
+                SettingsView()
+            } label: {
+                Label("Settings", systemImage: "gearshape")
+                    .font(LoreType.body)
+                    .foregroundStyle(LoreColor.ink)
+            }
         }
     }
 
