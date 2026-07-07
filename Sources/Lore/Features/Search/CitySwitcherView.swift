@@ -235,7 +235,8 @@ enum CityRegion: String, CaseIterable, Identifiable {
             return .asia
         case "CA", "MX", "BR", "AR", "CL", "CO", "PE":
             return .americas
-        case "AE", "SA", "QA", "IL", "TR", "EG", "ZA", "MA", "NG", "KE":
+        case "AE", "SA", "QA", "IL", "TR",
+             "EG", "ZA", "MA", "NG", "KE", "GH", "ET", "SN", "TZ", "TN":
             return .middleEastAfrica
         case "AU", "NZ":
             return .oceania
@@ -264,6 +265,16 @@ enum CityRegion: String, CaseIterable, Identifiable {
         case "AE": return "United Arab Emirates"
         case "NL": return "Netherlands"
         case "SE": return "Sweden"
+        case "NZ": return "New Zealand"
+        case "NG": return "Nigeria"
+        case "KE": return "Kenya"
+        case "GH": return "Ghana"
+        case "ET": return "Ethiopia"
+        case "ZA": return "South Africa"
+        case "SN": return "Senegal"
+        case "TZ": return "Tanzania"
+        case "MA": return "Morocco"
+        case "TN": return "Tunisia"
         default: return code.uppercased()
         }
     }
