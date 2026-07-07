@@ -104,6 +104,19 @@ struct LoreAPI {
         )
     }
 
+    /// The "Did You Know" facts (superlatives, firsts, records, quirks, stats)
+    /// for a city. Powers the fact deck + "By the Numbers" strip on Meet {City}.
+    /// `GET /rest/v1/city_fact?city=eq.{city}&order=sort`
+    func cityFacts(city: String = Config.defaultCity) async throws -> [CityFact] {
+        try await get(
+            "city_fact",
+            query: [
+                URLQueryItem(name: "city", value: "eq.\(city)"),
+                URLQueryItem(name: "order", value: "sort.asc"),
+            ]
+        )
+    }
+
     /// Published tours for a city, stops embedded and ordered by `seq`.
     /// `GET /rest/v1/tour?city=eq.{city}&select=*,tour_stop(*)&order=title.asc`
     func tours(city: String = Config.defaultCity) async throws -> [Tour] {

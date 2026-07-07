@@ -131,6 +131,24 @@ struct CultureView: View {
                         .staggerChild(index: 1)
                 }
 
+                if !model.facts.isEmpty {
+                    VStack(alignment: .leading, spacing: 14) {
+                        CultureSectionHeader(eyebrow: "Wait, Really?", title: "Did You Know")
+                            .padding(.horizontal, 16)
+                        DidYouKnowDeck(facts: model.facts)
+                    }
+                    .staggerChild(index: 2)
+                }
+
+                if !model.stats.isEmpty {
+                    VStack(alignment: .leading, spacing: 14) {
+                        CultureSectionHeader(eyebrow: "The Big Figures", title: "By the Numbers")
+                            .padding(.horizontal, 16)
+                        ByTheNumbersStrip(stats: model.stats)
+                    }
+                    .staggerChild(index: 3)
+                }
+
                 if !model.people.isEmpty {
                     VStack(alignment: .leading, spacing: 14) {
                         CultureSectionHeader(eyebrow: "The Locals", title: "Famous Faces")
@@ -139,7 +157,7 @@ struct CultureView: View {
                             model.selectedPerson = person
                         }
                     }
-                    .staggerChild(index: 2)
+                    .staggerChild(index: 4)
                 }
 
                 if !model.lingo.isEmpty {
@@ -148,7 +166,7 @@ struct CultureView: View {
                             .padding(.horizontal, 16)
                         lingoGrid
                     }
-                    .staggerChild(index: 3)
+                    .staggerChild(index: 5)
                 }
 
                 if !model.sayings.isEmpty {
@@ -157,7 +175,7 @@ struct CultureView: View {
                             .padding(.horizontal, 16)
                         sayingsRow
                     }
-                    .staggerChild(index: 4)
+                    .staggerChild(index: 6)
                 }
 
                 Color.clear.frame(height: 24)
@@ -333,6 +351,14 @@ final class CultureModel {
     /// Sayings, turns of phrase, also shown as flip cards.
     private(set) var sayings: [CityCulture] = []
 
+    /// The "Did You Know" facts for the city (superlatives, firsts, quirks, …),
+    /// shown as a swipeable deck. Loaded best-effort; a city with none simply
+    /// hides the deck.
+    private(set) var facts: [CityFact] = []
+    /// The subset of `facts` that carry a headline number, shown as the "By the
+    /// Numbers" stat strip.
+    private(set) var stats: [CityFact] = []
+
     /// The person whose bio sheet is presented, if any.
     var selectedPerson: CityCulture?
 
@@ -347,8 +373,9 @@ final class CultureModel {
     func load(city: String) async {
         guard case .loading = state else { return }
         do {
-            // Best-effort proper city name (non-fatal if it fails).
+            // Best-effort proper city name + facts (non-fatal if either fails).
             async let citiesTask = try? LoreAPI.shared.cities()
+            async let factsTask = try? LoreAPI.shared.cityFacts(city: city)
             let rows = try await LoreAPI.shared.culture(city: city)
             if let cities = await citiesTask {
                 cityNames = Dictionary(
@@ -362,7 +389,10 @@ final class CultureModel {
             lingo = rows.filter { $0.kind == .slang }
             sayings = rows.filter { $0.kind == .saying }
 
-            state = rows.isEmpty ? .empty : .loaded
+            facts = await factsTask ?? []
+            stats = facts.filter(\.hasStat)
+
+            state = (rows.isEmpty && facts.isEmpty) ? .empty : .loaded
         } catch {
             state = .failed("Check your connection and try again.")
         }
