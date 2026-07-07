@@ -28,6 +28,13 @@ struct TravelMapControls: View {
     var onNeedsSignIn: () -> Void = {}
 
     @Environment(MapFilterStore.self) private var filters
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// Collapsed hides the chips + shelf so the map gets the whole screen
+    /// (TestFlight feedback: "I should be able to minimize / collapse / hide
+    /// this whole section"). Drag the handle down to hide, tap it to bring it
+    /// back. Persisted so the map remembers the choice.
+    @AppStorage("lore.map.nearMeCollapsed") private var collapsed = false
 
     /// Relevance derived from the current prefs + whether a filter is active.
     let relevance: MapRelevance
@@ -39,29 +46,80 @@ struct TravelMapControls: View {
     }
 
     var body: some View {
-        VStack(spacing: 12) {
-            MapFilterChips()
+        VStack(spacing: 8) {
+            handle
 
-            NearMeShelf(
-                places: filteredPlaces,
-                relevance: relevance,
-                onSelect: onSelect,
-                onNeedsSignIn: onNeedsSignIn
-            )
+            if !collapsed {
+                VStack(spacing: 12) {
+                    MapFilterChips()
+
+                    NearMeShelf(
+                        places: filteredPlaces,
+                        relevance: relevance,
+                        onSelect: onSelect,
+                        onNeedsSignIn: onNeedsSignIn
+                    )
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
         }
-        .padding(.vertical, 12)
+        .padding(.top, 6)
+        .padding(.bottom, 10)
         .background(
             LinearGradient(
-                colors: [LoreColor.ink900.opacity(0), LoreColor.ink900.opacity(0.92)],
+                colors: [LoreColor.ink900.opacity(0), LoreColor.ink900.opacity(collapsed ? 0.6 : 0.92)],
                 startPoint: .top,
                 endPoint: .bottom
             )
             .ignoresSafeArea(edges: .bottom)
         )
+        .gesture(collapseDrag)
         .onAppear { filters.syncCategories(from: places) }
         .onChange(of: places) { _, newValue in
             filters.syncCategories(from: newValue)
         }
+    }
+
+    /// The grip: a grab bar plus, when collapsed, a labelled "Around you" pill so
+    /// it's obvious how to bring the shelf back. Tap toggles; drag toggles too.
+    private var handle: some View {
+        Button {
+            setCollapsed(!collapsed)
+        } label: {
+            HStack(spacing: 8) {
+                if collapsed {
+                    Image(systemName: "location.fill")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(LoreColor.amber)
+                    Text("Around you")
+                        .font(LoreType.caption)
+                        .foregroundStyle(LoreColor.bone)
+                }
+                Image(systemName: collapsed ? "chevron.up" : "chevron.down")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(LoreColor.bone.opacity(0.85))
+            }
+            .padding(.horizontal, 14)
+            .frame(height: 30)
+            .background(.ultraThinMaterial, in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(collapsed ? "Show places around you" : "Hide places around you")
+    }
+
+    /// Drag the handle/panel down to collapse, up to expand.
+    private var collapseDrag: some Gesture {
+        DragGesture(minimumDistance: 12)
+            .onEnded { value in
+                if value.translation.height > 28 { setCollapsed(true) }
+                else if value.translation.height < -28 { setCollapsed(false) }
+            }
+    }
+
+    private func setCollapsed(_ value: Bool) {
+        guard value != collapsed else { return }
+        Haptics.play(.chipTap)
+        withAnimation(LoreSpring.smooth(reduceMotion: reduceMotion)) { collapsed = value }
     }
 }
 

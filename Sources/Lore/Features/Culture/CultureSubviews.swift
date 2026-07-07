@@ -20,42 +20,56 @@ struct CultureQuoteCard: View {
     /// alive. One sanctioned ambient beat, not decoration for its own sake.
     private let rotation = Timer.publish(every: 9, on: .main, in: .common).autoconnect()
 
-    private var current: CityCulture? {
-        guard quotes.indices.contains(index) else { return quotes.first }
-        return quotes[index]
-    }
-
     var body: some View {
-        Group {
-            if let quote = current {
-                VStack(alignment: .leading, spacing: 14) {
-                    Text("\u{201C}")
-                        .font(LoreType.display(size: 52, weight: .semibold))
-                        .foregroundStyle(LoreColor.brass300)
-                        .frame(height: 30, alignment: .top)
-                        .accessibilityHidden(true)
-
-                    Text(quote.headline)
-                        .font(LoreType.display(size: 26, weight: .medium))
-                        .foregroundStyle(LoreColor.bone)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .id(quote.id) // re-identify so the crossfade fires per quote
-
-                    if let attribution = quote.attribution ?? quote.body {
-                        Text(attribution)
-                            .font(LoreType.caption)
-                            .foregroundStyle(LoreColor.brass300)
-                            .lineLimit(2)
-                    }
-
-                    if quotes.count > 1 {
-                        quoteDots
-                    }
+        VStack(spacing: 12) {
+            // A swipeable pager (TestFlight feedback: "these quote tiles are
+            // still not scrollable"). Fixed height keeps every card uniform;
+            // long quotes scale to fit rather than clipping.
+            TabView(selection: $index) {
+                ForEach(Array(quotes.enumerated()), id: \.element.id) { i, quote in
+                    quoteFace(quote)
+                        .padding(.horizontal, 2)
+                        .tag(i)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .transition(.opacity)
+            }
+            .tabViewStyle(.page(indexDisplayMode: .never))
+            .frame(height: 210)
+
+            if quotes.count > 1 {
+                quoteDots
             }
         }
+        .onReceive(rotation) { _ in
+            guard autoAdvance, quotes.count > 1 else { return }
+            advance()
+        }
+    }
+
+    /// One quote card face inside the pager.
+    private func quoteFace(_ quote: CityCulture) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("\u{201C}")
+                .font(LoreType.display(size: 52, weight: .semibold))
+                .foregroundStyle(LoreColor.brass300)
+                .frame(height: 28, alignment: .top)
+                .accessibilityHidden(true)
+
+            Text(quote.headline)
+                .font(LoreType.display(size: 24, weight: .medium))
+                .foregroundStyle(LoreColor.bone)
+                .minimumScaleFactor(0.6)
+                .lineLimit(5)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if let attribution = quote.attribution ?? quote.body {
+                Text(attribution)
+                    .font(LoreType.caption)
+                    .foregroundStyle(LoreColor.brass300)
+                    .lineLimit(2)
+            }
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         .padding(20)
         .background(
             RoundedRectangle(cornerRadius: 24, style: .continuous)
@@ -65,16 +79,8 @@ struct CultureQuoteCard: View {
             RoundedRectangle(cornerRadius: 24, style: .continuous)
                 .strokeBorder(LoreColor.ink700, lineWidth: 1)
         )
-        .contentShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .onTapGesture { advance(manual: true) }
-        .onReceive(rotation) { _ in
-            guard autoAdvance, quotes.count > 1 else { return }
-            advance(manual: false)
-        }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(accessibilityLabel)
-        .accessibilityHint(quotes.count > 1 ? "Double tap for the next quote" : "")
-        .accessibilityAddTraits(quotes.count > 1 ? .isButton : [])
+        .accessibilityLabel(accessibilityLabel(for: quote))
     }
 
     private var quoteDots: some View {
@@ -89,22 +95,16 @@ struct CultureQuoteCard: View {
         .accessibilityHidden(true)
     }
 
-    private var accessibilityLabel: String {
-        guard let quote = current else { return "Quote" }
+    private func accessibilityLabel(for quote: CityCulture) -> String {
         let attribution = quote.attribution.map { ", \($0)" } ?? ""
         return "\(quote.headline)\(attribution)"
     }
 
-    private func advance(manual: Bool) {
+    /// Auto-advance to the next quote (the ambient beat); manual paging is the
+    /// user's swipe on the pager.
+    private func advance() {
         guard quotes.count > 1 else { return }
-        if manual {
-            Haptics.play(.chipTap)
-            // A manual tap pauses auto-rotation briefly so it doesn't fight the
-            // reader, then resumes.
-            autoAdvance = false
-            DispatchQueue.main.asyncAfter(deadline: .now() + 12) { autoAdvance = true }
-        }
-        withAnimation(LoreMotion.unfurl) {
+        withAnimation(LoreSpring.smooth(reduceMotion: false)) {
             index = (index + 1) % quotes.count
         }
     }
