@@ -189,6 +189,15 @@ struct MapScreen: View {
     /// toggle. Quiet and top-trailing; 3D is the moment people screen-record.
     private var mapControls: some View {
         VStack(spacing: 10) {
+            // Recenter on the user (TestFlight feedback: "current location icon").
+            // MapKit follows the fix natively; falls back to the city frame if
+            // location isn't authorized yet.
+            mapControlButton(
+                system: "location.fill",
+                on: false,
+                label: "Center on my location"
+            ) { centerOnUser() }
+
             mapControlButton(
                 system: dimensional ? "view.2d" : "view.3d",
                 on: dimensional,
@@ -223,6 +232,18 @@ struct MapScreen: View {
         }
         .buttonStyle(.pressable)
         .accessibilityLabel(Text(label))
+    }
+
+    /// Follow the user's live location. MapKit resolves + tracks the fix; if
+    /// location isn't authorized yet it eases to the current city frame so the
+    /// tap is never a dead end. Authorization is already requested by the
+    /// near-me shelf / scanner, so the button lights the map up in place.
+    private func centerOnUser() {
+        Haptics.play(.chipTap)
+        let fallback: MapCameraPosition = model.cameraTarget.map { .region($0) } ?? .automatic
+        withAnimation(LoreSpring.smooth(reduceMotion: reduceMotion)) {
+            position = .userLocation(fallback: fallback)
+        }
     }
 
     /// Pitch into 3D (or flatten) around the current city centre with a settled

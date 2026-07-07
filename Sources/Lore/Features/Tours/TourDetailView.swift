@@ -194,7 +194,49 @@ struct TourDetailView: View {
                     .loreLabelStyle()
                     .foregroundStyle(LoreColor.brass700)
             }
+            tripFacts
         }
+    }
+
+    // MARK: Trip facts (TestFlight feedback: "Total distance? Total time?")
+
+    /// Total walking distance along the routed stops, in meters, once every
+    /// stop's place has resolved. Sums the consecutive stop-to-stop legs, a
+    /// close proxy for the on-foot route (Apple Maps gives the exact path when
+    /// the user taps directions). Nil until the stops load, so the strip only
+    /// ever shows real numbers.
+    private var routeMeters: Double? {
+        let locations = tour.stops.compactMap { model.place(id: $0.placeID)?.location }
+        guard locations.count == tour.stops.count, locations.count >= 2 else { return nil }
+        return zip(locations, locations.dropFirst())
+            .reduce(0) { $0 + $1.0.distance(from: $1.1) }
+    }
+
+    /// Estimated walking time for the route at a relaxed 1.3 m/s, whole minutes.
+    private var walkMinutes: Int? {
+        guard let routeMeters else { return nil }
+        return max(1, Int((routeMeters / 1.3) / 60))
+    }
+
+    /// A compact facts strip under the tour title: total distance, walking
+    /// time, and stop count. Appears once the stops resolve.
+    @ViewBuilder
+    private var tripFacts: some View {
+        if let routeMeters, let walkMinutes {
+            HStack(spacing: 16) {
+                tripFact(system: "figure.walk", text: BearingProjector.distanceLabel(meters: routeMeters))
+                tripFact(system: "clock", text: "\(walkMinutes) min")
+                tripFact(system: "mappin.and.ellipse", text: "\(tour.stops.count) stops")
+            }
+            .padding(.top, 2)
+        }
+    }
+
+    private func tripFact(system: String, text: String) -> some View {
+        Label(text, systemImage: system)
+            .font(LoreType.caption)
+            .labelStyle(.titleAndIcon)
+            .foregroundStyle(LoreColor.ink)
     }
 
     /// Amber node rail, one dot per stop, filled up to the current one. The
