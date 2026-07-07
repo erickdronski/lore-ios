@@ -185,11 +185,16 @@ struct NearMeCard: View {
             }
             .buttonStyle(.plain)
 
+            Spacer(minLength: 0)
+
             VisitToggle(place: place, source: .map, onNeedsSignIn: onNeedsSignIn)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(14)
-        .frame(width: 200, alignment: .leading)
+        // Fixed height so every card in the shelf is uniform regardless of a
+        // one- or two-line name (TestFlight feedback: "tiles are different
+        // sizes, make them uniform"). Generous so nothing clips.
+        .frame(width: 200, height: 188, alignment: .topLeading)
         .background(RoundedRectangle(cornerRadius: 18).fill(LoreColor.ink800))
         .overlay(
             RoundedRectangle(cornerRadius: 18)
