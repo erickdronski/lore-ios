@@ -37,6 +37,13 @@ final class AuthService {
     private(set) var isBusy = false
     var lastError: String?
 
+    /// Runs the `ASWebAuthenticationSession` for Supabase OAuth providers.
+    private let webAuth = WebAuthCoordinator()
+    /// The registered URL scheme (project.yml). `ASWebAuthenticationSession`
+    /// intercepts this callback so Supabase's redirect lands back in the app.
+    private static let oauthCallbackScheme = "lore"
+    private static let oauthRedirect = "lore://auth-callback"
+
     var isSignedIn: Bool { session != nil }
 
     enum AuthError: LocalizedError {
@@ -170,6 +177,109 @@ final class AuthService {
         } catch {
             lastError = error.localizedDescription
         }
+    }
+
+    // MARK: - OAuth providers (Google, and later Facebook / Discord)
+
+    /// Sign in with Google via Supabase GoTrue's OAuth web flow.
+    func signInWithGoogle() async { await signInWithOAuth(provider: "google") }
+
+    /// Generic Supabase OAuth: open `/auth/v1/authorize?provider=…` in an
+    /// `ASWebAuthenticationSession`, let Supabase run the provider handshake,
+    /// then read the GoTrue tokens Supabase returns in the callback fragment and
+    /// hydrate the session (docs/11-AUTH-SETUP.md §B, docs/16 §2).
+    ///
+    /// **Server prerequisite:** the provider must be enabled in the Supabase
+    /// dashboard (client id + secret) and `lore://auth-callback` added to the
+    /// Auth → URL Configuration redirect allowlist.
+    func signInWithOAuth(provider: String) async {
+        isBusy = true
+        lastError = nil
+        defer { isBusy = false }
+        do {
+            var components = URLComponents(
+                url: Config.authURL.appending(path: "authorize"),
+                resolvingAgainstBaseURL: false
+            )
+            components?.queryItems = [
+                URLQueryItem(name: "provider", value: provider),
+                URLQueryItem(name: "redirect_to", value: Self.oauthRedirect),
+            ]
+            guard let authorizeURL = components?.url else { return }
+
+            let callback = try await webAuth.authenticate(
+                url: authorizeURL,
+                callbackScheme: Self.oauthCallbackScheme
+            )
+
+            guard let tokens = Self.tokens(from: callback) else {
+                // Supabase can bounce an error back in the fragment instead.
+                lastError = Self.callbackError(from: callback)
+                    ?? "\(provider.capitalized) sign-in didn't complete. Please try again."
+                return
+            }
+
+            let user = try await fetchUser(accessToken: tokens.access)
+            session = AuthSession(
+                accessToken: tokens.access,
+                refreshToken: tokens.refresh,
+                expiresIn: tokens.expiresIn,
+                tokenType: tokens.tokenType,
+                user: user
+            )
+            await refreshProfile()
+        } catch is WebAuthCoordinator.WebAuthError {
+            // User dismissed the sheet, silent (not an error to surface).
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
+    /// GET `/auth/v1/user` to resolve the account behind an OAuth access token
+    /// (the OAuth callback carries only token strings, not the user object).
+    private func fetchUser(accessToken: String) async throws -> AuthUser {
+        var request = URLRequest(url: Config.authURL.appending(path: "user"))
+        request.setValue(Config.supabaseAnonKey, forHTTPHeaderField: "apikey")
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            throw AuthError.http(
+                status: http.statusCode,
+                message: Self.errorMessage(from: data) ?? "Couldn't load your account."
+            )
+        }
+        return try JSONDecoder().decode(AuthUser.self, from: data)
+    }
+
+    /// Parse the GoTrue tokens Supabase returns in the callback URL fragment
+    /// (`…#access_token=…&refresh_token=…&expires_in=…&token_type=bearer`).
+    private static func tokens(
+        from url: URL
+    ) -> (access: String, refresh: String, expiresIn: Int, tokenType: String)? {
+        let fragment = URLComponents(url: url, resolvingAgainstBaseURL: false)?.fragment
+            ?? url.fragment
+        guard let fragment else { return nil }
+        let pairs = fragment.split(separator: "&").reduce(into: [String: String]()) { dict, pair in
+            let kv = pair.split(separator: "=", maxSplits: 1).map(String.init)
+            if kv.count == 2 { dict[kv[0]] = kv[1].removingPercentEncoding ?? kv[1] }
+        }
+        guard let access = pairs["access_token"], let refresh = pairs["refresh_token"] else {
+            return nil
+        }
+        return (access, refresh, Int(pairs["expires_in"] ?? "3600") ?? 3600, pairs["token_type"] ?? "bearer")
+    }
+
+    /// A human error Supabase may put in the callback fragment/query instead of tokens.
+    private static func callbackError(from url: URL) -> String? {
+        let comps = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        let haystack = (comps?.fragment ?? "") + "&" + (comps?.query ?? "")
+        for pair in haystack.split(separator: "&") {
+            let kv = pair.split(separator: "=", maxSplits: 1).map(String.init)
+            if kv.count == 2, kv[0] == "error_description" {
+                return kv[1].removingPercentEncoding?.replacingOccurrences(of: "+", with: " ")
+            }
+        }
+        return nil
     }
 
     /// First-authorization Apple name, stashed until a `user_profile` write path

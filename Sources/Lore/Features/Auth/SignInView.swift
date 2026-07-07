@@ -22,6 +22,9 @@ struct SignInView: View {
     @State private var appleError: String?
     /// The coordinator is created lazily per sign-in attempt.
     @State private var isAppleSigningIn = false
+    /// Non-fatal Google sign-in error (nil when the user simply cancelled).
+    @State private var googleError: String?
+    @State private var isGoogleSigningIn = false
 
     var body: some View {
         NavigationStack {
@@ -54,6 +57,39 @@ struct SignInView: View {
 
                     if let appleError {
                         Text(appleError)
+                            .font(LoreType.caption)
+                            .foregroundStyle(LoreColor.error)
+                    }
+
+                    // Continue with Google (Supabase OAuth via ASWebAuthSession).
+                    Button {
+                        Task { await signInWithGoogle() }
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: "g.circle.fill")
+                                .font(.system(size: 18, weight: .semibold))
+                            Text("Continue with Google")
+                                .font(LoreType.button)
+                            if isGoogleSigningIn {
+                                Spacer(minLength: 8)
+                                ProgressView().tint(LoreColor.ink)
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 50)
+                        .foregroundStyle(LoreColor.ink)
+                        .background(LoreColor.bone, in: RoundedRectangle(cornerRadius: 14))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14)
+                                .strokeBorder(LoreColor.ink.opacity(0.15), lineWidth: 1)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isGoogleSigningIn || auth.isBusy)
+                    .accessibilityLabel("Continue with Google")
+
+                    if let googleError {
+                        Text(googleError)
                             .font(LoreType.caption)
                             .foregroundStyle(LoreColor.error)
                     }
@@ -160,6 +196,20 @@ struct SignInView: View {
             appleError = error.errorDescription
         } catch {
             appleError = error.localizedDescription
+        }
+    }
+
+    /// Run the Supabase Google OAuth flow, then dismiss on success.
+    @MainActor
+    private func signInWithGoogle() async {
+        googleError = nil
+        isGoogleSigningIn = true
+        defer { isGoogleSigningIn = false }
+        await auth.signInWithGoogle()
+        if auth.isSignedIn {
+            dismiss()
+        } else if let authError = auth.lastError {
+            googleError = authError
         }
     }
 }
