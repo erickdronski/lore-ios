@@ -49,6 +49,11 @@ struct PassportView: View {
             .navigationTitle("Passport")
             .navigationBarTitleDisplayMode(.large)
             .toolbarColorScheme(.dark, for: .navigationBar)
+            // The wall sits on a dark Ink ground, so run the screen in dark mode:
+            // this recolors the *system* chrome (the large nav title + the status
+            // bar) to light so both are legible. Content uses explicit LoreColors,
+            // which are fixed values and do not shift with the scheme.
+            .preferredColorScheme(.dark)
             .task { await model.loadIfNeeded(auth: auth) }
         }
     }

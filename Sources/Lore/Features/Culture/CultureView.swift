@@ -51,6 +51,9 @@ struct CultureView: View {
         .navigationBarTitleDisplayMode(.large)
         .toolbarBackground(LoreColor.ink900, for: .navigationBar)
         .toolbarColorScheme(.dark, for: .navigationBar)
+        // Dark Ink ground: run the sheet in dark mode so the system large title
+        // and status bar render light and legible (content uses fixed LoreColors).
+        .preferredColorScheme(.dark)
         .task { await model.load(city: city) }
         .onAppear {
             if reduceMotion {
