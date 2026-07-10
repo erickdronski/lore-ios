@@ -46,14 +46,16 @@ struct PassportView: View {
                     .transition(.opacity)
                 }
             }
-            .navigationTitle("Passport")
-            .navigationBarTitleDisplayMode(.large)
+            // The app is pinned to `.preferredColorScheme(.light)` at the root
+            // (to keep the Bone screens legible), so a *system* large title here
+            // renders near-black on this dark Ink ground and vanishes. Draw the
+            // title in-content as bone instead, and make the bar an opaque dark
+            // strip so the status bar reads light too.
+            .navigationTitle("")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarBackground(LoreColor.ink900, for: .navigationBar)
             .toolbarColorScheme(.dark, for: .navigationBar)
-            // The wall sits on a dark Ink ground, so run the screen in dark mode:
-            // this recolors the *system* chrome (the large nav title + the status
-            // bar) to light so both are legible. Content uses explicit LoreColors,
-            // which are fixed values and do not shift with the scheme.
-            .preferredColorScheme(.dark)
             .task { await model.loadIfNeeded(auth: auth) }
         }
     }
@@ -67,6 +69,14 @@ struct PassportView: View {
     private var wall: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
+                Text("Passport")
+                    .font(.system(size: 34, weight: .bold))
+                    .foregroundStyle(LoreColor.bone)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+                    .accessibilityAddTraits(.isHeader)
+
                 PassportSummary(
                     unlockedCount: model.unlockedCount,
                     totalCount: model.totalCount,

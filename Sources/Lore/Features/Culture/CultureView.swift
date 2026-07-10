@@ -47,13 +47,15 @@ struct CultureView: View {
                 content
             }
         }
-        .navigationTitle("Meet \(model.cityDisplayName(for: city))")
-        .navigationBarTitleDisplayMode(.large)
+        // App is pinned to light scheme at the root, so a system large title
+        // renders near-black on this dark ground. Title is drawn in-content as
+        // bone (see `header`); keep the bar an opaque dark strip for a light
+        // status bar.
+        .navigationTitle("")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(.visible, for: .navigationBar)
         .toolbarBackground(LoreColor.ink900, for: .navigationBar)
         .toolbarColorScheme(.dark, for: .navigationBar)
-        // Dark Ink ground: run the sheet in dark mode so the system large title
-        // and status bar render light and legible (content uses fixed LoreColors).
-        .preferredColorScheme(.dark)
         .task { await model.load(city: city) }
         .onAppear {
             if reduceMotion {
@@ -188,11 +190,18 @@ struct CultureView: View {
     }
 
     private var header: some View {
-        Text("A quick introduction to how this city talks, thinks, and remembers itself.")
-            .font(LoreType.body)
-            .foregroundStyle(LoreColor.bone.opacity(0.75))
-            .fixedSize(horizontal: false, vertical: true)
-            .padding(.horizontal, 16)
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Meet \(model.cityDisplayName(for: city))")
+                .font(.system(size: 34, weight: .bold))
+                .foregroundStyle(LoreColor.bone)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityAddTraits(.isHeader)
+            Text("A quick introduction to how this city talks, thinks, and remembers itself.")
+                .font(LoreType.body)
+                .foregroundStyle(LoreColor.bone.opacity(0.75))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.horizontal, 16)
     }
 
     /// Lingo as a two-row horizontal shelf of flip cards (compact, horizontal
