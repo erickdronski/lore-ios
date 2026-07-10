@@ -192,7 +192,14 @@ struct PlaceCardView: View {
 
     private var dossier: some View {
         ZStack(alignment: .top) {
-            DiveView(place: place, morphNamespace: morph, medallionID: medallionID)
+            // Skip the shared-element morph when auto-opening (screenshot
+            // pipeline): the Layer-1 card never lays out, so its medallion has no
+            // geometry to hand off and the dossier's `matchedGeometryEffect`
+            // receiver would float over the narrative. Nil namespace = the
+            // medallion just appears in its correct header slot.
+            DiveView(place: place,
+                     morphNamespace: autoDive ? nil : morph,
+                     medallionID: medallionID)
 
             HStack {
                 // Dismiss affordance, springs the dossier back down into the card.
