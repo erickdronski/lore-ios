@@ -4,11 +4,14 @@ import UIKit
 
 /// Owns the single `AVCaptureSession` behind the scanner viewfinder.
 ///
-/// P0 is preview-only: no frames are read, nothing leaves the device, the
-/// coarse scanner is pose math over the camera feed, exactly like the web
-/// scanner. The AR pipeline (ARKit + GARSession) replaces this session
-/// wholesale at P1 (docs/05 §2.2 step 1).
-final class ScannerCameraService {
+/// The coarse scanner is pose math over the camera feed; no frames leave the
+/// device. One deliberate exception reads the feed on-device only: the QR
+/// marker rung (docs/05 §5 ladder, rung 0). A Lore marker at a known spot is
+/// centimeter-grade ground truth, so scanning one earns an instant, honest
+/// Tier-A resolve where GPS never could (indoors, urban canyons, plaques).
+/// The AR pipeline (ARKit + GARSession) replaces this session wholesale at P1
+/// (docs/05 §2.2 step 1).
+final class ScannerCameraService: NSObject, AVCaptureMetadataOutputObjectsDelegate {
     let session = AVCaptureSession()
     private let sessionQueue = DispatchQueue(label: "com.erickdronski.lore.camera-session")
     private var configured = false
@@ -17,6 +20,14 @@ final class ScannerCameraService {
     private let photoOutput = AVCapturePhotoOutput()
     /// Retains the in-flight capture delegate until the photo comes back.
     private var captureDelegate: PhotoCaptureDelegate?
+
+    /// QR metadata output for the marker rung. Payloads accepted:
+    /// `https://getlore.app/p/<slug>`, `lore://p/<slug>`, `lore:<slug>`.
+    private let markerOutput = AVCaptureMetadataOutput()
+    /// Called on the main queue with the decoded place slug.
+    var onMarkerSlug: ((String) -> Void)?
+    private var lastMarkerPayload: String?
+    private var lastMarkerAt: TimeInterval = 0
 
     /// Requests camera permission if needed, then configures + starts the
     /// session off the main thread.
@@ -66,7 +77,56 @@ final class ScannerCameraService {
         if session.canAddOutput(photoOutput) {
             session.addOutput(photoOutput)
         }
+
+        // The QR marker rung: metadata detection is hardware-cheap and stays
+        // on-device. Only `.qr` is scanned, and only Lore payloads act.
+        if session.canAddOutput(markerOutput) {
+            session.addOutput(markerOutput)
+            markerOutput.setMetadataObjectsDelegate(self, queue: sessionQueue)
+            if markerOutput.availableMetadataObjectTypes.contains(.qr) {
+                markerOutput.metadataObjectTypes = [.qr]
+            }
+        }
         configured = true
+    }
+
+    // MARK: AVCaptureMetadataOutputObjectsDelegate (marker rung)
+
+    func metadataOutput(
+        _ output: AVCaptureMetadataOutput,
+        didOutput metadataObjects: [AVMetadataObject],
+        from connection: AVCaptureConnection
+    ) {
+        guard
+            let code = metadataObjects.compactMap({ $0 as? AVMetadataMachineReadableCodeObject }).first,
+            code.type == .qr,
+            let payload = code.stringValue,
+            let slug = Self.markerSlug(from: payload)
+        else { return }
+
+        // Debounce: the camera re-reads a visible code every frame.
+        let now = Date().timeIntervalSince1970
+        if payload == lastMarkerPayload, now - lastMarkerAt < 5 { return }
+        lastMarkerPayload = payload
+        lastMarkerAt = now
+
+        DispatchQueue.main.async { [weak self] in
+            self?.onMarkerSlug?(slug)
+        }
+    }
+
+    /// Parse a Lore marker payload into a place slug; nil for foreign QR codes
+    /// (which the scanner deliberately ignores, this is not a QR reader app).
+    static func markerSlug(from payload: String) -> String? {
+        let trimmed = payload.trimmingCharacters(in: .whitespacesAndNewlines)
+        for prefix in ["https://getlore.app/p/", "http://getlore.app/p/", "lore://p/", "lore:"] {
+            if trimmed.lowercased().hasPrefix(prefix) {
+                let slug = String(trimmed.dropFirst(prefix.count))
+                    .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+                return slug.isEmpty ? nil : slug.lowercased()
+            }
+        }
+        return nil
     }
 
     /// Freeze the current viewfinder frame as EXIF-oriented JPEG `Data`, for the

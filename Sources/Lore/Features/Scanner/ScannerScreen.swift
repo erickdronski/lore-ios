@@ -668,6 +668,14 @@ final class ScannerModel {
     }
 
     func start(city: String = Config.defaultCity) async {
+        // Marker rung (docs/05 §5, rung 0): a scanned Lore QR is ground truth
+        // at a known point, an instant honest resolve no GPS could earn.
+        camera.onMarkerSlug = { [weak self] slug in
+            guard let self else { return }
+            guard let place = self.places.first(where: { $0.slug == slug }) else { return }
+            Haptics.play(.scannerLock)
+            self.selectedPlace = place
+        }
         camera.start()
         pose.start()
         startProjectionLoop()
