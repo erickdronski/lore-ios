@@ -1,0 +1,69 @@
+name: App Store · Screenshots
+
+# Captures Lore's App Store screenshots on the Simulator and uploads them as a
+# downloadable artifact. Manual-only (workflow_dispatch) — screenshots aren't
+# needed on every push, and this consumes macOS runner minutes. No code signing
+# and no TestFlight upload happen here: it only runs the LoreUITests capturer on
+# the Simulator, so it can never ship a build.
+#
+# After a green run: download the "app-store-screenshots" artifact to review the
+# frames, then upload them to App Store Connect.
+
+on:
+  workflow_dispatch: {}
+
+concurrency:
+  group: app-store-screenshots
+  cancel-in-progress: true
+
+jobs:
+  screenshots:
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select the latest stable Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate the Xcode project
+        run: xcodegen generate
+
+      - name: List available simulators (diagnostic)
+        run: xcrun simctl list devices available | grep -i "iphone" || true
+
+      - name: Ruby + Fastlane (cached)
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.2"
+          bundler-cache: true
+
+      - name: Capture screenshots
+        run: bundle exec fastlane screenshots
+
+      - name: Upload screenshots artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-store-screenshots
+          path: fastlane/screenshots
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Save fastlane logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshot-logs
+          path: |
+            ~/Library/Logs/snapshot/**
+            fastlane/report.xml
+            fastlane/test_output/**
+          if-no-files-found: ignore
+          retention-days: 7

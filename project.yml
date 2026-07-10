@@ -95,6 +95,13 @@ targets:
         #   widget falls back to its sample content (no crash).
         #
         # CODE_SIGN_ENTITLEMENTS: Sources/Lore/Lore.entitlements
+      # Guarantee DEBUG is defined for the Debug config so the DEBUG-only
+      # ScreenshotSupport hook compiles into the screenshot/test build (and is
+      # excluded from Release/TestFlight). Explicit so it never rides on
+      # XcodeGen's implicit preset.
+      configs:
+        Debug:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) DEBUG"
     info:
       path: Sources/Lore/Info.plist
       properties:
@@ -185,7 +192,28 @@ targets:
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
 
+  # ── UI-test target: App Store screenshot capturer (fastlane snapshot) ──────
+  # DEBUG-only. Runs on the Simulator via `fastlane screenshots` (no code
+  # signing needed). Drives the app past onboarding (the LORE_SCREENSHOTS launch
+  # arg → ScreenshotSupport) and captures the non-camera surfaces. It is NEVER
+  # archived and NEVER ships: the release "Lore" scheme below doesn't build it,
+  # only the "LoreScreenshots" scheme's test action does.
+  LoreUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: Sources/LoreUITests
+    dependencies:
+      - target: Lore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.erickdronski.lore.uitests
+        TEST_TARGET_NAME: Lore
+
 schemes:
+  # Release scheme, archived + uploaded to TestFlight by `fastlane beta`.
+  # Unchanged: it builds only the app + widget, never the UI-test target.
   Lore:
     build:
       targets:
@@ -195,3 +223,16 @@ schemes:
       config: Debug
     archive:
       config: Release
+
+  # Screenshot scheme, run by `fastlane screenshots` on the Simulator only.
+  LoreScreenshots:
+    build:
+      targets:
+        Lore: all
+        LoreUITests: [test]
+    test:
+      config: Debug
+      targets:
+        - LoreUITests
+    run:
+      config: Debug

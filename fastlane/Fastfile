@@ -17,6 +17,14 @@ TEAM_ID = "J9DMDH4S58"
 CERTS_REPO = "https://github.com/erickdronski/lore-certs.git"
 
 platform :ios do
+  desc "Capture App Store screenshots on the Simulator (no signing needed)"
+  lane :screenshots do
+    # Reads fastlane/Snapfile: boots the 6.9" Simulator, runs the LoreUITests
+    # capturer (LoreScreenshots.swift) against the LoreScreenshots scheme, and
+    # writes PNGs to fastlane/screenshots. Never touches signing or TestFlight.
+    capture_ios_screenshots
+  end
+
   desc "Build Lore and upload the build to TestFlight"
   lane :beta do
     # A clean, throwaway keychain on CI so codesign has somewhere to live.

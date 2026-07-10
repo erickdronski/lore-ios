@@ -40,6 +40,12 @@ struct LoreApp: App {
     @State private var travel: TravelSession
 
     init() {
+        // Screenshot pipeline only (DEBUG builds): fast-forward past first-run
+        // onboarding before the gate reads its flag. Compiled out of Release.
+        #if DEBUG
+        ScreenshotSupport.applyIfNeeded()
+        #endif
+
         // Build one `AuthService` and wire the Travel stores' credentials
         // closure to read its *current* session lazily (the user can sign in
         // mid-session). `@State`'s backing is created once, here.
