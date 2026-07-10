@@ -1,0 +1,43 @@
+name: App Store · Upload Screenshots
+
+# Uploads the pre-rendered marketing frames in fastlane/promo_screenshots to the
+# App Store Connect listing via the ASC API (fastlane deliver, screenshots-only:
+# no binary, no text metadata). Manual-only. Runs on Linux because it is a pure
+# API call — no Xcode, no Simulator, 1x runner cost.
+
+on:
+  workflow_dispatch: {}
+
+concurrency:
+  group: app-store-screenshots-upload
+  cancel-in-progress: true
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Ruby + Fastlane (cached)
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.2"
+          bundler-cache: true
+
+      - name: Upload screenshots to App Store Connect
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_CONTENT: ${{ secrets.ASC_KEY_CONTENT }}
+        run: bundle exec fastlane screenshots_upload
+
+      - name: Save fastlane log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deliver-log
+          path: fastlane/report.xml
+          if-no-files-found: ignore
+          retention-days: 7

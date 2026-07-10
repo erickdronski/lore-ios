@@ -25,6 +25,32 @@ platform :ios do
     capture_ios_screenshots
   end
 
+  desc "Upload the App Store marketing screenshots via the ASC API (no binary)"
+  lane :screenshots_upload do
+    # Pure App Store Connect API upload of the pre-rendered marketing frames in
+    # fastlane/promo_screenshots/en-US (1320x2868, the 6.9" slot that also fills
+    # 6.7"/6.5"). skip_binary_upload + skip_metadata mean this touches ONLY the
+    # screenshots on the editable version — never the build or the text metadata
+    # (description/keywords stay exactly as set). Runs on Linux; no Xcode needed.
+    api_key = app_store_connect_api_key(
+      key_id: ENV.fetch("ASC_KEY_ID"),
+      issuer_id: ENV.fetch("ASC_ISSUER_ID"),
+      key_content: ENV.fetch("ASC_KEY_CONTENT"),
+      is_key_content_base64: true,
+    )
+    upload_to_app_store(
+      api_key: api_key,
+      app_identifier: BUNDLE_ID,
+      skip_binary_upload: true,
+      skip_metadata: true,
+      skip_screenshots: false,
+      screenshots_path: "./fastlane/promo_screenshots",
+      overwrite_screenshots: true,
+      run_precheck_before_submit: false,
+      force: true,
+    )
+  end
+
   desc "Build Lore and upload the build to TestFlight"
   lane :beta do
     # A clean, throwaway keychain on CI so codesign has somewhere to live.
