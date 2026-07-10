@@ -168,8 +168,10 @@ struct RootTabView: View {
         }
         // A place opened from a search hit (map pin taps are self-contained).
         .sheet(item: $routedPlace) { routed in
-            PlaceCardView(place: routed.place, onMeetCity: { meetCity = $0 })
-                .presentationDetents([.medium, .large])
+            PlaceCardView(place: routed.place, onMeetCity: { meetCity = $0 }, autoDive: routed.autoDive)
+                // The screenshot "dive" stage wants the full dossier, so pin the
+                // sheet to `.large`; normal presentations keep the medium grip.
+                .presentationDetents(routed.autoDive ? [.large] : [.medium, .large])
                 .presentationBackground(.regularMaterial)
                 .presentationCornerRadius(24)
         }
@@ -187,6 +189,9 @@ struct RootTabView: View {
         .onAppear {
             installRouter()
             locator.start()
+            #if DEBUG
+            presentScreenshotStageIfNeeded()
+            #endif
         }
         // Follow the user's location to the nearest city on launch, unless they
         // have chosen one. Resolves once, then leaves the city under user control.
@@ -272,6 +277,40 @@ struct RootTabView: View {
         }
     }
 
+    #if DEBUG
+    // MARK: - Screenshot staging (DEBUG only, compiled out of Release)
+
+    /// Present a "deep" surface for the App Store screenshot capturer when it
+    /// launches with a `LORE_SHOW` stage. Tab surfaces the capturer reaches on
+    /// its own; the dossier and Meet-the-City are presented state, so we open
+    /// them here deterministically rather than tapping a map pin. Fetches the
+    /// pilot city directly (independent of the map's resolved city) and polls
+    /// until the network returns, so a cold launch still lands the shot.
+    private func presentScreenshotStageIfNeeded() {
+        guard ScreenshotSupport.isActive, let stage = ScreenshotSupport.stage else { return }
+        switch stage {
+        case "dive":
+            selection = .map
+            Task {
+                for _ in 0..<24 {
+                    let places = (try? await LoreAPI.shared.places(city: "chicago")) ?? []
+                    if let match = places.first(where: { $0.slug == ScreenshotSupport.diveSlug })
+                        ?? places.first(where: { $0.layer1?.hook != nil }) {
+                        routedPlace = RoutedPlace(place: match, autoDive: true)
+                        return
+                    }
+                    try? await Task.sleep(for: .milliseconds(500))
+                }
+            }
+        case "culture":
+            selection = .map
+            meetCity = "chicago"
+        default:
+            break
+        }
+    }
+    #endif
+
     // MARK: - Session sync
 
     /// Fan a session change out to the dependent stores: entitlements (Lore+),
@@ -303,6 +342,8 @@ struct RootTabView: View {
 /// `Identifiable` wrapper so a routed place can drive `.sheet(item:)`.
 private struct RoutedPlace: Identifiable {
     let place: Place
+    /// Open straight to the dossier (screenshot pipeline only).
+    var autoDive: Bool = false
     var id: String { place.id }
 }
 

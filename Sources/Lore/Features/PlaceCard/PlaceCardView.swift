@@ -9,6 +9,11 @@ struct PlaceCardView: View {
     /// so the card never imports the tab structure; a no-op default keeps
     /// previews / standalone hosts working.
     var onMeetCity: (String) -> Void = { _ in }
+    /// Open straight to the dossier on appear. Used only by the App Store
+    /// screenshot pipeline (`ScreenshotSupport` "dive" stage) so a capture can
+    /// land on the deep dive without a tap; defaults off for every real
+    /// presentation.
+    var autoDive: Bool = false
     @State private var showDive = false
     @State private var showShare = false
 
@@ -51,6 +56,10 @@ struct PlaceCardView: View {
             }
         }
         .animation(LoreSpring.smooth(reduceMotion: reduceMotion), value: showDive)
+        .onAppear {
+            // Screenshot pipeline only: land directly on the dossier.
+            if autoDive && !showDive { showDive = true }
+        }
         .sheet(isPresented: $showShare) {
             PlaceShareSheet(place: place)
         }
