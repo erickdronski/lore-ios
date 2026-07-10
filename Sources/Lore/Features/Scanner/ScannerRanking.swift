@@ -51,6 +51,11 @@ enum ScannerRanking {
         /// P0 is always `false`, the coarse scanner never claims Tier A from
         /// footprint math alone unless the silhouette is unmistakable.
         let hasVPS: Bool
+        /// Camera elevation above the horizon, degrees (see
+        /// `LocationHeadingProvider.cameraPitchDeg`). `nil` = unknown; gates
+        /// only ever apply when a real value exists. Ported from the scanner
+        /// lab's pitch honesty gates (lore-expo docs/SCANNER-FUSION.md).
+        var cameraPitchDeg: Double? = nil
 
         /// Effective heading uncertainty in degrees, flooring invalid readings
         /// at the compass-fallback worst case (docs/05 §4.1 source 4: ±25°).
@@ -62,6 +67,36 @@ enum ScannerRanking {
         static let coarseUrban = PoseQuality(
             horizontalAccuracyM: 20, headingAccuracyDeg: 18, hasVPS: false
         )
+    }
+
+    // MARK: - Pitch honesty gates (ported from the scanner lab)
+
+    /// Camera clearly aimed at the ground / feet: no on-building claims at all.
+    static let pitchGroundDeg: Double = -32
+    /// Camera aimed low: bearings survive, locks do not.
+    static let pitchLowDeg: Double = -18
+    /// Looking this far above a place's expected top means it isn't the target.
+    static let pitchSkyMarginDeg: Double = 30
+    private static let assumedLowHeightM: Double = 12
+    private static let eyeHeightM: Double = 1.6
+
+    /// Expected elevation angle of a place's top edge from the observer, deg.
+    static func expectedTopElevationDeg(place: Place, distance: Double) -> Double {
+        let height = (place.heightM ?? assumedLowHeightM) - eyeHeightM
+        return atan2(max(0, height), max(1, distance)) * 180 / .pi
+    }
+
+    /// The tier ceiling pitch allows for one candidate. Conservative on
+    /// purpose: pitch only ever BLOCKS an overclaim, it never grants one.
+    static func pitchCeiling(for projected: ProjectedPlace, quality: PoseQuality) -> Tier {
+        guard let pitch = quality.cameraPitchDeg else { return .a }
+        if pitch <= pitchGroundDeg { return .c }
+        if pitch <= pitchLowDeg { return .b }
+        if pitch > 0 {
+            let top = expectedTopElevationDeg(place: projected.place, distance: projected.distance)
+            if pitch - top > pitchSkyMarginDeg { return .b }
+        }
+        return .a
     }
 
     /// Predicted lateral error at a target `distance`, meters:
@@ -109,12 +144,65 @@ enum ScannerRanking {
         // literal arm's-length target (docs/05 §4.2 refuse-to-guess).
         let compassNoisy = quality.effectiveHeadingDeg > 15 && !quality.hasVPS
 
-        if quality.hasVPS && sigma < fullWidth { return .a }
-        if !compassNoisy && sigma < fullWidth * 0.5 { return .a }
-        if sigma < fullWidth * 2 && !compassNoisy { return .b }
+        let base: Tier
+        if quality.hasVPS && sigma < fullWidth { base = .a }
+        else if !compassNoisy && sigma < fullWidth * 0.5 { base = .a }
+        else if sigma < fullWidth * 2 && !compassNoisy { base = .b }
         // A place we can't stand behind on the façade is still a real bearing;
         // it degrades to a directional hint rather than vanishing.
-        return .c
+        else { base = .c }
+
+        // Pitch gate: a camera aimed at the ground (or well above this place's
+        // top) caps the claim, whatever the bearing math says.
+        return max(base, pitchCeiling(for: projected, quality: quality))
+    }
+
+    // MARK: - Temporal tier hysteresis (ported from the scanner lab)
+
+    /// Kills lock flicker at gate boundaries: a raw Tier A must persist for
+    /// `confirmMs` before it is shown as a lock, and a confirmed lock survives
+    /// `holdMs` of raw Tier B before demoting. Tier C is never held, honesty
+    /// beats stickiness. One instance per scanner session; call once per frame.
+    final class TierStabilizer {
+        private struct Record {
+            var aStreakStart: TimeInterval?
+            var lastConfirmedA: TimeInterval?
+        }
+
+        private var records: [String: Record] = [:]
+        private let confirmMs: TimeInterval
+        private let holdMs: TimeInterval
+
+        init(confirmMs: TimeInterval = 400, holdMs: TimeInterval = 650) {
+            self.confirmMs = confirmMs
+            self.holdMs = holdMs
+        }
+
+        func reset() { records.removeAll() }
+
+        /// The tier to *display* for `id` given its `raw` tier this frame.
+        func stabilize(id: String, raw: Tier, now: TimeInterval = Date().timeIntervalSince1970 * 1000) -> Tier {
+            var record = records[id] ?? Record()
+            defer { records[id] = record }
+
+            if raw == .a {
+                if record.aStreakStart == nil { record.aStreakStart = now }
+                if now - (record.aStreakStart ?? now) >= confirmMs {
+                    record.lastConfirmedA = now
+                    return .a
+                }
+                return .b // confirming; show as a bearing until it's earned
+            }
+
+            record.aStreakStart = nil
+            if raw == .b,
+               let confirmed = record.lastConfirmedA,
+               now - confirmed <= holdMs {
+                return .a // brief grace hold across gate jitter
+            }
+            record.lastConfirmedA = nil
+            return raw
+        }
     }
 
     // MARK: - Ranking weights (docs/12 §3 + §4 modes)

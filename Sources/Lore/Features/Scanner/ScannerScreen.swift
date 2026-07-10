@@ -601,6 +601,9 @@ final class ScannerModel {
     private var loadError = false
     private var scoutedOnce = false
     private var projectionTask: Task<Void, Never>?
+    /// Temporal lock hysteresis (scanner-lab port): confirms a Tier A over
+    /// ~400ms and holds it ~650ms across gate jitter so pins never flicker.
+    private let tierStabilizer = ScannerRanking.TierStabilizer()
 
     /// The place currently locked (Tier A), for the reticle "firm up" state.
     var lockedPlace: Place? { lockedRanked?.place }
@@ -704,6 +707,7 @@ final class ScannerModel {
         }
         projectionTask?.cancel()
         projectionTask = nil
+        tierStabilizer.reset()
     }
 
     // MARK: Precise mode (docs/05 §5 ladder, rung 1)
@@ -852,11 +856,13 @@ final class ScannerModel {
         // 2. Sensor quality gates the tier ceiling (docs/05 §4.2). Compass-grade
         // coarse mode until the ARCore VPS lands; the probe below only tells us
         // coverage exists, not that we're localized, so `hasVPS` stays false.
-        let quality = ScannerRanking.PoseQuality(
+        // Camera pitch (scanner-lab port) blocks ground/sky overclaims.
+        var quality = ScannerRanking.PoseQuality(
             horizontalAccuracyM: location.horizontalAccuracy > 0 ? location.horizontalAccuracy : 30,
             headingAccuracyDeg: pose.headingAccuracy,
             hasVPS: false
         )
+        quality.cameraPitchDeg = pose.cameraPitchDeg
 
         // 3. §3 ranking, persona-weighted.
         let ranked = ScannerRanking.rank(
@@ -866,20 +872,34 @@ final class ScannerModel {
             seenPlaceIDs: seenPlaceIDs
         )
 
+        // 3.5 Temporal hysteresis: raw tiers pass through the stabilizer so a
+        // lock is *earned* over ~400ms and survives ~650ms of boundary jitter
+        // (scanner-lab port; Tier C is never held, honesty beats stickiness).
+        let stabilized = ranked.map { candidate -> ScannerRanking.Ranked in
+            let display = tierStabilizer.stabilize(id: candidate.id, raw: candidate.tier)
+            guard display != candidate.tier else { return candidate }
+            return ScannerRanking.Ranked(
+                projected: candidate.projected,
+                tier: display,
+                score: candidate.score,
+                matchedInterests: candidate.matchedInterests
+            )
+        }
+
         // 4. Tier split. Tier A → the single best-scoring locked pin (there can
         // be only one commitment). Tier B in-view → clustered into stacks.
         // Everything else (Tier C + off-screen) → the directional rail.
         let previousLockID = lockedRanked?.place.id
 
-        let tierA = ranked.filter { $0.tier == .a && $0.projected.isInView }
+        let tierA = stabilized.filter { $0.tier == .a && $0.projected.isInView }
         let newLock = tierA.first
         lockedRanked = newLock
 
-        let tierB = ranked.filter { $0.tier == .b && $0.projected.isInView }
+        let tierB = stabilized.filter { $0.tier == .b && $0.projected.isInView }
         inViewClusters = Array(ScannerRanking.cluster(tierB).prefix(5))
 
         directionalCandidates = Array(
-            ranked
+            stabilized
                 .filter { $0.tier == .c || !$0.projected.isInView }
                 .prefix(10)
         )

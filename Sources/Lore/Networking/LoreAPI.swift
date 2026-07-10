@@ -257,6 +257,9 @@ struct LoreAPI {
     // MARK: - Plumbing
 
     /// A GET against a table/view, decoding the JSON array into `T`.
+    /// Anonymous reads flow through `AtlasCache` (stale-while-revalidate, the
+    /// zero-network loop); user-token reads always hit the network so RLS rows
+    /// are never persisted or stale.
     private func get<T: Decodable>(
         _ table: String,
         query: [URLQueryItem],
@@ -274,7 +277,9 @@ struct LoreAPI {
         applyAuth(&request, accessToken: accessToken)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
 
-        return try await send(request)
+        guard accessToken == nil else { return try await send(request) }
+        let data = try await AtlasCache.shared.data(for: request, session: session)
+        return try decodeBody(data)
     }
 
     /// A POST to `/rpc/{name}` with a JSON object body, decoding the result.
@@ -340,6 +345,12 @@ struct LoreAPI {
                 body: String(data: data, encoding: .utf8) ?? ""
             )
         }
+        return try decodeBody(data)
+    }
+
+    /// Shared body decoding for network and cache paths. An empty body
+    /// (204 / `return=minimal`) decodes into `EmptyResponse`.
+    private func decodeBody<T: Decodable>(_ data: Data) throws -> T {
         if T.self == EmptyResponse.self {
             return EmptyResponse() as! T
         }

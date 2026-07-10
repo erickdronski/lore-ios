@@ -33,14 +33,42 @@ struct SettingsView: View {
         List {
             whatYouSeeSection
             preferencesSection
+            languageSection
             permissionsSection
             subscriptionSection
         }
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
         .background(LoreColor.bone100)
-        .navigationTitle("Settings")
+        .navigationTitle(L10n.t("settings.title"))
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    // MARK: Language (scanner-lab port: nine interface languages + Auto)
+
+    private var languageSection: some View {
+        Section {
+            Picker(selection: Binding(
+                get: { L10n.shared.choice },
+                set: { L10n.shared.choice = $0 }
+            )) {
+                Text(L10n.t("settings.languageAuto")).tag("auto")
+                ForEach(AppLanguage.allCases) { language in
+                    Text(language.label).tag(language.rawValue)
+                }
+            } label: {
+                Label(L10n.t("settings.language"), systemImage: "globe")
+                    .font(LoreType.body)
+                    .foregroundStyle(LoreColor.ink)
+            }
+            .tint(LoreColor.brass700)
+        } header: {
+            Text(L10n.t("settings.language"))
+        } footer: {
+            Text(L10n.t("settings.languageNote"))
+                .font(LoreType.caption)
+                .foregroundStyle(LoreColor.ink600)
+        }
     }
 
     // MARK: What you see (category preferences → user_prefs.hidden_kinds)

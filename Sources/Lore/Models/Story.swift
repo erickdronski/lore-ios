@@ -90,6 +90,13 @@ struct Story: Codable, Identifiable, Hashable {
         tags.contains("ghost") || tags.contains("haunted") || tags.contains("haunted-lore")
     }
 
+    /// True for the easter-egg layer: real, obscure finds most visitors walk
+    /// right past (the `hidden-find` tag authored across the atlas). These
+    /// earn a distinct ✦ treatment in the scanner and story sheets.
+    var isHiddenFind: Bool {
+        tags.contains("hidden-find")
+    }
+
     /// Distance in meters from a given location, the client-side proximity
     /// filter the scanner uses to decide whether to float this marker.
     func distance(from location: CLLocation) -> CLLocationDistance {

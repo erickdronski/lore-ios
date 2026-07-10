@@ -18,23 +18,34 @@ struct StoryMarker: View {
     @State private var bloomed = false
 
     private var isHaunted: Bool { projected.story.isHaunted }
+    private var isHiddenFind: Bool { projected.story.isHiddenFind }
 
     var body: some View {
         VStack(spacing: 4) {
             // The tether disc, smaller than a place pin, dashed ring so it
-            // reads as "a moment here", not "a building here".
+            // reads as "a moment here", not "a building here". A hidden find
+            // earns a solid amber ring + ✦: a secret worth walking to, still
+            // lighter than any place pin.
             ZStack {
                 Circle()
                     .fill(LoreColor.ink.opacity(isHaunted ? 0.55 : 0.72))
                     .frame(width: 26, height: 26)
                 Circle()
                     .strokeBorder(
-                        LoreColor.amber.opacity(isHaunted ? 0.5 : 0.8),
-                        style: StrokeStyle(lineWidth: 1, dash: [3, 2])
+                        LoreColor.amber.opacity(isHaunted ? 0.5 : isHiddenFind ? 1.0 : 0.8),
+                        style: isHiddenFind
+                            ? StrokeStyle(lineWidth: 1.5)
+                            : StrokeStyle(lineWidth: 1, dash: [3, 2])
                     )
                     .frame(width: 26, height: 26)
                 Text(projected.story.displayEmoji)
                     .font(.system(size: 13))
+                if isHiddenFind {
+                    Text("✦")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(LoreColor.amber)
+                        .offset(x: 11, y: -11)
+                }
             }
 
             // The one-line hook: "On this corner, 1934…", year + a taste of
@@ -80,7 +91,7 @@ struct StoryMarker: View {
 
     private var accessibilityLine: String {
         let year = projected.story.displayYear
-        let prefix = isHaunted ? "Reported legend. " : ""
+        let prefix = isHaunted ? "Reported legend. " : isHiddenFind ? "Hidden find. " : ""
         if year.isEmpty {
             return "\(prefix)\(projected.story.title), \(projected.distanceLabel) away"
         }
@@ -119,6 +130,12 @@ struct StorySheet: View {
                     Text("REPORTED LEGEND")
                         .loreLabelStyle()
                         .foregroundStyle(LoreColor.ink600)
+                }
+
+                if story.isHiddenFind {
+                    Text("✦ HIDDEN FIND")
+                        .loreLabelStyle()
+                        .foregroundStyle(LoreColor.brass700)
                 }
 
                 if let narrative = story.narrative, !narrative.isEmpty {

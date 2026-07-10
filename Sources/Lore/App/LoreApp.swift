@@ -131,23 +131,23 @@ struct RootTabView: View {
                 onMeetCity: { meetCity = $0 },
                 onNeedsSignIn: { showSignIn = true }
             )
-            .tabItem { Label("Map", systemImage: "map") }
+            .tabItem { Label(L10n.t("tab.map"), systemImage: "map") }
             .tag(Tab.map)
 
             ScannerScreen(city: router.selectedCity, prefs: prefs.prefs)
-                .tabItem { Label("Scanner", systemImage: "camera.viewfinder") }
+                .tabItem { Label(L10n.t("tab.scanner"), systemImage: "camera.viewfinder") }
                 .tag(Tab.scanner)
 
             ToursScreen()
-                .tabItem { Label("Tours", systemImage: "figure.walk") }
+                .tabItem { Label(L10n.t("tab.tours"), systemImage: "figure.walk") }
                 .tag(Tab.tours)
 
             PassportView()
-                .tabItem { Label("Passport", systemImage: "seal") }
+                .tabItem { Label(L10n.t("tab.passport"), systemImage: "seal") }
                 .tag(Tab.passport)
 
             ProfileScreen()
-                .tabItem { Label("Profile", systemImage: "person.crop.circle") }
+                .tabItem { Label(L10n.t("tab.profile"), systemImage: "person.crop.circle") }
                 .tag(Tab.profile)
         }
         // Global search, resolves a `LoreRoute` and hands it to the router.
