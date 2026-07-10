@@ -210,6 +210,10 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.erickdronski.lore.uitests
         TEST_TARGET_NAME: Lore
+        # XcodeGen doesn't emit an Info.plist for this target, so let Xcode
+        # synthesize one (without it the Simulator build fails: "target does not
+        # have an Info.plist file"). Simulator tests need no real signing.
+        GENERATE_INFOPLIST_FILE: YES
 
 schemes:
   # Release scheme, archived + uploaded to TestFlight by `fastlane beta`.
