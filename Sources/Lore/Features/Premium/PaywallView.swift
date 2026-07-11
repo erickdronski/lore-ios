@@ -46,6 +46,7 @@ struct PaywallView: View {
                     featureTable
                     purchaseButton
                     finePrint
+                    legalLinks
                 }
                 .padding(20)
                 .padding(.bottom, 12)
@@ -225,6 +226,19 @@ struct PaywallView: View {
         .multilineTextAlignment(.center)
         .fixedSize(horizontal: false, vertical: true)
         .padding(.horizontal, 8)
+    }
+
+    /// Functional Terms of Use + Privacy Policy links, required on the purchase
+    /// screen for auto-renewable subscriptions (App Store Review 3.1.2).
+    private var legalLinks: some View {
+        HStack(spacing: 14) {
+            Link("Terms of Use", destination: URL(string: "https://lore-web-liart.vercel.app/terms")!)
+            Text("·").foregroundStyle(LoreColor.ink700)
+            Link("Privacy Policy", destination: URL(string: "https://lore-web-liart.vercel.app/privacy")!)
+        }
+        .font(LoreType.caption)
+        .tint(LoreColor.brass300)
+        .padding(.top, 2)
     }
 
     private var closeButton: some View {
@@ -540,7 +554,8 @@ final class PaywallModel {
             return "\(price). One payment, unlocked forever. Your free daily dives and unlimited scanning never expire."
         }
         let lead = isEligibleForTrial ? "7 days free, then \(price). " : "\(price). "
-        return lead + "Cancel anytime in Settings. Your free daily dives and unlimited scanning never expire."
+        let renew = "Auto-renews \(selectedPlan == .annual ? "yearly" : "monthly") unless canceled at least 24 hours before the current period ends."
+        return lead + renew + " Cancel anytime in Settings. Your free daily dives and unlimited scanning never expire."
     }
 
     /// The best price line for a plan: the localized StoreKit `displayPrice`
