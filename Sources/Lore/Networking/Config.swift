@@ -25,6 +25,10 @@ enum Config {
     /// GoTrue auth base (`/auth/v1`).
     static var authURL: URL { supabaseURL.appending(path: "auth/v1") }
 
+    /// Edge Functions base (`/functions/v1`), e.g. the `streetview` proxy that
+    /// keeps the Google Maps key server-side.
+    static var functionsURL: URL { supabaseURL.appending(path: "functions/v1") }
+
     /// The pilot city. Every read surface is filtered by `city` (docs/00 §8:
     /// Chicago seed, Loop / Riverwalk / Museum Campus).
     static let defaultCity = "chicago"

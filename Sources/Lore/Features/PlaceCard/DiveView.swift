@@ -103,9 +103,14 @@ struct DiveView: View {
                 .diveEntrance(index: 1)
         }
 
+        // A real across-the-street Google Street View, proxied so the key stays
+        // server-side. Hides itself where Google has no outdoor coverage.
+        StreetViewSection(coordinate: place.coordinate)
+            .diveEntrance(index: 2)
+
         if !dive.timeline.isEmpty {
             TimelineStrip(events: dive.timeline)
-                .diveEntrance(index: 2)
+                .diveEntrance(index: 3)
         }
     }
 
