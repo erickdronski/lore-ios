@@ -30,7 +30,7 @@ struct StreetViewSection: View {
             EmptyView()
         case .loading:
             VStack(alignment: .leading, spacing: 12) {
-                Text("Street View").font(LoreType.displayM).foregroundStyle(LoreColor.bone)
+                Text(L10n.t("dossier.streetView")).font(LoreType.displayM).foregroundStyle(LoreColor.bone)
                 RoundedRectangle(cornerRadius: 16)
                     .fill(LoreColor.ink800)
                     .frame(height: 220)
@@ -39,7 +39,7 @@ struct StreetViewSection: View {
         case .loaded:
             if let image {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("Street View").font(LoreType.displayM).foregroundStyle(LoreColor.bone)
+                    Text(L10n.t("dossier.streetView")).font(LoreType.displayM).foregroundStyle(LoreColor.bone)
                     Image(uiImage: image)
                         .resizable()
                         .scaledToFill()

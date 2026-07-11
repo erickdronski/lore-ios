@@ -94,8 +94,15 @@ struct DiveView: View {
             // timeline sit close instead of below a wall of text (TestFlight
             // feedback: "go deeper exposes all the text; keep it compact with a
             // read more button so everything below is pushed up and visible").
-            ExpandableNarrative(text: narrative)
-                .diveEntrance(index: 0)
+            // On-device translated into the reader's language (LocalizedContent),
+            // badged honestly, falling back to the English original.
+            LocalizedContent(source: narrative) { text, translated in
+                VStack(alignment: .leading, spacing: 8) {
+                    ExpandableNarrative(text: text)
+                    if translated { TranslatedBadge() }
+                }
+            }
+            .diveEntrance(index: 0)
         }
 
         if let wikipediaTitle = dive.media.wikipediaTitle {
@@ -161,7 +168,7 @@ struct DiveView: View {
     @ViewBuilder
     private var linksSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Sources & links")
+            Text(L10n.t("dossier.sources"))
                 .font(LoreType.displayM)
                 .foregroundStyle(LoreColor.bone)
 
@@ -270,7 +277,7 @@ struct TimelineStrip: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Timeline")
+            Text(L10n.t("dossier.timeline"))
                 .font(LoreType.displayM)
                 .foregroundStyle(LoreColor.bone)
 
@@ -376,7 +383,7 @@ struct DiveGallery: View {
         Group {
             if !resolved || imageURL != nil {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("Gallery")
+                    Text(L10n.t("dossier.gallery"))
                         .font(LoreType.displayM)
                         .foregroundStyle(LoreColor.bone)
 
