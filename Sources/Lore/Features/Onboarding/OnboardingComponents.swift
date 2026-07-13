@@ -108,6 +108,10 @@ struct OnboardingScaffold<Content: View>: View {
     var primaryEnabled: Bool = true
     /// Whether the primary CTA shows a spinner instead of its title.
     var primaryBusy: Bool = false
+    /// Vertically center the content instead of top-aligning it in a scroll
+    /// view. Used by the short permission steps so their card sits in the middle
+    /// of the screen; centered content never scrolls.
+    var centered: Bool = false
     /// Back affordance; `nil` on the first step.
     var onBack: (() -> Void)?
     /// Skip affordance; `nil` to hide (e.g. the finish step).
@@ -118,12 +122,23 @@ struct OnboardingScaffold<Content: View>: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            ScrollView {
-                content()
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 24)
-                    .padding(.top, 8)
-                    .padding(.bottom, 24)
+            if centered {
+                VStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    content()
+                        .frame(maxWidth: .infinity)
+                        .padding(.horizontal, 24)
+                    Spacer(minLength: 0)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    content()
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 24)
+                        .padding(.top, 8)
+                        .padding(.bottom, 24)
+                }
             }
             if let primaryTitle {
                 primaryButton(primaryTitle)
@@ -270,7 +285,7 @@ struct PersonaChip: View {
                     .foregroundStyle(isSelected ? LoreColor.ink : LoreColor.bone)
             }
             .frame(maxWidth: .infinity)
-            .frame(height: 76)
+            .frame(height: 62)
             .background(
                 RoundedRectangle(cornerRadius: 14)
                     .fill(isSelected ? LoreColor.amber : LoreColor.bone.opacity(0.06))
@@ -287,6 +302,67 @@ struct PersonaChip: View {
         .animation(LoreSpring.bounce(reduceMotion: reduceMotion), value: isSelected)
         .accessibilityLabel("\(preset.label). \(preset.tagline)")
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+    }
+}
+
+// MARK: - Permission toggle row
+
+/// A toggle row for the permission steps: a glyph medallion, a title + one-line
+/// why, and a switch that requests the OS permission the moment it's flipped on
+/// (the closure decides whether that means a system prompt or a jump to
+/// Settings). Reflects the real authorization status, so a denied permission
+/// snaps the switch back off honestly.
+struct PermissionToggleRow: View {
+    let symbol: String
+    let title: String
+    let subtitle: String
+    /// The live authorization state, drives the switch position.
+    let isOn: Bool
+    /// A permission request in flight (shows a spinner instead of the switch).
+    var isBusy: Bool = false
+    /// Called with the requested state; act only on `true` (turning it on).
+    let onChange: (Bool) -> Void
+
+    var body: some View {
+        HStack(spacing: 14) {
+            ZStack {
+                Circle()
+                    .fill(LoreColor.amber.opacity(0.14))
+                    .frame(width: 44, height: 44)
+                Image(systemName: symbol)
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(LoreColor.amber)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(LoreType.button)
+                    .foregroundStyle(LoreColor.bone)
+                Text(subtitle)
+                    .font(LoreType.caption)
+                    .foregroundStyle(LoreColor.bone.opacity(0.6))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 8)
+            if isBusy {
+                ProgressView().tint(LoreColor.amber)
+            } else {
+                Toggle("", isOn: Binding(get: { isOn }, set: { onChange($0) }))
+                    .labelsHidden()
+                    .tint(LoreColor.amber)
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 20)
+                .fill(LoreColor.bone.opacity(0.06))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 20)
+                .strokeBorder(LoreColor.bone.opacity(0.14), lineWidth: 1)
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(title)
+        .accessibilityValue(isOn ? "On" : "Off")
     }
 }
 

@@ -1,5 +1,6 @@
 import CoreLocation
 import SwiftUI
+import UIKit
 import UserNotifications
 
 /// The first-run flow. A single full-screen cover, presented by the integrator
@@ -129,7 +130,7 @@ private struct InterestsStep: View {
             onSkip: { store.jumpToFinish() },
             onPrimary: { store.advance() }
         ) {
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 12) {
                 Text(OnboardingContent.interestsTitle)
                     .font(LoreType.displayL)
                     .foregroundStyle(LoreColor.bone)
@@ -150,17 +151,17 @@ private struct InterestsStep: View {
                         }
                     }
                 }
-                .padding(.top, 4)
+                .padding(.top, 2)
 
                 // Preset row, "…or I'm here as a".
                 Text(OnboardingContent.personaRowTitle)
                     .font(LoreType.displayM)
                     .foregroundStyle(LoreColor.bone)
-                    .padding(.top, 12)
+                    .padding(.top, 6)
 
                 LazyVGrid(
-                    columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)],
-                    spacing: 10
+                    columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)],
+                    spacing: 8
                 ) {
                     ForEach(OnboardingContent.presets) { preset in
                         PersonaChip(
@@ -199,45 +200,46 @@ private struct InterestsStep: View {
 private struct LocationStep: View {
     let store: OnboardingStore
 
-    /// The bottom CTA reads differently once we know the outcome.
-    private var isResolved: Bool {
-        store.locationStatus != .notDetermined
+    private var isAuthorized: Bool {
+        store.locationStatus == .authorizedWhenInUse || store.locationStatus == .authorizedAlways
     }
 
     var body: some View {
         OnboardingScaffold(
             progress: store.progress,
-            primaryTitle: isResolved ? "Continue" : OnboardingContent.locationAllow,
-            primaryBusy: store.isRequestingPermission,
+            primaryTitle: "Continue",
+            centered: true,
             onBack: { store.back() },
             onSkip: { store.jumpToFinish() },
-            onPrimary: {
-                if isResolved {
-                    store.advance()
-                } else {
-                    store.requestLocation()
+            onPrimary: { store.advance() }
+        ) {
+            VStack(spacing: 16) {
+                PermissionCard(
+                    symbol: "location.fill",
+                    title: OnboardingContent.locationTitle,
+                    message: OnboardingContent.locationBody,
+                    footnote: locationFootnote,
+                    footnoteColor: footnoteColor
+                )
+
+                // The toggle IS the permission control: flipping it on fires the
+                // system prompt (or opens Settings if already denied).
+                PermissionToggleRow(
+                    symbol: "location.fill",
+                    title: "Use my location",
+                    subtitle: "Center the map on you and aim the scanner. Only while the app is open.",
+                    isOn: isAuthorized,
+                    isBusy: store.isRequestingPermission
+                ) { wantsOn in
+                    guard wantsOn else { return }
+                    switch store.locationStatus {
+                    case .notDetermined: store.requestLocation()
+                    case .denied, .restricted: OnboardingSettings.open()
+                    default: break
+                    }
                 }
             }
-        ) {
-            PermissionCard(
-                symbol: "location.fill",
-                title: OnboardingContent.locationTitle,
-                message: OnboardingContent.locationBody,
-                footnote: locationFootnote,
-                footnoteColor: footnoteColor
-            )
-            .padding(.top, 24)
-
-            // The "Not now" decline belongs BEFORE a choice is made, not after
-            // (it used to appear only once location was already resolved).
-            if !isResolved {
-                Button(OnboardingContent.locationSkip) { store.advance() }
-                    .font(LoreType.button)
-                    .foregroundStyle(LoreColor.bone.opacity(0.6))
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 44)
-                    .padding(.top, 8)
-            }
+            .animation(LoreMotion.tap, value: store.locationStatus)
         }
     }
 
@@ -266,46 +268,44 @@ private struct LocationStep: View {
 private struct NotificationsStep: View {
     let store: OnboardingStore
 
-    private var isResolved: Bool {
-        store.notificationStatus != .notDetermined
+    private var isAuthorized: Bool {
+        [.authorized, .provisional, .ephemeral].contains(store.notificationStatus)
     }
 
     var body: some View {
         OnboardingScaffold(
             progress: store.progress,
-            primaryTitle: isResolved ? "Continue" : OnboardingContent.notificationsAllow,
-            primaryBusy: store.isRequestingPermission,
+            primaryTitle: "Continue",
+            centered: true,
             onBack: { store.back() },
             onSkip: { store.jumpToFinish() },
-            onPrimary: {
-                if isResolved {
-                    store.advance()
-                } else {
-                    Task {
-                        await store.requestNotifications()
+            onPrimary: { store.advance() }
+        ) {
+            VStack(spacing: 16) {
+                PermissionCard(
+                    symbol: "bell.badge.fill",
+                    title: OnboardingContent.notificationsTitle,
+                    message: OnboardingContent.notificationsBody,
+                    footnote: notificationFootnote,
+                    footnoteColor: footnoteColor
+                )
+
+                PermissionToggleRow(
+                    symbol: "bell.badge.fill",
+                    title: "Story nudges",
+                    subtitle: "A rare tap when you wander near something great. Off unless you turn it on.",
+                    isOn: isAuthorized,
+                    isBusy: store.isRequestingPermission
+                ) { wantsOn in
+                    guard wantsOn else { return }
+                    switch store.notificationStatus {
+                    case .notDetermined: Task { await store.requestNotifications() }
+                    case .denied: OnboardingSettings.open()
+                    default: break
                     }
                 }
             }
-        ) {
-            PermissionCard(
-                symbol: "bell.badge.fill",
-                title: OnboardingContent.notificationsTitle,
-                message: OnboardingContent.notificationsBody,
-                footnote: notificationFootnote,
-                footnoteColor: footnoteColor
-            )
-            .padding(.top, 24)
-
-            // "Maybe later" disappears once the choice is made (it used to
-            // linger even after notifications were granted).
-            if !isResolved {
-                Button(OnboardingContent.notificationsSkip) { store.advance() }
-                    .font(LoreType.button)
-                    .foregroundStyle(LoreColor.bone.opacity(0.6))
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 44)
-                    .padding(.top, 8)
-            }
+            .animation(LoreMotion.tap, value: store.notificationStatus)
         }
     }
 
@@ -334,6 +334,7 @@ private struct FinishStep: View {
     let store: OnboardingStore
     let onDone: () -> Void
     @State private var appeared = false
+    @State private var showSignIn = false
 
     var body: some View {
         OnboardingScaffold(
@@ -370,9 +371,27 @@ private struct FinishStep: View {
                         .padding(.top, 4)
                 }
 
+                // Reading never needs an account, but an account syncs your
+                // Passport across devices and unlocks Lore+. Discoverable here.
+                Button {
+                    showSignIn = true
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "person.crop.circle")
+                        Text("Have an account? Sign in")
+                    }
+                    .font(LoreType.button)
+                    .foregroundStyle(LoreColor.amber)
+                }
+                .padding(.top, 8)
+
                 Spacer(minLength: 20)
             }
             .onAppear { appeared = true }
+            .sheet(isPresented: $showSignIn) {
+                SignInView()
+                    .presentationDetents([.large])
+            }
         }
     }
 
@@ -404,6 +423,17 @@ private struct FinishStep: View {
             }
         }
         .padding(.top, 8)
+    }
+}
+
+// MARK: - Settings deep link
+
+/// Opens the app's page in the system Settings, used when a permission was
+/// previously denied and can only be re-granted there (iOS never re-prompts).
+enum OnboardingSettings {
+    static func open() {
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        UIApplication.shared.open(url)
     }
 }
 

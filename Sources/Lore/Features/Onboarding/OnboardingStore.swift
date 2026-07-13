@@ -39,6 +39,18 @@ final class OnboardingStore: NSObject, CLLocationManagerDelegate {
 
         var next: Step? { Step(rawValue: rawValue + 1) }
         var previous: Step? { Step(rawValue: rawValue - 1) }
+
+        /// Map a step name (used by the DEBUG screenshot hook) to a case.
+        static func named(_ raw: String) -> Step? {
+            switch raw {
+            case "arrival": return .arrival
+            case "interests": return .interests
+            case "location": return .location
+            case "notifications": return .notifications
+            case "finish": return .finish
+            default: return nil
+            }
+        }
     }
 
     var step: Step = .arrival
@@ -89,6 +101,15 @@ final class OnboardingStore: NSObject, CLLocationManagerDelegate {
         locationStatus = locationManager.authorizationStatus
         super.init()
         locationManager.delegate = self
+        #if DEBUG
+        // Screenshot/dev hook: LORE_ONBOARD_STEP forces the flow open at a named
+        // step so each screen can be captured deterministically. Release-stripped.
+        if let name = ProcessInfo.processInfo.environment["LORE_ONBOARD_STEP"],
+           let forced = Step.named(name) {
+            shouldPresent = true
+            step = forced
+        }
+        #endif
     }
 
     // MARK: - Gate resolution
