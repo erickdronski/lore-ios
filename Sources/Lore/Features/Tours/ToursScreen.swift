@@ -6,9 +6,12 @@ struct ToursScreen: View {
     /// The shared active city (same source the map reads). Switching it here
     /// re-scopes the whole Tours surface, the 1-Hour hero and the curated list.
     @Environment(AppRouter.self) private var router
+    @Environment(EntitlementStore.self) private var entitlements
     @State private var model = ToursModel()
     /// The generated "1 Hour In" walk, presented in a sheet once routed.
     @State private var generatedTour: Tour?
+    /// Surfaced when the 1-hour walk can't be built (too few stops, or offline).
+    @State private var oneHourError: String?
     /// The city whose walk is currently being routed (drives the hero spinner).
     @State private var generatingCity: String?
     /// The city switcher sheet (TestFlight feedback: "how does a user change
@@ -36,7 +39,7 @@ struct ToursScreen: View {
                         Section {
                             ForEach(model.toursByCity[city] ?? []) { tour in
                                 NavigationLink(value: tour) {
-                                    TourRow(tour: tour)
+                                    TourRow(tour: tour, isPlus: entitlements.isPlus)
                                 }
                             }
                         } header: {
@@ -65,7 +68,16 @@ struct ToursScreen: View {
             // Load (and reload) the selected city's tours; switching cities in
             // the sheet re-scopes the list without leaving Tours.
             .task(id: router.selectedCity) { await model.load(city: router.selectedCity) }
+            .alert("Walk unavailable", isPresented: oneHourErrorBinding) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(oneHourError ?? "")
+            }
         }
+    }
+
+    private var oneHourErrorBinding: Binding<Bool> {
+        Binding(get: { oneHourError != nil }, set: { if !$0 { oneHourError = nil } })
     }
 
     /// City slug → display name, e.g. "san-francisco" → "San Francisco".
@@ -84,9 +96,16 @@ struct ToursScreen: View {
                 let city = router.selectedCity
                 generatingCity = city
                 Task {
-                    let tour = await model.oneHourTour(city: city)
+                    do {
+                        if let tour = try await model.oneHourTour(city: city) {
+                            generatedTour = tour
+                        } else {
+                            oneHourError = "There aren't enough stops in \(cityLabel(city)) yet for a full walk. Try another city."
+                        }
+                    } catch {
+                        oneHourError = "Couldn't build your walk. Check your connection and try again."
+                    }
                     generatingCity = nil
-                    generatedTour = tour
                 }
             }
         } header: {
@@ -173,6 +192,8 @@ struct OneHourHero: View {
 
 struct TourRow: View {
     let tour: Tour
+    /// Whether the viewer is a Lore+ member (drives the premium lock marker).
+    var isPlus: Bool = false
 
     var body: some View {
         HStack(spacing: 12) {
@@ -193,6 +214,12 @@ struct TourRow: View {
                         .loreLabelStyle()
                         .foregroundStyle(LoreColor.brass700)
                 }
+            }
+            // A curated premium walk reads as Lore+ to a free member, so the
+            // gate on the detail screen is never a surprise.
+            if tour.isPremium && !isPlus {
+                Spacer(minLength: 8)
+                LockChip(label: "Lore+", showsLock: true)
             }
         }
         .padding(.vertical, 4)
@@ -235,9 +262,11 @@ final class ToursModel {
     }
 
     /// Build the "1 Hour In {city}" walk on demand (strategy Phase 2). Fetches
-    /// the city's places and routes them; nil if there are too few to walk.
-    func oneHourTour(city: String) async -> Tour? {
-        let places = (try? await LoreAPI.shared.places(city: city)) ?? []
+    /// the city's places and routes them. Throws on a network failure (so the
+    /// caller can distinguish "offline" from "too few stops"); returns nil when
+    /// the fetch succeeds but there aren't enough stops to route a walk.
+    func oneHourTour(city: String) async throws -> Tour? {
+        let places = try await LoreAPI.shared.places(city: city)
         return OneHourTour.generate(city: city, places: places, from: nil)
     }
 }

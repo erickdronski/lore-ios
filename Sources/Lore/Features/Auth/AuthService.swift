@@ -103,6 +103,66 @@ final class AuthService {
         }
     }
 
+    /// Create a new account, `POST /auth/v1/signup` with the anon `apikey`.
+    /// If email confirmation is off the response is a full session and we sign
+    /// in immediately; if it's on there is no token yet, so we tell the user to
+    /// confirm. Accounts are required to buy Lore+ or contribute.
+    func signUp(email: String, password: String) async {
+        isBusy = true
+        lastError = nil
+        defer { isBusy = false }
+        do {
+            var request = URLRequest(url: Config.authURL.appending(path: "signup"))
+            request.httpMethod = "POST"
+            request.setValue(Config.supabaseAnonKey, forHTTPHeaderField: "apikey")
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try JSONEncoder().encode(["email": email, "password": password])
+
+            let (data, response) = try await URLSession.shared.data(for: request)
+            if let http = response as? HTTPURLResponse,
+               !(200..<300).contains(http.statusCode) {
+                let message = Self.errorMessage(from: data)
+                    ?? "Couldn't create your account (\(http.statusCode))."
+                throw AuthError.http(status: http.statusCode, message: message)
+            }
+            if let newSession = try? JSONDecoder().decode(AuthSession.self, from: data),
+               !newSession.accessToken.isEmpty {
+                session = newSession
+                await refreshProfile()
+            } else {
+                lastError = "Account created. Check your email to confirm, then sign in."
+            }
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
+    /// Send a password-reset email, `POST /auth/v1/recover` with the anon key.
+    func sendPasswordReset(email: String) async {
+        isBusy = true
+        lastError = nil
+        defer { isBusy = false }
+        do {
+            var request = URLRequest(url: Config.authURL.appending(path: "recover"))
+            request.httpMethod = "POST"
+            request.setValue(Config.supabaseAnonKey, forHTTPHeaderField: "apikey")
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try JSONEncoder().encode(["email": email])
+
+            let (data, response) = try await URLSession.shared.data(for: request)
+            if let http = response as? HTTPURLResponse,
+               !(200..<300).contains(http.statusCode) {
+                throw AuthError.http(
+                    status: http.statusCode,
+                    message: Self.errorMessage(from: data) ?? "Couldn't send the reset email."
+                )
+            }
+            lastError = "If that email has an account, a reset link is on its way."
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
     /// Best-effort server-side revoke, then clear local state either way.
     func signOut() async {
         if let token = session?.accessToken {

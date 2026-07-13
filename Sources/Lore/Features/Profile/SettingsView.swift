@@ -121,7 +121,7 @@ struct SettingsView: View {
         } header: {
             Text("What you see")
         } footer: {
-            Text("Turn off the kinds of places you're not interested in — hidden ones won't clutter your map or nearby lists. You picked these in onboarding; change them here anytime.")
+            Text("Turn off the kinds of places you're not interested in. Hidden ones won't clutter your map or nearby lists. You picked these in onboarding; change them here anytime.")
                 .font(LoreType.caption)
                 .foregroundStyle(LoreColor.ink600)
         }

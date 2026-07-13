@@ -62,14 +62,13 @@ struct PlusGate<Content: View>: View {
 }
 
 /// The catalog of gate-able Lore+ surfaces, each carrying its own icon and
-/// docent copy so every gate in the app reads consistently (docs/00 §7 lists
-/// the four: tours, offline, audio, early cities, plus the dive-meter gate,
-/// which has its own richer surface in `DiveGateCard`).
+/// docent copy so every gate in the app reads consistently: curated tours and
+/// audio narration (plus the dive-meter gate, which has its own richer surface
+/// in `DiveGateCard`). Offline packs and early-access cities were removed until
+/// they actually ship, the gate must never name a feature that doesn't exist.
 enum PlusFeature {
     case tours
     case audio
-    case offline
-    case earlyCities
     /// Generic fallback for a one-off premium affordance.
     case general
 
@@ -77,8 +76,6 @@ enum PlusFeature {
         switch self {
         case .tours: return "figure.walk"
         case .audio: return "headphones"
-        case .offline: return "arrow.down.circle"
-        case .earlyCities: return "sparkles"
         case .general: return "lock.fill"
         }
     }
@@ -88,8 +85,6 @@ enum PlusFeature {
         switch self {
         case .tours: return "Curated walks"
         case .audio: return "Audio narration"
-        case .offline: return "Offline city packs"
-        case .earlyCities: return "Early-access cities"
         case .general: return "A Lore+ feature"
         }
     }
@@ -102,10 +97,6 @@ enum PlusFeature {
             return "Turn-by-turn walks a local curator built, story waiting at every stop."
         case .audio:
             return "Let the docent read. Pocket your phone and just listen as you walk."
-        case .offline:
-            return "Download a city before you land. Every story, no signal needed."
-        case .earlyCities:
-            return "Walk the newest cities the week they open, before anyone else."
         case .general:
             return "This one's part of Lore+."
         }
@@ -113,7 +104,7 @@ enum PlusFeature {
 
     /// Short CTA subtitle.
     var unlockSubtitle: String {
-        "7 days free, then $4.99/mo"
+        "7 days free, then $5.99/mo"
     }
 }
 

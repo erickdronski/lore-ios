@@ -26,6 +26,9 @@ struct StackChip: View {
                 candidateList
             }
         }
+        // Bound the width so a long place name or a dense list never runs off
+        // the sides of the viewfinder.
+        .frame(maxWidth: 300, alignment: .leading)
         // The stack expands as a settled panel, `spring.smooth`, no jaunty
         // overshoot on a decision UI (LUXURY-MOTION §2, §7).
         .animation(LoreSpring.smooth(reduceMotion: reduceMotion), value: isOpen)
@@ -80,26 +83,32 @@ struct StackChip: View {
     /// 30 ms stagger (brand/DESIGN §6 "Stack open"); the model re-sorts by
     /// distance as the user walks, so the list live-reorders under them.
     private var candidateList: some View {
-        VStack(spacing: 4) {
-            ForEach(Array(cluster.members.enumerated()), id: \.element.id) { index, member in
-                Button {
-                    Haptics.play(.scannerLock)
-                    onConfirm(member)
-                } label: {
-                    candidateRow(member)
+        ScrollView {
+            VStack(spacing: 4) {
+                ForEach(Array(cluster.members.enumerated()), id: \.element.id) { index, member in
+                    Button {
+                        Haptics.play(.scannerLock)
+                        onConfirm(member)
+                    } label: {
+                        candidateRow(member)
+                    }
+                    .buttonStyle(.plain)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    // Rows cascade in with a 30 ms stagger on a settled spring.
+                    .animation(
+                        reduceMotion
+                            ? LoreSpring.reducedCrossfade
+                            : LoreSpring.smooth.delay(Double(min(index, 6)) * 0.03),
+                        value: isOpen
+                    )
                 }
-                .buttonStyle(.plain)
-                .transition(.opacity.combined(with: .move(edge: .top)))
-                // Rows cascade in with a 30 ms stagger on a settled spring.
-                .animation(
-                    reduceMotion
-                        ? LoreSpring.reducedCrossfade
-                        : LoreSpring.smooth.delay(Double(min(index, 6)) * 0.03),
-                    value: isOpen
-                )
             }
+            .padding(6)
         }
-        .padding(6)
+        .scrollBounceBehavior(.basedOnSize)
+        // Cap the panel height so a dense cone (many members) scrolls rather
+        // than running off the bottom of the viewfinder.
+        .frame(maxHeight: 264)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
         .overlay(
             RoundedRectangle(cornerRadius: 14)

@@ -111,6 +111,12 @@ final class OnboardingStore: NSObject, CLLocationManagerDelegate {
     // MARK: - Navigation
 
     /// Advance to the next step (Reveal-timed by the view). No-op on the last.
+    /// Jump straight to the finish step (the honest "Skip" affordance), keeping
+    /// any choices the user already made rather than wiping them with a default.
+    func jumpToFinish() {
+        withAnimation(LoreMotion.unfurl) { step = .finish }
+    }
+
     func advance() {
         Haptics.play(.chipTap)
         guard let next = step.next else { return }

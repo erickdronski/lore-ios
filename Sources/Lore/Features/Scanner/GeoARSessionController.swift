@@ -116,6 +116,9 @@ final class GeoARSessionController: NSObject, VPSProvider {
     /// Thread-confined to `frameQueue`; holds the per-frame working state.
     /// The serial queue is the synchronization, no locks.
     private let projector = GeoAnchorProjector()
+    /// Fails the pipeline down to coarse if localization never completes, so an
+    /// opt-in that can't localize doesn't sit on "Locking on" forever.
+    private var localizeTimeout: Task<Void, Never>?
 
     // MARK: VPSProvider
 
@@ -148,9 +151,21 @@ final class GeoARSessionController: NSObject, VPSProvider {
         frameQueue.async { [projector] in
             projector.begin(placeIDsByAnchor: placeIDsByAnchor)
         }
+
+        // Give-up timer: if we never reach localized, drop honestly to coarse
+        // rather than leave the user staring at "Locking on".
+        localizeTimeout?.cancel()
+        localizeTimeout = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(15))
+            guard let self, !Task.isCancelled else { return }
+            if case .locked = self.state { return }
+            if self.state != .idle { self.state = .failed(.trackingLost) }
+        }
     }
 
     func stop() {
+        localizeTimeout?.cancel()
+        localizeTimeout = nil
         session.pause()
         state = .idle
         projections = [:]
@@ -219,6 +234,26 @@ extension GeoARSessionController: ARSessionDelegate {
         Task { @MainActor in
             guard self.state != .idle else { return }
             self.state = .failed(.sessionError)
+        }
+    }
+
+    /// A phone call / Control Center / backgrounding interrupts the session.
+    /// Drop any localized claim back to the searching state so no stale,
+    /// confident world-locked pin lingers on a frozen frame (docs/05 §4.2).
+    nonisolated func sessionWasInterrupted(_ session: ARSession) {
+        Task { @MainActor in
+            guard self.state != .idle else { return }
+            if self.state == .locked { self.state = .localizing }
+        }
+    }
+
+    /// Re-establish tracking once the interruption ends; the geo anchors persist
+    /// and re-resolve, driving the status back to locked.
+    nonisolated func sessionInterruptionEnded(_ session: ARSession) {
+        Task { @MainActor in
+            guard self.state != .idle else { return }
+            self.session.run(ARGeoTrackingConfiguration(), options: [.resetTracking])
+            self.state = .initializing
         }
     }
 }

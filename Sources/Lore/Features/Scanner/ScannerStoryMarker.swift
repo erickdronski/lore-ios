@@ -54,6 +54,9 @@ struct StoryMarker: View {
                 .font(LoreType.caption)
                 .foregroundStyle(LoreColor.bone)
                 .lineLimit(1)
+                // Clamp the width so a long, undated story title truncates with
+                // an ellipsis instead of running off the screen edge.
+                .frame(maxWidth: 220)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
                 .background(
@@ -139,14 +142,22 @@ struct StorySheet: View {
                 }
 
                 if let narrative = story.narrative, !narrative.isEmpty {
-                    Text(narrative)
-                        .font(LoreType.reader)
-                        .foregroundStyle(LoreColor.ink)
-                        .lineLimit(expanded ? nil : 3)
-                        .fixedSize(horizontal: false, vertical: true)
+                    // Translated on-device into the reader's language, badged
+                    // honestly, falling back to the English original (matches the
+                    // dossier, so a scanner-discovered story isn't English-only).
+                    LocalizedContent(source: narrative) { text, translated in
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(text)
+                                .font(LoreType.reader)
+                                .foregroundStyle(LoreColor.ink)
+                                .lineLimit(expanded ? nil : 3)
+                                .fixedSize(horizontal: false, vertical: true)
+                            if translated { TranslatedBadge() }
+                        }
+                    }
 
                     if !expanded {
-                        Button("Read more") {
+                        Button(L10n.t("dossier.readMore")) {
                             withAnimation(LoreMotion.unfurl) { expanded = true }
                         }
                         .font(LoreType.button)

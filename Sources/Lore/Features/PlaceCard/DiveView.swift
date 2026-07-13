@@ -16,39 +16,72 @@ struct DiveView: View {
     var medallionID: String = ""
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(EntitlementStore.self) private var entitlements
+    @Environment(DiveMeter.self) private var diveMeter
+    @Environment(StoreKitService.self) private var store
+    @Environment(AuthService.self) private var auth
     @State private var model = DiveModel()
+    /// True once the free daily dive allowance is spent: the dossier body defers
+    /// to the gate card (docs/00 §7). Lore+ members are never gated.
+    @State private var gated = false
+    @State private var showPaywall = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 header
 
-                switch model.state {
-                case .loading:
-                    loadingSkeleton
-                case .empty:
-                    Text("This dossier hasn't been written yet. Dives are synthesized once and cached, never generated on the spot.")
-                        .font(LoreType.body)
-                        .foregroundStyle(LoreColor.ink600)
-                case .failed(let message):
-                    Text(message)
-                        .font(LoreType.body)
-                        .foregroundStyle(LoreColor.errorDark)
-                case .loaded(let dive):
-                    diveBody(dive)
+                if gated {
+                    // The place name (header) stays above the gate, so the
+                    // wonder isn't yanked away, only the extra read is deferred.
+                    DiveGateCard(placeName: place.name, onUnlock: { showPaywall = true })
+                } else {
+                    switch model.state {
+                    case .loading:
+                        loadingSkeleton
+                    case .empty:
+                        Text("This dossier hasn't been written yet. Dives are synthesized once and cached, never generated on the spot.")
+                            .font(LoreType.body)
+                            .foregroundStyle(LoreColor.ink600)
+                    case .failed(let message):
+                        Text(message)
+                            .font(LoreType.body)
+                            .foregroundStyle(LoreColor.errorDark)
+                    case .loaded(let dive):
+                        diveBody(dive)
+                    }
+
+                    // Apple street-level view, shown only where Apple has coverage.
+                    LookAroundSection(place: place)
+
+                    linksSection
                 }
-
-                // Apple street-level view, shown only where Apple has coverage.
-                LookAroundSection(place: place)
-
-                linksSection
             }
             .padding(16)
             // Clear the dismiss chevron the host overlays top-left.
             .padding(.top, 44)
         }
         .background(LoreColor.ink950.ignoresSafeArea())
-        .task { await model.load(placeID: place.id) }
+        .task {
+            // Dive-open gate (docs/00 §7): members and free users with dives left
+            // open normally (spending one); a spent free user sees the gate card.
+            if diveMeter.canOpenDive(isPlus: entitlements.isPlus) {
+                diveMeter.recordDiveOpened(isPlus: entitlements.isPlus)
+                await model.load(placeID: place.id)
+            } else {
+                gated = true
+            }
+        }
+        // A completed purchase lifts the gate in place and loads the dossier.
+        .onChange(of: entitlements.isPlus) { _, isPlus in
+            if isPlus && gated {
+                gated = false
+                Task { await model.load(placeID: place.id) }
+            }
+        }
+        .sheet(isPresented: $showPaywall) {
+            PaywallView(entitlements: entitlements, store: store, auth: auth, context: .fourthDive)
+        }
     }
 
     // MARK: Header (morph target)
@@ -150,7 +183,7 @@ struct DiveView: View {
                         }
                     } label: {
                         HStack(spacing: 4) {
-                            Text(expanded ? "Read less" : "Read more")
+                            Text(expanded ? L10n.t("dossier.readLess") : L10n.t("dossier.readMore"))
                             Image(systemName: expanded ? "chevron.up" : "chevron.down")
                                 .font(.system(size: 11, weight: .bold))
                         }

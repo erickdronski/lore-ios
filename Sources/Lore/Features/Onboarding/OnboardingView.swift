@@ -54,10 +54,6 @@ struct OnboardingView: View {
         }
     }
 
-    private func skip() {
-        store.skip(onComplete: onFinished, prefsWriter: prefsWriter)
-    }
-
     private func finish() {
         store.finish(onComplete: onFinished, prefsWriter: prefsWriter)
     }
@@ -75,7 +71,7 @@ private struct ArrivalStep: View {
             progress: store.progress,
             primaryTitle: "Begin",
             onBack: nil,
-            onSkip: { store.advance() }, // arrival "skip" just enters, nothing set yet
+            onSkip: { store.jumpToFinish() }, // "Skip" leaves onboarding with defaults
             onPrimary: { store.advance() }
         ) {
             VStack(alignment: .leading, spacing: 20) {
@@ -123,7 +119,7 @@ private struct InterestsStep: View {
             primaryTitle: "Continue",
             primaryEnabled: store.canAdvanceInterests,
             onBack: { store.back() },
-            onSkip: { store.advance() },
+            onSkip: { store.jumpToFinish() },
             onPrimary: { store.advance() }
         ) {
             VStack(alignment: .leading, spacing: 16) {
@@ -207,7 +203,7 @@ private struct LocationStep: View {
             primaryTitle: isResolved ? "Continue" : OnboardingContent.locationAllow,
             primaryBusy: store.isRequestingPermission,
             onBack: { store.back() },
-            onSkip: { store.advance() },
+            onSkip: { store.jumpToFinish() },
             onPrimary: {
                 if isResolved {
                     store.advance()
@@ -225,7 +221,9 @@ private struct LocationStep: View {
             )
             .padding(.top, 24)
 
-            if isResolved {
+            // The "Not now" decline belongs BEFORE a choice is made, not after
+            // (it used to appear only once location was already resolved).
+            if !isResolved {
                 Button(OnboardingContent.locationSkip) { store.advance() }
                     .font(LoreType.button)
                     .foregroundStyle(LoreColor.bone.opacity(0.6))
@@ -271,7 +269,7 @@ private struct NotificationsStep: View {
             primaryTitle: isResolved ? "Continue" : OnboardingContent.notificationsAllow,
             primaryBusy: store.isRequestingPermission,
             onBack: { store.back() },
-            onSkip: { store.advance() },
+            onSkip: { store.jumpToFinish() },
             onPrimary: {
                 if isResolved {
                     store.advance()
@@ -291,12 +289,16 @@ private struct NotificationsStep: View {
             )
             .padding(.top, 24)
 
-            Button(OnboardingContent.notificationsSkip) { store.advance() }
-                .font(LoreType.button)
-                .foregroundStyle(LoreColor.bone.opacity(0.6))
-                .frame(maxWidth: .infinity)
-                .frame(height: 44)
-                .padding(.top, 8)
+            // "Maybe later" disappears once the choice is made (it used to
+            // linger even after notifications were granted).
+            if !isResolved {
+                Button(OnboardingContent.notificationsSkip) { store.advance() }
+                    .font(LoreType.button)
+                    .foregroundStyle(LoreColor.bone.opacity(0.6))
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 44)
+                    .padding(.top, 8)
+            }
         }
     }
 

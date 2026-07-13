@@ -215,6 +215,24 @@ targets:
         # have an Info.plist file"). Simulator tests need no real signing.
         GENERATE_INFOPLIST_FILE: YES
 
+  # ── Unit-test target: the scanner's pure honesty math (footprint, tier
+  # hysteresis, gaze, bearings). Hosted in the app so it can @testable import
+  # Lore; built only for the test action, never archived/shipped.
+  LoreTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: Sources/LoreTests
+    dependencies:
+      - target: Lore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.erickdronski.lore.tests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Lore.app/Lore"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+
 schemes:
   # Release scheme, archived + uploaded to TestFlight by `fastlane beta`.
   # Unchanged: it builds only the app + widget, never the UI-test target.
@@ -223,8 +241,13 @@ schemes:
       targets:
         Lore: all
         LoreWidget: all
+        LoreTests: [test]
     run:
       config: Debug
+    test:
+      config: Debug
+      targets:
+        - LoreTests
     archive:
       config: Release
 

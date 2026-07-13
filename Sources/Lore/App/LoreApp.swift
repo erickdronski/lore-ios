@@ -36,6 +36,9 @@ struct LoreApp: App {
     @State private var store = StoreKitService()
     /// The one shared `user_prefs` load, persona weighting + hidden kinds.
     @State private var prefs = PrefsCoordinator()
+    /// The free-tier deep-dive allowance (3/day, docs/00 §7). Consulted only
+    /// for non-members; Lore+ bypasses it. One instance for the whole app.
+    @State private var diveMeter = DiveMeter()
     /// Owns the Travel stores (visits + filters) and the unlock bridge.
     @State private var travel: TravelSession
 
@@ -66,6 +69,7 @@ struct LoreApp: App {
                 .environment(store)
                 .environment(appDelegate.push)
                 .environment(prefs)
+                .environment(diveMeter)
                 .environment(travel)
                 .environment(travel.visits)
                 .environment(travel.filters)
@@ -140,7 +144,7 @@ struct RootTabView: View {
             .tabItem { Label(L10n.t("tab.map"), systemImage: "map") }
             .tag(Tab.map)
 
-            ScannerScreen(city: router.selectedCity, prefs: prefs.prefs)
+            ScannerScreen(city: router.selectedCity, prefs: prefs.prefs, onMeetCity: { meetCity = $0 })
                 .tabItem { Label(L10n.t("tab.scanner"), systemImage: "camera.viewfinder") }
                 .tag(Tab.scanner)
 
@@ -168,7 +172,7 @@ struct RootTabView: View {
         }
         // A place opened from a search hit (map pin taps are self-contained).
         .sheet(item: $routedPlace) { routed in
-            PlaceCardView(place: routed.place, onMeetCity: { meetCity = $0 }, autoDive: routed.autoDive)
+            PlaceCardView(place: routed.place, onMeetCity: { routedPlace = nil; meetCity = $0 }, autoDive: routed.autoDive)
                 // The screenshot "dive" stage wants the full dossier, so pin the
                 // sheet to `.large`; normal presentations keep the medium grip.
                 .presentationDetents(routed.autoDive ? [.large] : [.medium, .large])

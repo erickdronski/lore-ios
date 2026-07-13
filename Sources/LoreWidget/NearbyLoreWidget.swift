@@ -62,9 +62,11 @@ struct NearbyLoreProvider: TimelineProvider {
         completion(Timeline(entries: [entry], policy: .after(next)))
     }
 
-    /// The app's cached snapshot, or the sample when there's nothing yet.
+    /// The app's cached snapshot, or an honest EMPTY snapshot when there's
+    /// nothing yet. Never `.sample` here: sample landmarks under an "Around you
+    /// right now" header would present Chicago as the user's real surroundings.
     private func currentSnapshot() -> LoreWidgetSnapshot {
-        LoreWidgetStore.read() ?? .sample
+        LoreWidgetStore.read() ?? .empty
     }
 }
 

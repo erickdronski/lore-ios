@@ -15,6 +15,13 @@ final class ScannerCameraService: NSObject, AVCaptureMetadataOutputObjectsDelega
     let session = AVCaptureSession()
     private let sessionQueue = DispatchQueue(label: "com.erickdronski.lore.camera-session")
     private var configured = false
+    /// Whether the session is *meant* to be running, so an interruption/runtime
+    /// recovery never fights a deliberate stop (background, tab switch).
+    private var wantsRunning = false
+    /// Called (main queue) when camera permission is denied or restricted, so
+    /// the UI can show a first-class "enable in Settings" card instead of a
+    /// permanently black viewfinder.
+    var onPermissionDenied: (() -> Void)?
     /// Still-photo output for the "AR postcard" capture (the un-fakeable hero
     /// image: the real facade + the Lore pin, composited in `ARCaptureSheet`).
     private let photoOutput = AVCapturePhotoOutput()
@@ -30,22 +37,44 @@ final class ScannerCameraService: NSObject, AVCaptureMetadataOutputObjectsDelega
     private var lastMarkerAt: TimeInterval = 0
 
     /// Requests camera permission if needed, then configures + starts the
-    /// session off the main thread.
+    /// session off the main thread. Surfaces a denial via `onPermissionDenied`
+    /// so the scanner shows a Settings path instead of dead-ending on black.
     func start() {
-        AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
-            guard granted, let self else { return }
-            self.sessionQueue.async {
-                self.configureIfNeeded()
-                if !self.session.isRunning {
-                    self.session.startRunning()
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .authorized:
+            startSession()
+        case .notDetermined:
+            AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
+                guard let self else { return }
+                if granted {
+                    self.startSession()
+                } else {
+                    DispatchQueue.main.async { self.onPermissionDenied?() }
                 }
+            }
+        case .denied, .restricted:
+            DispatchQueue.main.async { [weak self] in self?.onPermissionDenied?() }
+        @unknown default:
+            break
+        }
+    }
+
+    private func startSession() {
+        sessionQueue.async { [weak self] in
+            guard let self else { return }
+            self.wantsRunning = true
+            self.configureIfNeeded()
+            if !self.session.isRunning {
+                self.session.startRunning()
             }
         }
     }
 
     func stop() {
         sessionQueue.async { [weak self] in
-            guard let self, self.session.isRunning else { return }
+            guard let self else { return }
+            self.wantsRunning = false
+            guard self.session.isRunning else { return }
             self.session.stopRunning()
         }
     }
@@ -87,8 +116,29 @@ final class ScannerCameraService: NSObject, AVCaptureMetadataOutputObjectsDelega
                 markerOutput.metadataObjectTypes = [.qr]
             }
         }
+
+        // An AVCaptureSession does NOT auto-resume after a runtime error or the
+        // end of an interruption (a phone call, another app grabbing the camera),
+        // so without this the preview stays permanently black after one.
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(handleSessionRecovery),
+            name: .AVCaptureSessionRuntimeError, object: session)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(handleSessionRecovery),
+            name: .AVCaptureSessionInterruptionEnded, object: session)
         configured = true
     }
+
+    /// Re-start the session after a runtime error / interruption, but only if we
+    /// still want it running (never fight a deliberate stop).
+    @objc private func handleSessionRecovery() {
+        sessionQueue.async { [weak self] in
+            guard let self, self.wantsRunning, self.configured, !self.session.isRunning else { return }
+            self.session.startRunning()
+        }
+    }
+
+    deinit { NotificationCenter.default.removeObserver(self) }
 
     // MARK: AVCaptureMetadataOutputObjectsDelegate (marker rung)
 

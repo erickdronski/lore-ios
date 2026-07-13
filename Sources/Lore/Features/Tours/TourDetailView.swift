@@ -7,10 +7,18 @@ import SwiftUI
 struct TourDetailView: View {
     let tour: Tour
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(EntitlementStore.self) private var entitlements
+    @Environment(StoreKitService.self) private var store
+    @Environment(AuthService.self) private var auth
     @State private var model = TourDetailModel()
     @State private var stopIndex = 0
     /// Drives the active-tour Live Activity + Dynamic Island (docs/16 §8).
     @State private var liveActivity = TourLiveActivityController()
+    /// Present the paywall when a free user opens a premium curated walk.
+    @State private var showPaywall = false
+
+    /// A premium curated walk the current viewer hasn't unlocked.
+    private var isLocked: Bool { tour.isPremium && !entitlements.isPlus }
 
     var body: some View {
         ScrollView {
@@ -23,6 +31,12 @@ struct TourDetailView: View {
                         systemImage: "mappin.slash",
                         description: Text("This tour hasn't been routed.")
                     )
+                } else if isLocked {
+                    // A curated Lore+ walk: the header (title, blurb, trip facts)
+                    // still shows what it is, then the route resolves to a lock.
+                    PlusGate(isPlus: false, feature: .tours, onUnlock: { showPaywall = true }) {
+                        EmptyView()
+                    }
                 } else {
                     progressRail
                     stopCard
@@ -47,6 +61,9 @@ struct TourDetailView: View {
         .onChange(of: stopIndex) { _, _ in syncLiveActivity() }
         // End the activity if the user leaves the tour screen without finishing.
         .onDisappear { liveActivity.end() }
+        .sheet(isPresented: $showPaywall) {
+            PaywallView(entitlements: entitlements, store: store, auth: auth, context: .tours)
+        }
     }
 
     // MARK: Live Activity
@@ -127,7 +144,10 @@ struct TourDetailView: View {
             initialStopIndex: stopIndex + 1,
             currentStopName: liveStopName(at: stopIndex),
             nextStopName: liveStopName(at: stopIndex + 1),
-            distanceToNextMeters: liveDistanceToNext()
+            // Omit the distance number: a real live user->stop distance needs a
+            // continuous Core Location fix. Showing a static stop-to-stop leg as
+            // if it were live would be dishonest (docs/16 §8 TODO).
+            distanceToNextMeters: nil
         )
     }
 
@@ -138,7 +158,7 @@ struct TourDetailView: View {
             currentStopIndex: stopIndex + 1,
             currentStopName: liveStopName(at: stopIndex),
             nextStopName: liveStopName(at: stopIndex + 1),
-            distanceToNextMeters: liveDistanceToNext()
+            distanceToNextMeters: nil
         )
     }
 
@@ -148,19 +168,6 @@ struct TourDetailView: View {
         guard tour.stops.indices.contains(index) else { return "" }
         let stop = tour.stops[index]
         return model.place(id: stop.placeID)?.name ?? "Stop \(index + 1)"
-    }
-
-    /// Straight-line distance (m) from the current stop's place to the next
-    /// stop's place, when both resolve, a scaffold stand-in for the real
-    /// user→next-stop distance a Core Location fix would give (docs/16 §8 TODO).
-    private func liveDistanceToNext() -> Double? {
-        guard
-            tour.stops.indices.contains(stopIndex),
-            tour.stops.indices.contains(stopIndex + 1),
-            let here = model.place(id: tour.stops[stopIndex].placeID),
-            let next = model.place(id: tour.stops[stopIndex + 1].placeID)
-        else { return nil }
-        return here.location.distance(from: next.location)
     }
 
     private var currentStop: TourStop? {
@@ -189,11 +196,6 @@ struct TourDetailView: View {
                     .foregroundStyle(LoreColor.ink600)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            if !tour.summaryLine.isEmpty {
-                Text(tour.summaryLine)
-                    .loreLabelStyle()
-                    .foregroundStyle(LoreColor.brass700)
-            }
             tripFacts
         }
     }
@@ -218,14 +220,32 @@ struct TourDetailView: View {
         return max(1, Int((routeMeters / 1.3) / 60))
     }
 
+    /// One authoritative distance label: the tour's own curated distance when
+    /// set, otherwise the computed route. Nil until at least one is available.
+    private var distanceText: String? {
+        if let km = tour.distanceKm { return String(format: "%.1f km", km) }
+        if let routeMeters { return BearingProjector.distanceLabel(meters: routeMeters) }
+        return nil
+    }
+
+    /// One authoritative walking-time label: the tour's own curated duration
+    /// when set, otherwise the computed estimate.
+    private var minutesText: String? {
+        if let min = tour.durationMin { return "\(min) min" }
+        if let walkMinutes { return "\(walkMinutes) min" }
+        return nil
+    }
+
     /// A compact facts strip under the tour title: total distance, walking
-    /// time, and stop count. Appears once the stops resolve.
+    /// time, and stop count. A single source of truth, so the two numbers can
+    /// never disagree (they used to: a curated summary line above a recomputed
+    /// strip below).
     @ViewBuilder
     private var tripFacts: some View {
-        if let routeMeters, let walkMinutes {
+        if distanceText != nil || minutesText != nil {
             HStack(spacing: 16) {
-                tripFact(system: "figure.walk", text: BearingProjector.distanceLabel(meters: routeMeters))
-                tripFact(system: "clock", text: "\(walkMinutes) min")
+                if let distanceText { tripFact(system: "figure.walk", text: distanceText) }
+                if let minutesText { tripFact(system: "clock", text: minutesText) }
                 tripFact(system: "mappin.and.ellipse", text: "\(tour.stops.count) stops")
             }
             .padding(.top, 2)
@@ -290,8 +310,8 @@ struct TourDetailView: View {
                 }
             } else if model.isLoading {
                 SkeletonRow()
-            } else if let stop = currentStop {
-                Text("Place \(stop.placeID)")
+            } else if currentStop != nil {
+                Text("Stop \(stopIndex + 1)")
                     .font(LoreType.body)
                     .foregroundStyle(LoreColor.ink600)
             }

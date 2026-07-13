@@ -47,11 +47,26 @@ struct ScannerScreen: View {
     let prefs: UserPrefs?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(EntitlementStore.self) private var entitlements
+    @Environment(StoreKitService.self) private var store
+    @Environment(AuthService.self) private var auth
+    @Environment(\.scenePhase) private var scenePhase
     @State private var model = ScannerModel()
+    @State private var showPaywall = false
+    @State private var isVisible = false
 
-    init(city: String = Config.defaultCity, prefs: UserPrefs? = nil) {
+    /// Raised so a scanner-opened place card can hand off to the city's culture
+    /// surface (wired by the tab shell); the no-op default keeps previews working.
+    var onMeetCity: (String) -> Void = { _ in }
+
+    init(
+        city: String = Config.defaultCity,
+        prefs: UserPrefs? = nil,
+        onMeetCity: @escaping (String) -> Void = { _ in }
+    ) {
         self.city = city
         self.prefs = prefs
+        self.onMeetCity = onMeetCity
     }
 
     var body: some View {
@@ -70,8 +85,10 @@ struct ScannerScreen: View {
 
                 // Reticle underlays the content so pins/chips sit on top of it.
                 // It firms up on a coarse Tier-A lock or a precise localize.
+                // Measured in the same (safe-area) space as the pins and chips
+                // so the reticle center lines up with the content it frames (the
+                // camera behind it still fills the full screen).
                 ScannerReticle(isLocked: model.reticleLocked)
-                    .ignoresSafeArea()
 
                 if model.preciseMode {
                     // World-locked cards at the tracker's projected points;
@@ -109,11 +126,17 @@ struct ScannerScreen: View {
                     }
                     bottomBar
                 }
+
+                // Camera/location denied: a first-class Settings path, never a
+                // black viewfinder with pins floating on nothing.
+                if model.permissionDenied {
+                    permissionOverlay
+                }
             }
         }
         .background(LoreColor.ink950)
         .sheet(item: $model.selectedPlace) { place in
-            PlaceCardView(place: place)
+            PlaceCardView(place: place, onMeetCity: { model.selectedPlace = nil; onMeetCity($0) })
                 .presentationDetents([.medium, .large])
                 .presentationBackground(.regularMaterial)
                 .presentationCornerRadius(24)
@@ -127,6 +150,9 @@ struct ScannerScreen: View {
         .sheet(item: $model.capturedShot) { shot in
             ARCaptureSheet(shot: shot)
         }
+        .sheet(isPresented: $showPaywall) {
+            PaywallView(entitlements: entitlements, store: store, auth: auth, context: .audio)
+        }
         .task {
             model.apply(prefs: prefs)
             await model.start(city: city)
@@ -135,7 +161,15 @@ struct ScannerScreen: View {
         .onChange(of: city) { _, newValue in
             Task { await model.reload(city: newValue) }
         }
-        .onDisappear { model.stopSensors() }
+        .onAppear { isVisible = true }
+        .onDisappear { isVisible = false; model.stopSensors() }
+        // Pause camera/location/loop when the app leaves the foreground (privacy
+        // + battery); resume when it returns while the scanner is the live tab.
+        // Tab switches are covered by onAppear/onDisappear.
+        .onChange(of: scenePhase) { _, phase in
+            guard isVisible else { return }
+            if phase == .active { model.resumeSensors() } else { model.stopSensors() }
+        }
     }
 
     // MARK: Tier A, the locked pin
@@ -246,13 +280,15 @@ struct ScannerScreen: View {
 
     @ViewBuilder
     private func storyMarkers(size: CGSize) -> some View {
-        ForEach(model.inViewStories) { projected in
+        ForEach(Array(model.inViewStories.enumerated()), id: \.element.id) { index, projected in
             StoryMarker(projected: projected) {
                 model.selectedStory = projected.story
             }
             .position(
                 x: chipX(fraction: projected.screenFraction, width: size.width),
-                y: size.height * 0.62
+                // Fan concurrent moments down by index so markers at a similar
+                // bearing don't stack on one constant y (they used to overlap).
+                y: size.height * 0.58 + CGFloat(index) * 44
             )
             .animation(
                 reduceMotion ? nil : LoreSpring.smoothInteractive,
@@ -301,6 +337,8 @@ struct ScannerScreen: View {
                         Text("👻").font(.system(size: 13))
                         Text(model.hauntedOnly ? "Spooky on" : "Spooky nearby")
                             .font(LoreType.button)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
                     }
                     .foregroundStyle(LoreColor.bone)
                     .padding(.horizontal, 12)
@@ -363,6 +401,8 @@ struct ScannerScreen: View {
                     .font(.system(size: 13, weight: .semibold))
                 Text(model.preciseMode ? "Precise on" : "Lock on")
                     .font(LoreType.button)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
             .foregroundStyle(model.preciseMode ? LoreColor.ink : LoreColor.bone)
             .padding(.horizontal, 12)
@@ -391,29 +431,95 @@ struct ScannerScreen: View {
     /// "Keep walking, I'll tell you", the hands-free offer that appears on a
     /// Tier-A lock (docs/12 §3.2). We offer, never auto-play (open Q4 etiquette).
     private func audioOffer(for place: Place) -> some View {
-        Button {
-            model.playNarration(for: place)
-        } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "headphones")
-                Text("Keep walking, I'll tell you")
-                    .font(LoreType.button)
-                Spacer(minLength: 8)
-                Image(systemName: "xmark")
-                    .font(.system(size: 11, weight: .semibold))
-                    .onTapGesture { model.narration.dismissOffer() }
+        // Two sibling controls (not a tap gesture nested in a Button): a play
+        // area and a real 44pt dismiss button, so "dismiss" never mis-fires as
+        // "play". Audio narration is a Lore+ perk, so a free tap opens the paywall.
+        HStack(spacing: 4) {
+            Button {
+                if entitlements.isPlus {
+                    model.playNarration(for: place)
+                } else {
+                    model.narration.dismissOffer()
+                    showPaywall = true
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: entitlements.isPlus ? "headphones" : "headphones.circle")
+                    Text("Keep walking, I'll tell you")
+                        .font(LoreType.button)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                    if !entitlements.isPlus {
+                        Image(systemName: "lock.fill").font(.system(size: 11, weight: .semibold))
+                    }
+                    Spacer(minLength: 0)
+                }
+                .foregroundStyle(LoreColor.bone)
+                .padding(.leading, 16)
+                .frame(height: 44)
+                .contentShape(Rectangle())
             }
-            .foregroundStyle(LoreColor.bone)
-            .padding(.horizontal, 14)
-            .frame(height: 44)
-            .background(.ultraThinMaterial, in: Capsule())
-            .overlay(
-                Capsule().strokeBorder(LoreColor.amber.opacity(0.55), lineWidth: 1)
-            )
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text(entitlements.isPlus ? "Play narration" : "Unlock audio narration with Lore plus"))
+
+            Button {
+                model.narration.dismissOffer()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(LoreColor.bone)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text("Dismiss"))
         }
-        .buttonStyle(.plain)
+        .padding(.trailing, 4)
+        .background(.ultraThinMaterial, in: Capsule())
+        .overlay(
+            Capsule().strokeBorder(LoreColor.amber.opacity(0.55), lineWidth: 1)
+        )
         .padding(.horizontal, 16)
         .transition(.move(edge: .bottom).combined(with: .opacity))
+    }
+
+    // MARK: Permission dead-end
+
+    /// Shown when the camera or location was denied: an honest explanation and a
+    /// one-tap path to Settings, so the scanner never dead-ends on a black frame.
+    private var permissionOverlay: some View {
+        ZStack {
+            LoreColor.ink950.opacity(0.94).ignoresSafeArea()
+            VStack(spacing: 16) {
+                Image(systemName: "viewfinder.trianglebadge.exclamationmark")
+                    .font(.system(size: 42, weight: .light))
+                    .foregroundStyle(LoreColor.amber)
+                Text(model.cameraDenied ? "The scanner needs camera access" : "The scanner needs your location")
+                    .font(LoreType.displayM)
+                    .foregroundStyle(LoreColor.bone)
+                    .multilineTextAlignment(.center)
+                Text("Lore uses the camera to place stories on the buildings around you, and your location to know which block you are on. Nothing leaves your device.")
+                    .font(LoreType.body)
+                    .foregroundStyle(LoreColor.ink600)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button {
+                    if let url = URL(string: UIApplication.openSettingsURLString) {
+                        UIApplication.shared.open(url)
+                    }
+                } label: {
+                    Text("Open Settings")
+                        .font(LoreType.button)
+                        .foregroundStyle(LoreColor.ink)
+                        .padding(.horizontal, 22)
+                        .padding(.vertical, 12)
+                        .background(BrassSheenSurface(shape: Capsule(), sweepOnAppear: false))
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(28)
+        }
+        .transition(.opacity)
     }
 
     // MARK: Layout
@@ -598,6 +704,12 @@ final class ScannerModel {
     /// The night/haunted layer toggle (docs/12 §3.1 layer 3). Opt-in only.
     private(set) var hauntedOnly = false
 
+    /// Permission dead-ends: true when the camera or location was denied, so the
+    /// scanner shows a Settings path instead of a black / empty viewfinder.
+    private(set) var cameraDenied = false
+    private(set) var locationDenied = false
+    var permissionDenied: Bool { cameraDenied || locationDenied }
+
     private var loadError = false
     private var scoutedOnce = false
     private var projectionTask: Task<Void, Never>?
@@ -676,6 +788,12 @@ final class ScannerModel {
             Haptics.play(.scannerLock)
             self.selectedPlace = place
         }
+        // Surface permission dead-ends. Start optimistic; the callbacks re-raise
+        // if still denied, so a grant from Settings clears the overlay.
+        cameraDenied = false
+        locationDenied = false
+        camera.onPermissionDenied = { [weak self] in self?.cameraDenied = true }
+        pose.onPermissionDenied = { [weak self] in self?.locationDenied = true }
         camera.start()
         pose.start()
         startProjectionLoop()
@@ -716,6 +834,18 @@ final class ScannerModel {
         projectionTask?.cancel()
         projectionTask = nil
         tierStabilizer.reset()
+    }
+
+    /// Restart the coarse sensors after a foreground return (the content is
+    /// already loaded, so this only re-wakes the camera, pose, and 5 Hz loop).
+    /// Precise mode is torn down on background and re-offered, never auto-resumed.
+    func resumeSensors() {
+        guard !preciseMode, projectionTask == nil else { return }
+        cameraDenied = false
+        locationDenied = false
+        camera.start()
+        pose.start()
+        startProjectionLoop()
     }
 
     // MARK: Precise mode (docs/05 §5 ladder, rung 1)

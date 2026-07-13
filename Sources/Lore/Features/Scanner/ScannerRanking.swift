@@ -107,14 +107,15 @@ enum ScannerRanking {
         return quality.horizontalAccuracyM + distance * tan(yawRadians)
     }
 
-    /// Approximate footprint half-width for a place, meters. Real footprints
-    /// live in the P1 chunk data; here we estimate from `kind` + height so the
-    /// tier math has something honest to compare against (docs/05 §4.2 note:
-    /// "footprint width"). Supertall towers read wide even head-on; statues are
-    /// points and can never earn a coarse-mode lock.
-    static func footprintHalfWidth(for place: Place) -> Double {
+    /// Approximate footprint **full width** for a place, meters (the silhouette
+    /// you could stand in front of). Real footprints live in the P1 chunk data;
+    /// here we estimate from `kind` + height so the tier math has something
+    /// honest to compare against (docs/05 §4.2 "footprint width"). Supertall
+    /// towers read wide even head-on; statues and murals are points and can
+    /// never earn a coarse-mode lock.
+    static func footprintWidth(for place: Place) -> Double {
         switch place.kind {
-        case "statue", "sculpture", "memorial", "monument":
+        case "statue", "sculpture", "memorial", "monument", "mural":
             return 4
         case "bridge":
             return 30
@@ -134,11 +135,11 @@ enum ScannerRanking {
     /// - Tier B up to `2 × footprintWidth`, direction good, façade not.
     /// - Tier C beyond that, or whenever heading is compass-noisy, no claim.
     ///
-    /// `footprintWidth` here is the full width (2× half-width) to match the
-    /// doc's "× footprint width" phrasing.
+    /// `footprintWidth` is the full silhouette width; the Tier A test
+    /// (`σ_lat < 0.5 × footprintWidth`) therefore compares against the half.
     static func tier(for projected: ProjectedPlace, quality: PoseQuality) -> Tier {
         let sigma = lateralErrorMeters(distance: projected.distance, quality: quality)
-        let fullWidth = footprintHalfWidth(for: projected.place) * 2
+        let fullWidth = footprintWidth(for: projected.place)
 
         // Compass-only heading can never carry an on-building claim beyond a
         // literal arm's-length target (docs/05 §4.2 refuse-to-guess).
@@ -181,11 +182,20 @@ enum ScannerRanking {
         func reset() { records.removeAll() }
 
         /// The tier to *display* for `id` given its `raw` tier this frame.
-        func stabilize(id: String, raw: Tier, now: TimeInterval = Date().timeIntervalSince1970 * 1000) -> Tier {
+        /// `now` uses a monotonic clock (systemUptime) so a wall-clock/NTP
+        /// change mid-scan can't corrupt the confirm/hold deltas.
+        func stabilize(id: String, raw: Tier, now: TimeInterval = ProcessInfo.processInfo.systemUptime * 1000) -> Tier {
             var record = records[id] ?? Record()
             defer { records[id] = record }
 
             if raw == .a {
+                // A recent confirmation survives a one-frame B dropout: recover
+                // the lock immediately instead of re-serving the 400ms confirm.
+                if let confirmed = record.lastConfirmedA, now - confirmed <= holdMs {
+                    record.lastConfirmedA = now
+                    record.aStreakStart = now
+                    return .a
+                }
                 if record.aStreakStart == nil { record.aStreakStart = now }
                 if now - (record.aStreakStart ?? now) >= confirmMs {
                     record.lastConfirmedA = now
@@ -194,12 +204,17 @@ enum ScannerRanking {
                 return .b // confirming; show as a bearing until it's earned
             }
 
-            record.aStreakStart = nil
+            // Grace-hold a confirmed lock across brief raw-B jitter WITHOUT
+            // wiping the streak/confirmation (that wipe was what defeated the
+            // hold, forcing a full re-confirm the instant A returned).
             if raw == .b,
                let confirmed = record.lastConfirmedA,
                now - confirmed <= holdMs {
-                return .a // brief grace hold across gate jitter
+                return .a
             }
+
+            // Genuinely lost: reset.
+            record.aStreakStart = nil
             record.lastConfirmedA = nil
             return raw
         }
@@ -311,6 +326,9 @@ enum ScannerRanking {
     /// merely near"). Uses the already-computed screen fraction so it matches
     /// exactly where the chip renders.
     static func gazeScore(screenFraction: Double) -> Double {
+        // A non-finite projection (behind the camera / degenerate pose) scores
+        // zero rather than poisoning the ranking sort with NaN.
+        guard screenFraction.isFinite else { return 0 }
         // 0.5 = center. Distance from center in [0, 0.5]; invert to [0, 1].
         let offset = abs(screenFraction - 0.5)
         return max(0, 1 - offset / 0.5)
@@ -376,7 +394,9 @@ enum ScannerRanking {
     struct Cluster: Identifiable {
         let members: [Ranked]
         var id: String { lead.id }
-        var lead: Ranked { members[0] }
+        /// The top-ranked member (docs/12 §2.1). The list stays distance-sorted
+        /// for the open stack, but the chip leads with the best, not the nearest.
+        var lead: Ranked { members.max(by: { $0.score < $1.score }) ?? members[0] }
         var count: Int { members.count }
         var isStack: Bool { members.count > 1 }
         /// Center of the cone, screen fraction, where the chip renders.

@@ -45,6 +45,12 @@ public struct LoreWidgetSnapshot: Codable, Equatable {
 
     /// The first place, the "daily lore" hero for the small widget.
     public var featured: Place? { places.first }
+
+    /// An honest empty snapshot (no city, no places). Used as the widget's
+    /// live-timeline fallback so a missing App Group / cold app renders the
+    /// "Open Lore to load stories near you" empty state, never sample landmarks
+    /// presented as the user's real surroundings.
+    public static let empty = LoreWidgetSnapshot(updatedAt: .distantPast, city: "", places: [])
 }
 
 /// Reads/writes `LoreWidgetSnapshot` through the shared App Group `UserDefaults`.
@@ -54,7 +60,7 @@ public struct LoreWidgetSnapshot: Codable, Equatable {
 /// to *both* the app and the widget extension entitlements before this resolves
 /// at runtime. The `project.yml` notes this; until it's provisioned,
 /// `sharedDefaults` is `nil` and every call no-ops gracefully (the widget shows
-/// its sample content, the app's write is a silent miss), nothing crashes.
+/// its honest empty state, the app's write is a silent miss), nothing crashes.
 public enum LoreWidgetStore {
     /// The App Group identifier. Must match the entitlement on both targets.
     public static let appGroupID = "group.com.erickdronski.lore"

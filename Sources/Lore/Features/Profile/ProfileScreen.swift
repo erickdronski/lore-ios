@@ -13,6 +13,9 @@ struct ProfileScreen: View {
     @Environment(StoreKitService.self) private var store
     @State private var showSignIn = false
     @State private var showPaywall = false
+    /// True when a signed-in profile load failed, so the row offers a retry
+    /// instead of spinning "Loading your profile…" forever.
+    @State private var profileLoadFailed = false
 
     var body: some View {
         NavigationStack {
@@ -21,11 +24,26 @@ struct ProfileScreen: View {
                     signedInHeader(profile)
                 } else if auth.isSignedIn {
                     Section {
-                        HStack(spacing: 12) {
-                            ProgressView()
-                            Text("Loading your profile…")
-                                .font(LoreType.body)
-                                .foregroundStyle(LoreColor.ink600)
+                        if profileLoadFailed {
+                            HStack(spacing: 12) {
+                                Image(systemName: "exclamationmark.triangle")
+                                    .foregroundStyle(LoreColor.brass700)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Can't load your profile")
+                                        .font(LoreType.body)
+                                        .foregroundStyle(LoreColor.ink)
+                                    Button("Try again") { Task { await loadProfile() } }
+                                        .font(LoreType.caption)
+                                        .foregroundStyle(LoreColor.brass700)
+                                }
+                            }
+                        } else {
+                            HStack(spacing: 12) {
+                                ProgressView()
+                                Text("Loading your profile…")
+                                    .font(LoreType.body)
+                                    .foregroundStyle(LoreColor.ink600)
+                            }
                         }
                     }
                 } else {
@@ -60,10 +78,18 @@ struct ProfileScreen: View {
             .sheet(isPresented: $showPaywall) {
                 PaywallView(entitlements: entitlements, store: store, auth: auth)
             }
-            .task {
-                if auth.isSignedIn { await auth.refreshProfile() }
-            }
+            .task { await loadProfile() }
         }
+    }
+
+    /// Load the signed-in user's profile, flagging a failure so the row can
+    /// offer a retry instead of spinning forever (refreshProfile swallows the
+    /// thrown error to nil, so "still nil after the attempt" is the signal).
+    private func loadProfile() async {
+        guard auth.isSignedIn, auth.profile == nil else { return }
+        profileLoadFailed = false
+        await auth.refreshProfile()
+        if auth.profile == nil { profileLoadFailed = true }
     }
 
     // MARK: Signed out

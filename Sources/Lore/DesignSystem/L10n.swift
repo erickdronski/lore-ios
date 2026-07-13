@@ -74,7 +74,7 @@ final class L10n {
             "content.translated": "Translated on device",
             "dossier.gallery": "Gallery", "dossier.timeline": "Timeline",
             "dossier.streetView": "Street View", "dossier.sources": "Sources & links",
-            "dossier.readMore": "Read more",
+            "dossier.readMore": "Read more", "dossier.readLess": "Read less",
         ],
         .es: [
             "tab.map": "Mapa", "tab.scanner": "Escáner", "tab.tours": "Rutas",
@@ -89,7 +89,7 @@ final class L10n {
             "content.translated": "Traducido en el dispositivo",
             "dossier.gallery": "Galería", "dossier.timeline": "Cronología",
             "dossier.streetView": "Street View", "dossier.sources": "Fuentes y enlaces",
-            "dossier.readMore": "Leer más",
+            "dossier.readMore": "Leer más", "dossier.readLess": "Leer menos",
         ],
         .fr: [
             "tab.map": "Carte", "tab.scanner": "Scanner", "tab.tours": "Circuits",
@@ -104,7 +104,7 @@ final class L10n {
             "content.translated": "Traduit sur l'appareil",
             "dossier.gallery": "Galerie", "dossier.timeline": "Chronologie",
             "dossier.streetView": "Street View", "dossier.sources": "Sources et liens",
-            "dossier.readMore": "Lire plus",
+            "dossier.readMore": "Lire plus", "dossier.readLess": "Lire moins",
         ],
         .de: [
             "tab.map": "Karte", "tab.scanner": "Scanner", "tab.tours": "Touren",
@@ -119,7 +119,7 @@ final class L10n {
             "content.translated": "Auf dem Gerät übersetzt",
             "dossier.gallery": "Galerie", "dossier.timeline": "Zeitleiste",
             "dossier.streetView": "Street View", "dossier.sources": "Quellen & Links",
-            "dossier.readMore": "Mehr lesen",
+            "dossier.readMore": "Mehr lesen", "dossier.readLess": "Weniger lesen",
         ],
         .it: [
             "tab.map": "Mappa", "tab.scanner": "Scanner", "tab.tours": "Itinerari",
@@ -134,7 +134,7 @@ final class L10n {
             "content.translated": "Tradotto sul dispositivo",
             "dossier.gallery": "Galleria", "dossier.timeline": "Cronologia",
             "dossier.streetView": "Street View", "dossier.sources": "Fonti e link",
-            "dossier.readMore": "Leggi altro",
+            "dossier.readMore": "Leggi altro", "dossier.readLess": "Leggi meno",
         ],
         .pt: [
             "tab.map": "Mapa", "tab.scanner": "Scanner", "tab.tours": "Roteiros",
@@ -149,7 +149,7 @@ final class L10n {
             "content.translated": "Traduzido no aparelho",
             "dossier.gallery": "Galeria", "dossier.timeline": "Linha do tempo",
             "dossier.streetView": "Street View", "dossier.sources": "Fontes e links",
-            "dossier.readMore": "Ler mais",
+            "dossier.readMore": "Ler mais", "dossier.readLess": "Ler menos",
         ],
         .ja: [
             "tab.map": "マップ", "tab.scanner": "スキャナー", "tab.tours": "ツアー",
@@ -164,7 +164,7 @@ final class L10n {
             "content.translated": "端末で翻訳済み",
             "dossier.gallery": "ギャラリー", "dossier.timeline": "年表",
             "dossier.streetView": "ストリートビュー", "dossier.sources": "出典とリンク",
-            "dossier.readMore": "続きを読む",
+            "dossier.readMore": "続きを読む", "dossier.readLess": "折りたたむ",
         ],
         .ko: [
             "tab.map": "지도", "tab.scanner": "스캐너", "tab.tours": "투어",
@@ -179,7 +179,7 @@ final class L10n {
             "content.translated": "기기에서 번역됨",
             "dossier.gallery": "갤러리", "dossier.timeline": "연표",
             "dossier.streetView": "스트리트 뷰", "dossier.sources": "출처 및 링크",
-            "dossier.readMore": "더 보기",
+            "dossier.readMore": "더 보기", "dossier.readLess": "접기",
         ],
         .zh: [
             "tab.map": "地图", "tab.scanner": "扫描", "tab.tours": "路线",
@@ -194,7 +194,7 @@ final class L10n {
             "content.translated": "已在设备上翻译",
             "dossier.gallery": "图库", "dossier.timeline": "时间线",
             "dossier.streetView": "街景", "dossier.sources": "来源与链接",
-            "dossier.readMore": "阅读更多",
+            "dossier.readMore": "阅读更多", "dossier.readLess": "收起",
         ],
     ]
 }

@@ -345,7 +345,7 @@ final class MapScreenModel {
                 cameraTarget = Self.regionFitting(loaded)
             }
         } catch {
-            errorMessage = "Offline, pull to retry"
+            errorMessage = "Offline. Check your connection."
             loadedCity = city
         }
     }

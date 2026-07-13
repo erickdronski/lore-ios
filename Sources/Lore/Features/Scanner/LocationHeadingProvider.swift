@@ -28,6 +28,9 @@ final class LocationHeadingProvider: NSObject, CLLocationManagerDelegate {
     /// data arrives (or on devices without motion sensors).
     private(set) var cameraPitchDeg: Double?
     private(set) var authorizationStatus: CLAuthorizationStatus = .notDetermined
+    /// Called when location permission is denied/restricted, so the scanner can
+    /// show a Settings path instead of silently never finding a fix.
+    var onPermissionDenied: (() -> Void)?
 
     var isAuthorized: Bool {
         authorizationStatus == .authorizedWhenInUse
@@ -53,8 +56,14 @@ final class LocationHeadingProvider: NSObject, CLLocationManagerDelegate {
     }
 
     func start() {
-        if authorizationStatus == .notDetermined {
+        authorizationStatus = manager.authorizationStatus
+        switch authorizationStatus {
+        case .notDetermined:
             manager.requestWhenInUseAuthorization()
+        case .denied, .restricted:
+            onPermissionDenied?()
+        default:
+            break
         }
         manager.startUpdatingLocation()
         manager.startUpdatingHeading()
@@ -90,17 +99,35 @@ final class LocationHeadingProvider: NSObject, CLLocationManagerDelegate {
 
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         authorizationStatus = manager.authorizationStatus
-        if isAuthorized {
+        switch authorizationStatus {
+        case .authorizedWhenInUse, .authorizedAlways:
             manager.startUpdatingLocation()
             manager.startUpdatingHeading()
+        case .denied, .restricted:
+            onPermissionDenied?()
+        default:
+            break
         }
+    }
+
+    /// Let iOS present the figure-8 calibration when the compass is unreliable.
+    /// The whole coarse scanner depends on a trustworthy heading, so without
+    /// this an uncalibrated magnetometer can never be recovered in-app.
+    func locationManagerShouldDisplayHeadingCalibration(_ manager: CLLocationManager) -> Bool {
+        true
     }
 
     func locationManager(
         _ manager: CLLocationManager,
         didUpdateLocations locations: [CLLocation]
     ) {
-        location = locations.last
+        // Reject stale or low-quality fixes: a cached last-known location
+        // delivered on start would otherwise drive confident bearing chips as if
+        // it were the user's current position.
+        guard let fix = locations.last else { return }
+        let age = -fix.timestamp.timeIntervalSinceNow
+        guard age < 12, fix.horizontalAccuracy > 0, fix.horizontalAccuracy < 100 else { return }
+        location = fix
     }
 
     func locationManager(

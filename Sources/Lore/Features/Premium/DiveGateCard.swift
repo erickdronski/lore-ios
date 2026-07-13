@@ -41,14 +41,14 @@ struct DiveGateCard: View {
             }
 
             Text("More on \(placeName) is one tap away. Lore+ opens every dossier, "
-                 + "as many as the day holds, plus tours, offline packs, and audio.")
+                 + "as many as the day holds, plus curated walking tours and audio.")
                 .font(LoreType.body)
                 .foregroundStyle(LoreColor.bone)
                 .fixedSize(horizontal: false, vertical: true)
 
             UnlockButton(
                 title: "Keep reading with Lore+",
-                subtitle: "7 days free, then $4.99/mo",
+                subtitle: "7 days free, then $5.99/mo",
                 action: onUnlock
             )
 
@@ -81,7 +81,7 @@ struct DiveGateCard: View {
         .accessibilityLabel(
             "You've read your three free deep dives today. "
             + "More on \(placeName) is available with Lore plus. "
-            + "Unlock for 7 days free, then $4.99 a month."
+            + "Unlock for 7 days free, then $5.99 a month."
         )
     }
 }

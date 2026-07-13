@@ -64,6 +64,9 @@ final class NarrationService {
     /// hijacking other audio harder than it needs to.
     func speak(_ place: Place, register: String) {
         offered = nil
+        // Cancel any in-flight hook so a new lock speaks now, not queued behind
+        // the old one (AVSpeechSynthesizer enqueues by default).
+        if synthesizer.isSpeaking { synthesizer.stopSpeaking(at: .immediate) }
         configureSession()
         let utterance = AVSpeechUtterance(string: Self.hookText(for: place, register: register))
         utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 0.96
@@ -84,16 +87,24 @@ final class NarrationService {
         }
         isSpeaking = false
         offered = nil
+        deactivateSession()
     }
 
     fileprivate func markStopped() {
         isSpeaking = false
+        deactivateSession()
     }
 
     private func configureSession() {
         let session = AVAudioSession.sharedInstance()
         try? session.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers, .mixWithOthers])
         try? session.setActive(true, options: [])
+    }
+
+    /// Un-duck other apps once narration ends. A `.duckOthers` session must be
+    /// explicitly deactivated or the user's music/podcast stays quiet forever.
+    private func deactivateSession() {
+        try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
     }
 }
 

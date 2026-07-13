@@ -4,7 +4,7 @@ import Foundation
 /// via PostgREST resource embedding (`select=*,tour_stop(*)`).
 ///
 /// Live columns: `id`, `slug`, `title`, `city`, `emoji`, `blurb`,
-/// `duration_min`, `distance_km`.
+/// `duration_min`, `distance_km`, `is_premium`.
 struct Tour: Codable, Identifiable, Hashable {
     let id: String
     let slug: String
@@ -14,6 +14,9 @@ struct Tour: Codable, Identifiable, Hashable {
     let blurb: String?
     let durationMin: Int?
     let distanceKm: Double?
+    /// Whether this is a Lore+ curated walk (gated for free users). The
+    /// generated "1 Hour In" walk is always free.
+    let isPremium: Bool
     /// Embedded stops, present when fetched with `select=*,tour_stop(*)`.
     let stops: [TourStop]
 
@@ -21,6 +24,7 @@ struct Tour: Codable, Identifiable, Hashable {
         case id, slug, title, city, emoji, blurb
         case durationMin = "duration_min"
         case distanceKm = "distance_km"
+        case isPremium = "is_premium"
         case stops = "tour_stop"
     }
 
@@ -29,7 +33,7 @@ struct Tour: Codable, Identifiable, Hashable {
     init(
         id: String, slug: String, title: String, city: String,
         emoji: String?, blurb: String?, durationMin: Int?, distanceKm: Double?,
-        stops: [TourStop]
+        isPremium: Bool = false, stops: [TourStop]
     ) {
         self.id = id
         self.slug = slug
@@ -39,6 +43,7 @@ struct Tour: Codable, Identifiable, Hashable {
         self.blurb = blurb
         self.durationMin = durationMin
         self.distanceKm = distanceKm
+        self.isPremium = isPremium
         self.stops = stops
     }
 
@@ -52,6 +57,7 @@ struct Tour: Codable, Identifiable, Hashable {
         blurb = try container.decodeIfPresent(String.self, forKey: .blurb)
         durationMin = try container.decodeIfPresent(Int.self, forKey: .durationMin)
         distanceKm = try container.decodeIfPresent(Double.self, forKey: .distanceKm)
+        isPremium = try container.decodeIfPresent(Bool.self, forKey: .isPremium) ?? false
         let embedded = try container.decodeIfPresent([TourStop].self, forKey: .stops) ?? []
         stops = embedded.sorted { $0.seq < $1.seq }
     }

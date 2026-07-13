@@ -7,8 +7,8 @@ import Observation
 /// background so the camera/world recedes, a brass-sheen hero, the honest
 /// free-vs-plus table, and the monthly / annual choice with the 7-day trial.
 ///
-/// Prices are locked in docs/00-DECISIONS.md §7: **$4.99/mo, $29.99/yr, 7-day
-/// free trial.** The purchase runs through **StoreKit 2** today (the real client
+/// Prices are locked in docs/00-DECISIONS.md §7: **$5.99/mo, $34.99/yr, $99.99
+/// lifetime, 7-day free trial.** The purchase runs through **StoreKit 2** today (the real client
 /// path, `StoreKitService`); RevenueCat remains the planned server-side truth
 /// and lands at P3 (docs/16-APPLE-TOOLKITS.md §1, docs/00 §2). Localized prices
 /// come from the loaded `Product`s when available, falling back to the hardcoded
@@ -42,10 +42,16 @@ struct PaywallView: View {
             ScrollView {
                 VStack(spacing: 24) {
                     hero
-                    planPicker
-                    featureTable
+                    // A current member sees only the acknowledgement, never the
+                    // plan picker / feature table / trial fine print.
+                    if !entitlements.isPlus {
+                        planPicker
+                        featureTable
+                    }
                     purchaseButton
-                    finePrint
+                    if !entitlements.isPlus {
+                        finePrint
+                    }
                     legalLinks
                 }
                 .padding(20)
@@ -302,20 +308,17 @@ enum PaywallContext {
     case fourthDive
     case tours
     case audio
-    case offline
 
     var subhead: String {
         switch self {
         case .general:
-            return "Unlimited deep dives, curated walks, offline cities, and audio narration."
+            return "Unlimited deep dives, curated walking tours, and audio narration."
         case .fourthDive:
             return "You've read your three free dives today. Lore+ opens every dossier, all day, every day."
         case .tours:
-            return "Curated walking tours, plus unlimited dives, offline cities, and audio."
+            return "Curated walking tours, plus unlimited dives and audio narration."
         case .audio:
-            return "Let the docent read to you, plus unlimited dives, tours, and offline cities."
-        case .offline:
-            return "Download whole cities for the trip, plus unlimited dives, tours, and audio."
+            return "Let the docent read to you, plus unlimited dives and curated walking tours."
         }
     }
 }
@@ -395,15 +398,15 @@ struct FeatureComparison: Identifiable {
         case text(String)
     }
 
-    /// The honest table, straight from docs/00 §7.
+    /// The honest table: only features that actually ship and are actually
+    /// gated. Offline city packs and early-access cities were removed because
+    /// they don't exist yet, selling them would be an App Review 3.1.2 lie.
     static let all: [FeatureComparison] = [
         .init(label: "Unlimited scanning", free: .yes, plus: .yes),
         .init(label: "Layer-1 story cards", free: .yes, plus: .yes),
         .init(label: "Deep dives", free: .text("3/day"), plus: .yes),
         .init(label: "Curated walking tours", free: .no, plus: .yes),
-        .init(label: "Offline city packs", free: .no, plus: .yes),
         .init(label: "Audio narration", free: .no, plus: .yes),
-        .init(label: "Early-access cities", free: .no, plus: .yes),
         .init(label: "Contribute & earn badges", free: .yes, plus: .yes),
     ]
 }
@@ -506,7 +509,7 @@ final class PaywallModel {
         }
 
         /// The suffix appended to a localized `displayPrice` so the row reads
-        /// "$4.99 / month" even when the number comes from StoreKit.
+        /// "$5.99 / month" even when the number comes from StoreKit.
         var periodSuffix: String {
             switch self {
             case .monthly: return " / month"

@@ -13,6 +13,9 @@ struct SignInView: View {
 
     @State private var email = ""
     @State private var password = ""
+    @State private var mode: Mode = .signIn
+
+    private enum Mode { case signIn, signUp }
 
     var body: some View {
         NavigationStack {
@@ -52,7 +55,11 @@ struct SignInView: View {
 
                     Button {
                         Task {
-                            await auth.signIn(email: email, password: password)
+                            if mode == .signUp {
+                                await auth.signUp(email: email, password: password)
+                            } else {
+                                await auth.signIn(email: email, password: password)
+                            }
                             if auth.isSignedIn { dismiss() }
                         }
                     } label: {
@@ -60,7 +67,7 @@ struct SignInView: View {
                             if auth.isBusy {
                                 ProgressView()
                             } else {
-                                Text("Sign in")
+                                Text(mode == .signUp ? "Create account" : "Sign in")
                                     .font(LoreType.button)
                             }
                         }
@@ -70,6 +77,26 @@ struct SignInView: View {
                     .background(LoreColor.ink, in: Capsule())
                     .foregroundStyle(LoreColor.bone)
                     .disabled(email.isEmpty || password.isEmpty || auth.isBusy)
+
+                    // Switch between sign in and account creation; reset link
+                    // only in sign-in mode.
+                    HStack {
+                        Button(mode == .signUp ? "Have an account? Sign in" : "New here? Create an account") {
+                            mode = (mode == .signUp) ? .signIn : .signUp
+                            auth.lastError = nil
+                        }
+                        .font(LoreType.caption)
+                        .foregroundStyle(LoreColor.brass700)
+                        Spacer()
+                        if mode == .signIn {
+                            Button("Forgot password?") {
+                                Task { await auth.sendPasswordReset(email: email) }
+                            }
+                            .font(LoreType.caption)
+                            .foregroundStyle(LoreColor.ink600)
+                            .disabled(email.isEmpty || auth.isBusy)
+                        }
+                    }
 
                     Text(
                         "Reading never requires an account, browsing, the map, "
@@ -82,7 +109,7 @@ struct SignInView: View {
                 .padding(16)
             }
             .background(LoreColor.bone100)
-            .navigationTitle("Sign in")
+            .navigationTitle(mode == .signUp ? "Create account" : "Sign in")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
