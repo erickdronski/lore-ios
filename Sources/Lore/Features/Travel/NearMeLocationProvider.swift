@@ -32,11 +32,13 @@ final class NearMeLocationProvider: NSObject, CLLocationManagerDelegate {
     override init() {
         super.init()
         manager.delegate = self
-        // Hundred-meter accuracy is plenty to rank a near-you shelf and is
-        // far cheaper than the scanner's best-accuracy fix.
-        manager.desiredAccuracy = kCLLocationAccuracyHundredMeters
-        // Only re-rank when the user has actually moved a block.
-        manager.distanceFilter = 25
+        // The shelf shows literal distance labels ("60 m away"), which users
+        // read as a promise, so this asks for a genuinely accurate fix
+        // (ten-meter class). The old hundred-meter fix could put a place 100 m
+        // off its label, the exact "that's not 60 m away" complaint.
+        manager.desiredAccuracy = kCLLocationAccuracyNearestTenMeters
+        // Update the labels live as the user walks (every ~10 m), not per block.
+        manager.distanceFilter = 10
     }
 
     /// Request permission (if needed) and begin updates. Safe to call on the
@@ -67,10 +69,18 @@ final class NearMeLocationProvider: NSObject, CLLocationManagerDelegate {
         _ manager: CLLocationManager,
         didUpdateLocations locations: [CLLocation]
     ) {
-        // Keep the most recent, reasonably-accurate fix.
-        if let latest = locations.last, latest.horizontalAccuracy >= 0 {
-            location = latest
-        }
+        guard let latest = locations.last else { return }
+        // Reject any fix that would make the distance labels lie:
+        //  - invalid or coarse accuracy (a fix worse than 65 m can't honestly
+        //    back a "60 m away" label), and
+        //  - a stale cached fix delivered on start (older than 30 s), which no
+        //    longer reflects where the user is standing.
+        // Better to keep showing "finding your block" than a wrong distance.
+        guard latest.horizontalAccuracy >= 0,
+              latest.horizontalAccuracy <= 65,
+              abs(latest.timestamp.timeIntervalSinceNow) <= 30
+        else { return }
+        location = latest
     }
 
     func locationManager(
