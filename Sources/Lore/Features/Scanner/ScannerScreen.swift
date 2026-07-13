@@ -315,43 +315,25 @@ struct ScannerScreen: View {
         .padding(.bottom, 8)
     }
 
-    // MARK: Bottom bar, compass + haunted toggle + mode
+    // MARK: Bottom bar, compass + shutter + mode
 
     private var bottomBar: some View {
-        HStack(spacing: 8) {
-            CompassRing(headingDegrees: model.pose.headingDegrees)
-            Spacer()
+        ZStack {
+            // The shutter sits dead-center of the bar (coarse mode only; the
+            // precise-mode ARSession owns the frame). Centered via a ZStack so
+            // the flanking controls can never shift it off-center.
             if !model.preciseMode {
                 shutterButton
             }
-            Spacer()
-            if model.canLockOn || model.preciseMode {
-                lockOnToggle
-            }
-            if model.hasHauntedNearby {
-                Button {
-                    Haptics.play(.chipTap)
-                    model.toggleHaunted()
-                } label: {
-                    HStack(spacing: 4) {
-                        Text("👻").font(.system(size: 13))
-                        Text(model.hauntedOnly ? "Spooky on" : "Spooky nearby")
-                            .font(LoreType.button)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.8)
-                    }
-                    .foregroundStyle(LoreColor.bone)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(
-                        model.hauntedOnly ? LoreColor.scrimSky : LoreColor.scrimFacade,
-                        in: Capsule()
-                    )
-                    .overlay(
-                        Capsule().strokeBorder(LoreColor.amber.opacity(0.5), lineWidth: 1)
-                    )
+            HStack {
+                CompassRing(headingDegrees: model.pose.headingDegrees)
+                Spacer()
+                if model.canLockOn || model.preciseMode {
+                    lockOnToggle
+                } else {
+                    // Balance the compass so the row reads symmetric.
+                    Color.clear.frame(width: 52, height: 52)
                 }
-                .buttonStyle(.plain)
             }
         }
         .padding(.horizontal, 16)

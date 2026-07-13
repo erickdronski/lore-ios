@@ -66,12 +66,20 @@ struct TravelMapControls: View {
         .padding(.top, 6)
         .padding(.bottom, 10)
         .background(
-            LinearGradient(
-                colors: [LoreColor.ink900.opacity(0), LoreColor.ink900.opacity(collapsed ? 0.6 : 0.92)],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea(edges: .bottom)
+            // The ink fade only exists to keep the shelf text legible over the
+            // map. When collapsed there is nothing to protect, so it disappears
+            // entirely, leaving just the floating "Around you" pill over a clean
+            // map (no lingering grey haze).
+            Group {
+                if !collapsed {
+                    LinearGradient(
+                        colors: [LoreColor.ink900.opacity(0), LoreColor.ink900.opacity(0.92)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .ignoresSafeArea(edges: .bottom)
+                }
+            }
         )
         .gesture(collapseDrag)
         .onAppear { filters.syncCategories(from: places) }

@@ -184,7 +184,7 @@ struct ProfileScreen: View {
                         Text(entitlements.isTrialing ? "Lore+ (trial)" : "Lore+ member")
                             .font(LoreType.body)
                             .foregroundStyle(LoreColor.ink)
-                        Text("Unlimited dives, every tour, offline cities, audio")
+                        Text("Unlimited dives, every tour, audio narration")
                             .font(LoreType.caption)
                             .foregroundStyle(LoreColor.ink600)
                     }
@@ -202,7 +202,7 @@ struct ProfileScreen: View {
                             Text("Unlock Lore+")
                                 .font(LoreType.body)
                                 .foregroundStyle(LoreColor.brass700)
-                            Text("Unlimited dives, every tour, offline cities, audio")
+                            Text("Unlimited dives, every tour, audio narration")
                                 .font(LoreType.caption)
                                 .foregroundStyle(LoreColor.ink600)
                         }

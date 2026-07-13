@@ -19,6 +19,7 @@ struct SettingsView: View {
     /// `user_prefs.hidden_kinds` and re-filters the map + nearby lists live.
     @Environment(MapFilterStore.self) private var filters
     @Environment(\.openURL) private var openURL
+    @Environment(\.requestReview) private var requestReview
 
     /// The master haptics switch, read by `Haptics.play` via the same key.
     @AppStorage(Haptics.enabledDefaultsKey) private var hapticsEnabled = true
@@ -36,6 +37,7 @@ struct SettingsView: View {
             languageSection
             permissionsSection
             subscriptionSection
+            aboutLegalSection
         }
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
@@ -212,6 +214,40 @@ struct SettingsView: View {
         restoreNote = ok
             ? "Purchases restored."
             : "Nothing to restore on this Apple ID."
+    }
+
+    // MARK: About + legal
+
+    /// Policies, support, a rate prompt, and the data attribution the licenses
+    /// require (OpenStreetMap ODbL + Wikipedia CC BY-SA). The links open the
+    /// live lore-web legal pages, the same ones the paywall points to.
+    private var aboutLegalSection: some View {
+        Section {
+            linkRow("Terms of Use", icon: "doc.text", urlString: "https://lore-web-liart.vercel.app/terms")
+            linkRow("Privacy Policy", icon: "hand.raised", urlString: "https://lore-web-liart.vercel.app/privacy")
+            linkRow("Support", icon: "questionmark.circle", urlString: "https://lore-web-liart.vercel.app/support")
+            Button {
+                requestReview()
+            } label: {
+                settingsRow("Rate Lore", icon: "star", tint: LoreColor.ink)
+            }
+            .buttonStyle(.plain)
+        } header: {
+            Text("About Lore")
+        } footer: {
+            Text("Place data © OpenStreetMap contributors (ODbL). Stories draw on Wikipedia (CC BY-SA) and public-domain sources; map and imagery via Apple Maps. © 2026 Lore.")
+                .font(LoreType.caption)
+                .foregroundStyle(LoreColor.ink600)
+        }
+    }
+
+    private func linkRow(_ label: String, icon: String, urlString: String) -> some View {
+        Button {
+            if let url = URL(string: urlString) { openURL(url) }
+        } label: {
+            settingsRow(label, icon: icon, tint: LoreColor.ink)
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: Row

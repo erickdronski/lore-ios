@@ -175,7 +175,10 @@ struct NearMeCard: View {
                         .foregroundStyle(LoreColor.bone)
                         .lineLimit(2)
                         .multilineTextAlignment(.leading)
-                        .fixedSize(horizontal: false, vertical: true)
+                        // Reserve two lines always, so a one- or two-line name
+                        // leaves the distance + toggle at the same position on
+                        // every card (the tiles read as one uniform row).
+                        .frame(height: 46, alignment: .topLeading)
 
                     Label(ranked.distanceLabel, systemImage: "figure.walk")
                         .font(LoreType.caption)
@@ -192,9 +195,9 @@ struct NearMeCard: View {
         }
         .padding(14)
         // Fixed height so every card in the shelf is uniform regardless of a
-        // one- or two-line name (TestFlight feedback: "tiles are different
-        // sizes, make them uniform"). Generous so nothing clips.
-        .frame(width: 200, height: 188, alignment: .topLeading)
+        // one- or two-line name. Sized to fit the worst case (two-line name +
+        // 44pt toggle) so nothing ever clips.
+        .frame(width: 200, height: 208, alignment: .topLeading)
         .background(RoundedRectangle(cornerRadius: 18).fill(LoreColor.ink800))
         .overlay(
             RoundedRectangle(cornerRadius: 18)
