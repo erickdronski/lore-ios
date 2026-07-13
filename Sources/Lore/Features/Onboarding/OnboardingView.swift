@@ -93,7 +93,14 @@ private struct ArrivalStep: View {
                     .foregroundStyle(LoreColor.bone.opacity(0.8))
                     .fixedSize(horizontal: false, vertical: true)
 
-                Spacer(minLength: 20)
+                Spacer(minLength: 12)
+
+                // A SwiftUI preview of the core gesture fills the arrival band
+                // so the first screen shows the product, not just words.
+                ArrivalHeroMark()
+                    .frame(maxWidth: .infinity)
+
+                Spacer(minLength: 12)
             }
             .opacity(appeared ? 1 : 0)
             .offset(y: appeared ? 0 : 16)
