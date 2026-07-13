@@ -54,8 +54,11 @@ struct Achievement: Codable, Identifiable, Hashable {
     }
 
     /// Badge tiers, ordered, `Comparable` so UIs can sort/rank by prestige.
+    /// `legend` is the DB's top tier (the wall's Amber beacon finish); it must
+    /// be modeled here or a "legend" row decodes to `.bronze` and loses its
+    /// prestige styling. `platinum` is kept for forward-compat.
     enum Tier: String, Codable, Hashable, CaseIterable, Comparable {
-        case bronze, silver, gold, platinum
+        case bronze, silver, gold, legend, platinum
 
         /// Forward-compatible: unknown tiers fall back to `.bronze`.
         init(from decoder: Decoder) throws {
@@ -68,7 +71,8 @@ struct Achievement: Codable, Identifiable, Hashable {
             case .bronze: return 0
             case .silver: return 1
             case .gold: return 2
-            case .platinum: return 3
+            case .legend: return 3
+            case .platinum: return 4
             }
         }
 
@@ -129,6 +133,41 @@ struct Achievement: Codable, Identifiable, Hashable {
         case "weekend-wanderer": return "calendar"
         case "completionist": return "checkmark.seal.fill"
         case "first-to-chronicle": return "square.and.pencil"
+        // Expansion badges (2026-07): distinct symbols for the new slugs; the
+        // rest fall through to the category default below.
+        case "old-soul": return "hourglass"
+        case "frequent-flyer": return "airplane.departure"
+        case "continental": return "globe"
+        case "world-atlas": return "map.fill"
+        case "border-crosser": return "signpost.right.fill"
+        case "five-flags": return "flag.2.crossed.fill"
+        case "citizen-of-the-world": return "globe.americas.fill"
+        case "mind-the-gap": return "tram.fill"
+        case "city-of-angels": return "sun.max.fill"
+        case "bay-native": return "cablecar.fill"
+        case "emerald-local": return "cloud.rain.fill"
+        case "magic-city": return "sun.haze.fill"
+        case "on-the-mall": return "building.columns.fill"
+        case "all-roads": return "building.columns.fill"
+        case "monument-seeker": return "mappin.and.ellipse"
+        case "neighborhood-nomad": return "house.fill"
+        case "market-hopper": return "basket.fill"
+        case "grid-tracer": return "bolt.fill"
+        case "wall-reader": return "paintbrush.fill"
+        case "pilgrim": return "hands.and.sparkles.fill"
+        case "on-the-waterfront": return "ferry.fill"
+        case "riverside": return "water.waves"
+        case "origins": return "scroll.fill"
+        case "landmark-lover": return "mappin.circle.fill"
+        case "room-with-a-view": return "binoculars.fill"
+        case "by-royal-appointment": return "crown.fill"
+        case "ancient-world": return "building.columns.fill"
+        case "baroque-and-roll": return "music.note"
+        case "green-retreat": return "leaf.circle.fill"
+        case "heritage-keeper": return "building.columns.circle.fill"
+        case "loremaster": return "books.vertical.fill"
+        case "week-strong": return "calendar"
+        case "devoted": return "flame.circle.fill"
         default:
             switch category {
             case "collector": return "square.stack.3d.up.fill"
