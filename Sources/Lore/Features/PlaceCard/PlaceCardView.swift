@@ -30,12 +30,6 @@ struct PlaceCardView: View {
     @State private var dive: Dive?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    /// The shared-element morph namespace (LUXURY-MOTION §6): the medallion + the
-    /// card surface morph between the Layer-1 card and the full dossier.
-    @Namespace private var morph
-
-    /// One shared id per place so the medallion morphs across the two headers.
-    private var medallionID: String { "medallion-\(place.id)" }
 
     var body: some View {
         ZStack {
@@ -47,8 +41,11 @@ struct PlaceCardView: View {
                 .scaleEffect(cardRestScale)
                 .allowsHitTesting(!showDive)
 
-            // The dossier, grown from the card. Same namespace ⇒ the medallion
-            // morphs; the whole panel springs up on `spring.smooth`.
+            // The dossier springs up on `spring.smooth`. (No shared-element
+            // medallion morph: pinning a matchedGeometryEffect disc across a
+            // scrolling dossier left the emoji floating over the narrative + the
+            // Read more button. The dossier medallion now lives in its own header
+            // and scrolls with the content.)
             if showDive {
                 dossier
                     .transition(dossierTransition)
@@ -197,9 +194,7 @@ struct PlaceCardView: View {
             // geometry to hand off and the dossier's `matchedGeometryEffect`
             // receiver would float over the narrative. Nil namespace = the
             // medallion just appears in its correct header slot.
-            DiveView(place: place,
-                     morphNamespace: autoDive ? nil : morph,
-                     medallionID: medallionID)
+            DiveView(place: place)
 
             HStack {
                 // Dismiss affordance, springs the dossier back down into the card.
@@ -253,11 +248,8 @@ struct PlaceCardView: View {
 
     private var header: some View {
         HStack(alignment: .center, spacing: 12) {
-            // The morph *source* medallion, carries the shared id so it becomes
-            // the dossier header disc. Sized to the Layer-1 card's 34pt emoji.
             Text(place.displayEmoji)
                 .font(.system(size: 34))
-                .matchedGeometryEffect(id: medallionID, in: morph)
             VStack(alignment: .leading, spacing: 4) {
                 Text(place.name)
                     .font(LoreType.displayL)

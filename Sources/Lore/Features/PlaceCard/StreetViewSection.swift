@@ -13,10 +13,18 @@ import SwiftUI
 struct StreetViewSection: View {
     let coordinate: CLLocationCoordinate2D
 
+    @Environment(\.openURL) private var openURL
     @State private var image: UIImage?
     @State private var phase: Phase = .loading
 
     private enum Phase { case loading, loaded, hidden }
+
+    /// Opens the full interactive Google Street View at this spot so the reader
+    /// can look around themselves (and reach it even when our static preview
+    /// framing isn't perfect for a tall facade).
+    private var streetViewURL: URL? {
+        URL(string: "https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=\(coordinate.latitude),\(coordinate.longitude)")
+    }
 
     var body: some View {
         content
@@ -40,17 +48,36 @@ struct StreetViewSection: View {
             if let image {
                 VStack(alignment: .leading, spacing: 12) {
                     Text(L10n.t("dossier.streetView")).font(LoreType.displayM).foregroundStyle(LoreColor.bone)
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFill()
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 220)
-                        .clipShape(RoundedRectangle(cornerRadius: 16))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 16)
-                                .strokeBorder(LoreColor.brass.opacity(0.3), lineWidth: 1)
-                        )
-                    Text("Looking at it from the street.")
+                    Button {
+                        if let url = streetViewURL { openURL(url) }
+                    } label: {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 220)
+                            .clipShape(RoundedRectangle(cornerRadius: 16))
+                            .overlay(alignment: .bottomTrailing) {
+                                // A clear "this opens Street View" affordance.
+                                HStack(spacing: 5) {
+                                    Image(systemName: "figure.walk")
+                                    Text("Explore")
+                                        .font(LoreType.button)
+                                }
+                                .foregroundStyle(LoreColor.ink)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 7)
+                                .background(.ultraThinMaterial, in: Capsule())
+                                .padding(12)
+                            }
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 16)
+                                    .strokeBorder(LoreColor.brass.opacity(0.3), lineWidth: 1)
+                            )
+                    }
+                    .buttonStyle(.pressable)
+                    .accessibilityLabel("Open in Street View")
+                    Text("Tap to look around in Street View.")
                         .font(LoreType.caption)
                         .foregroundStyle(LoreColor.ink600)
                 }

@@ -423,6 +423,12 @@ struct DiveGallery: View {
                     BlurUpAsyncImage(url: imageURL)
                         .frame(height: 200)
                         .frame(maxWidth: .infinity)
+                        // A light backing so a dark or transparent Wikipedia
+                        // image (some pages return a dark logo, not a photo)
+                        // stays legible on the Ink dossier instead of vanishing.
+                        // Full-bleed photos cover it; only letterboxed/logo art
+                        // shows the frame.
+                        .background(LoreColor.bone)
                         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                         .loreElevation(.elev1)
                         .accessibilityLabel(Text("Photo of \(wikipediaTitle)"))

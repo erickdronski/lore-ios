@@ -139,6 +139,11 @@ struct ProfileScreen: View {
                     Text("@\(profile.handle)")
                         .font(LoreType.caption)
                         .foregroundStyle(LoreColor.ink600)
+                    if let email = auth.session?.user.email, !email.isEmpty {
+                        Text(email)
+                            .font(LoreType.caption)
+                            .foregroundStyle(LoreColor.ink600)
+                    }
                 }
                 Spacer()
                 TrustBadge(tier: profile.trustTier)

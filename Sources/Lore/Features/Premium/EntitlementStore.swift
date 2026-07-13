@@ -64,10 +64,24 @@ final class EntitlementStore {
     /// belt-and-suspenders so a returning subscriber isn't gated during an RC
     /// outage or before the first network round-trip.
     var isPlus: Bool {
+        #if DEBUG
+        // Developer override: unlock every Lore+ surface for testing without a
+        // purchase. Set by the LORE_DEV_PLUS launch env or the DEBUG-only
+        // Settings toggle. Compiled out of Release entirely, never ships.
+        if EntitlementStore.devForcePlus { return true }
+        #endif
         let server = entitlement?.isActive ?? false
         let onDevice = storeKit?.hasActiveEntitlement ?? false
         return server || onDevice
     }
+
+    #if DEBUG
+    /// Debug-only Lore+ override (env `LORE_DEV_PLUS=1` or UserDefaults toggle).
+    static var devForcePlus: Bool {
+        ProcessInfo.processInfo.environment["LORE_DEV_PLUS"] == "1"
+            || UserDefaults.standard.bool(forKey: "lore.dev.forcePlus")
+    }
+    #endif
 
     /// True specifically during the 7-day free trial, lets surfaces show
     /// "Trial · 4 days left" style affordances distinct from a paid member.

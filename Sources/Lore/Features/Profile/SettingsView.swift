@@ -24,6 +24,11 @@ struct SettingsView: View {
     /// The master haptics switch, read by `Haptics.play` via the same key.
     @AppStorage(Haptics.enabledDefaultsKey) private var hapticsEnabled = true
 
+    #if DEBUG
+    /// Debug-only Lore+ override, read by `EntitlementStore.isPlus`.
+    @AppStorage("lore.dev.forcePlus") private var devForcePlus = false
+    #endif
+
     @State private var restoring = false
     @State private var restoreNote: String?
 
@@ -38,6 +43,9 @@ struct SettingsView: View {
             permissionsSection
             subscriptionSection
             aboutLegalSection
+            #if DEBUG
+            developerSection
+            #endif
         }
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
@@ -249,6 +257,27 @@ struct SettingsView: View {
         }
         .buttonStyle(.plain)
     }
+
+    // MARK: Developer (DEBUG only)
+
+    #if DEBUG
+    private var developerSection: some View {
+        Section {
+            Toggle(isOn: $devForcePlus) {
+                Label("Force Lore+ (dev)", systemImage: "hammer")
+                    .font(LoreType.body)
+                    .foregroundStyle(LoreColor.ink)
+            }
+            .tint(LoreColor.brass700)
+        } header: {
+            Text("Developer")
+        } footer: {
+            Text("Debug builds only. Unlocks every Lore+ surface for testing without a purchase (re-enter a screen to see it apply).")
+                .font(LoreType.caption)
+                .foregroundStyle(LoreColor.ink600)
+        }
+    }
+    #endif
 
     // MARK: Row
 
