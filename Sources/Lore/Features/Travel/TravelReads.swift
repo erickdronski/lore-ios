@@ -111,7 +111,7 @@ enum TravelReads {
             resolvingAgainstBaseURL: false
         )
         components?.queryItems = [
-            URLQueryItem(name: "select", value: "place_id,visited_at,note,place(name,emoji,city,kind)"),
+            URLQueryItem(name: "select", value: "place_id,visited_at,note,photos,place(name,emoji,city,kind)"),
             URLQueryItem(name: "order", value: "visited_at.desc"),
         ]
         guard let url = components?.url else { throw TravelError.badURL }
@@ -155,6 +155,75 @@ enum TravelReads {
 
         let (data, response) = try await session.data(for: request)
         try ensureOK(response, data: data)
+    }
+
+    /// Save the user's photo object-paths on a visited place.
+    /// `PATCH /rest/v1/visit?place_id=eq.{placeID}` `{ "photos": [...] }`
+    static func updateVisitPhotos(
+        placeID: String,
+        photos: [String],
+        accessToken: String,
+        session: URLSession = .shared
+    ) async throws {
+        var components = URLComponents(url: Config.restURL.appending(path: "visit"), resolvingAgainstBaseURL: false)
+        components?.queryItems = [URLQueryItem(name: "place_id", value: "eq.\(placeID)")]
+        guard let url = components?.url else { throw TravelError.badURL }
+        var request = URLRequest(url: url)
+        request.httpMethod = "PATCH"
+        apply(&request, accessToken: accessToken)
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("return=minimal", forHTTPHeaderField: "Prefer")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: ["photos": photos])
+        let (data, response) = try await session.data(for: request)
+        try ensureOK(response, data: data)
+    }
+
+    // MARK: - Journal photo storage (private `journal-photos` bucket)
+
+    /// Upload image bytes to the user's own folder and return the object PATH
+    /// (`{userID}/{placeID}/{uuid}.jpg`). RLS lets a user write only under their
+    /// own uid folder. `POST /storage/v1/object/journal-photos/{path}`
+    static func uploadJournalPhoto(
+        data imageData: Data,
+        userID: String,
+        placeID: String,
+        accessToken: String,
+        session: URLSession = .shared
+    ) async throws -> String {
+        let path = "\(userID)/\(placeID)/\(UUID().uuidString).jpg"
+        let url = Config.storageURL.appending(path: "object/journal-photos/\(path)")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        apply(&request, accessToken: accessToken)
+        request.setValue("image/jpeg", forHTTPHeaderField: "Content-Type")
+        request.setValue("3600", forHTTPHeaderField: "Cache-Control")
+        request.httpBody = imageData
+        let (data, response) = try await session.data(for: request)
+        try ensureOK(response, data: data)
+        return path
+    }
+
+    /// A short-lived signed URL to display a private journal photo.
+    /// `POST /storage/v1/object/sign/journal-photos/{path}` `{ "expiresIn": 3600 }`
+    static func signedJournalPhotoURL(
+        path: String,
+        accessToken: String,
+        session: URLSession = .shared
+    ) async throws -> URL {
+        let url = Config.storageURL.appending(path: "object/sign/journal-photos/\(path)")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        apply(&request, accessToken: accessToken)
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: ["expiresIn": 3600])
+        let (data, response) = try await session.data(for: request)
+        try ensureOK(response, data: data)
+        struct Signed: Decodable { let signedURL: String }
+        let signed = try JSONDecoder().decode(Signed.self, from: data)
+        // The response is a path relative to the storage base ("/object/sign/...").
+        let relative = signed.signedURL.hasPrefix("/") ? String(signed.signedURL.dropFirst()) : signed.signedURL
+        guard let full = URL(string: Config.storageURL.absoluteString + "/" + relative) else { throw TravelError.badURL }
+        return full
     }
 
     // MARK: - Plumbing

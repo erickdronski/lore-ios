@@ -29,6 +29,9 @@ enum Config {
     /// keeps the Google Maps key server-side.
     static var functionsURL: URL { supabaseURL.appending(path: "functions/v1") }
 
+    /// Storage base (`/storage/v1`), e.g. the private `journal-photos` bucket.
+    static var storageURL: URL { supabaseURL.appending(path: "storage/v1") }
+
     /// The pilot city. Every read surface is filtered by `city` (docs/00 §8:
     /// Chicago seed, Loop / Riverwalk / Museum Campus).
     static let defaultCity = "chicago"

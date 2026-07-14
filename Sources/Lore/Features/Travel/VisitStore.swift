@@ -107,7 +107,11 @@ final class VisitStore {
     func loadHistory() async {
         guard let creds = credentials() else { visitHistory = []; historyLoaded = true; return }
         do {
-            visitHistory = try await TravelReads.visitHistory(accessToken: creds.accessToken)
+            let rows = try await TravelReads.visitHistory(accessToken: creds.accessToken)
+            // One entry per place (a place visited twice shows once, latest
+            // first), which also keeps the ForEach ids unique.
+            var seen = Set<String>()
+            visitHistory = rows.filter { seen.insert($0.placeID).inserted }
             historyLoaded = true
             lastError = nil
         } catch {
@@ -124,6 +128,29 @@ final class VisitStore {
         } catch {
             lastError = "Couldn't save your note."
         }
+    }
+
+    /// Upload a journal photo for a place, append its path, and refresh.
+    func addPhoto(placeID: String, imageData: Data) async {
+        guard let creds = credentials() else { return }
+        do {
+            let path = try await TravelReads.uploadJournalPhoto(
+                data: imageData, userID: creds.userID, placeID: placeID, accessToken: creds.accessToken
+            )
+            let existing = visitHistory.first(where: { $0.placeID == placeID })?.photoPaths ?? []
+            try await TravelReads.updateVisitPhotos(
+                placeID: placeID, photos: existing + [path], accessToken: creds.accessToken
+            )
+            await loadHistory()
+        } catch {
+            lastError = "Couldn't add that photo."
+        }
+    }
+
+    /// A short-lived signed URL to display a private journal photo path.
+    func signedPhotoURL(path: String) async -> URL? {
+        guard let creds = credentials() else { return nil }
+        return try? await TravelReads.signedJournalPhotoURL(path: path, accessToken: creds.accessToken)
     }
 
     // MARK: - Writes

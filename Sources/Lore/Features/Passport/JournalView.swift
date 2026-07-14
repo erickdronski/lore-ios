@@ -1,4 +1,6 @@
+import PhotosUI
 import SwiftUI
+import UIKit
 
 /// One visit row from the server, with the place details and the user's own
 /// note ("their lore"). Decoded from
@@ -7,6 +9,7 @@ struct VisitLogEntry: Decodable, Identifiable {
     let placeID: String
     let visitedAt: String
     let note: String?
+    let photos: [String]?
     let place: EmbeddedPlace?
 
     struct EmbeddedPlace: Decodable {
@@ -17,11 +20,12 @@ struct VisitLogEntry: Decodable, Identifiable {
     }
 
     var id: String { placeID }
+    var photoPaths: [String] { photos ?? [] }
 
     enum CodingKeys: String, CodingKey {
         case placeID = "place_id"
         case visitedAt = "visited_at"
-        case note, place
+        case note, photos, place
     }
 
     var displayName: String { place?.name ?? "A place" }
@@ -128,9 +132,18 @@ struct JournalView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(LoreColor.ink800, in: RoundedRectangle(cornerRadius: 10))
                 } else {
-                    Text("Add your notes")
+                    Text("Add your notes and photos")
                         .font(LoreType.caption)
                         .foregroundStyle(LoreColor.ink600)
+                }
+                if !entry.photoPaths.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(entry.photoPaths, id: \.self) { path in
+                                JournalPhotoThumb(path: path, size: 72)
+                            }
+                        }
+                    }
                 }
             }
             .padding(14)
@@ -141,13 +154,17 @@ struct JournalView: View {
     }
 }
 
-/// The note editor: write "your lore" for a place, save it back to the visit.
+/// The note + photo editor: write "your lore" for a place and attach photos,
+/// saved back to the visit (note via the closure, photos straight to Storage).
 private struct NoteEditorSheet: View {
     let entry: VisitLogEntry
     let onSave: (String) -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(VisitStore.self) private var visits
     @State private var text: String
+    @State private var picked: PhotosPickerItem?
+    @State private var uploading = false
 
     init(entry: VisitLogEntry, onSave: @escaping (String) -> Void) {
         self.entry = entry
@@ -155,34 +172,64 @@ private struct NoteEditorSheet: View {
         _text = State(initialValue: entry.note ?? "")
     }
 
+    /// Live photos for this place from the store, so an upload shows immediately.
+    private var photos: [String] {
+        visits.visitHistory.first(where: { $0.placeID == entry.placeID })?.photoPaths ?? entry.photoPaths
+    }
+
     var body: some View {
         NavigationStack {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 10) {
-                    Text(entry.displayEmoji).font(.system(size: 26))
-                    Text(entry.displayName)
-                        .font(LoreType.display(size: 20, weight: .semibold))
-                        .foregroundStyle(LoreColor.ink)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack(spacing: 10) {
+                        Text(entry.displayEmoji).font(.system(size: 26))
+                        Text(entry.displayName)
+                            .font(LoreType.display(size: 20, weight: .semibold))
+                            .foregroundStyle(LoreColor.ink)
+                    }
+                    Text("Your lore, what you saw, who you were with, what it meant.")
+                        .font(LoreType.caption)
+                        .foregroundStyle(LoreColor.ink600)
+                    TextEditor(text: $text)
+                        .font(LoreType.body)
+                        .scrollContentBackground(.hidden)
+                        .padding(10)
+                        .frame(minHeight: 150)
+                        .background(LoreColor.bone200, in: RoundedRectangle(cornerRadius: 14))
+
+                    HStack {
+                        Text("PHOTOS").font(LoreType.label).tracking(0.6).foregroundStyle(LoreColor.ink600)
+                        Spacer()
+                        PhotosPicker(selection: $picked, matching: .images) {
+                            HStack(spacing: 6) {
+                                if uploading { ProgressView() } else { Image(systemName: "plus") }
+                                Text("Add photo").font(LoreType.button)
+                            }
+                            .foregroundStyle(LoreColor.brass700)
+                        }
+                        .disabled(uploading)
+                    }
+                    if photos.isEmpty {
+                        Text("Add photos of this spot to remember it.")
+                            .font(LoreType.caption).foregroundStyle(LoreColor.ink600)
+                    } else {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 10) {
+                                ForEach(photos, id: \.self) { path in
+                                    JournalPhotoThumb(path: path, size: 96)
+                                }
+                            }
+                        }
+                    }
+                    Spacer(minLength: 0)
                 }
-                Text("Your lore, what you saw, who you were with, what it meant.")
-                    .font(LoreType.caption)
-                    .foregroundStyle(LoreColor.ink600)
-                TextEditor(text: $text)
-                    .font(LoreType.body)
-                    .scrollContentBackground(.hidden)
-                    .padding(10)
-                    .frame(minHeight: 200)
-                    .background(LoreColor.bone200, in: RoundedRectangle(cornerRadius: 14))
-                Spacer()
+                .padding(16)
             }
-            .padding(16)
             .background(LoreColor.bone100)
-            .navigationTitle("Your notes")
+            .navigationTitle("Your lore")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
+                ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
                         onSave(text.trimmingCharacters(in: .whitespacesAndNewlines))
@@ -190,6 +237,59 @@ private struct NoteEditorSheet: View {
                     }
                 }
             }
+            .onChange(of: picked) { _, item in
+                guard let item else { return }
+                Task {
+                    uploading = true
+                    if let data = try? await item.loadTransferable(type: Data.self),
+                       let jpeg = Self.downscaledJPEG(data) {
+                        await visits.addPhoto(placeID: entry.placeID, imageData: jpeg)
+                    }
+                    picked = nil
+                    uploading = false
+                }
+            }
         }
+    }
+
+    /// Downscale + JPEG-encode the picked image so uploads stay small.
+    static func downscaledJPEG(_ data: Data, maxDimension: CGFloat = 1600, quality: CGFloat = 0.8) -> Data? {
+        guard let image = UIImage(data: data) else { return nil }
+        let scale = min(1, maxDimension / max(image.size.width, image.size.height))
+        let target = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1
+        let rendered = UIGraphicsImageRenderer(size: target, format: format).image { _ in
+            image.draw(in: CGRect(origin: .zero, size: target))
+        }
+        return rendered.jpegData(compressionQuality: quality)
+    }
+}
+
+/// A private journal photo: resolves a short-lived signed URL for its storage
+/// path (RLS-guarded to the owner) and loads it, with a quiet placeholder.
+struct JournalPhotoThumb: View {
+    @Environment(VisitStore.self) private var visits
+    let path: String
+    var size: CGFloat = 72
+    @State private var url: URL?
+
+    var body: some View {
+        Group {
+            if let url {
+                AsyncImage(url: url) { phase in
+                    if case .success(let image) = phase {
+                        image.resizable().scaledToFill()
+                    } else {
+                        LoreColor.ink800
+                    }
+                }
+            } else {
+                LoreColor.ink800
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .task(id: path) { url = await visits.signedPhotoURL(path: path) }
     }
 }
