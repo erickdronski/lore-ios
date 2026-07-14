@@ -165,6 +165,10 @@ struct PlaceCardView: View {
             BlurUpAsyncImage(url: heroURL)
                 .frame(height: 200)
                 .frame(maxWidth: .infinity)
+                // Slow ambient drift on the hero (Reduce-Motion static). A
+                // fully-built effect that rendered nowhere; gives the arrival
+                // card the premium "the photo is alive" feel.
+                .kenBurns()
                 .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 .loreElevation(.elev1)
                 .accessibilityLabel(Text("Photo of \(place.name)"))

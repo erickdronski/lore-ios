@@ -33,6 +33,7 @@ struct DiveView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 header
+                tagRow
 
                 if gated {
                     // The place name (header) stays above the gate, so the
@@ -126,6 +127,19 @@ struct DiveView: View {
             disc.matchedGeometryEffect(id: medallionID, in: morphNamespace, isSource: false)
         } else {
             disc
+        }
+    }
+
+    /// The place's tags as branded chips (LoreTag), the registry-styled subset so
+    /// internal slugs don't clutter the row. Was a fully-built system that
+    /// rendered nowhere; now it gives the dossier a glanceable identity strip.
+    @ViewBuilder
+    private var tagRow: some View {
+        let shown = place.tags.filter { LoreTagStyle.registry[$0] != nil }.prefix(6)
+        if !shown.isEmpty {
+            WrapLayout(spacing: 6) {
+                ForEach(Array(shown), id: \.self) { LoreTag(tag: $0) }
+            }
         }
     }
 
