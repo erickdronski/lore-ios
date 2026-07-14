@@ -10,6 +10,8 @@ struct ToursScreen: View {
     @State private var model = ToursModel()
     /// The generated "1 Hour In" walk, presented in a sheet once routed.
     @State private var generatedTour: Tour?
+    /// Chosen length for the generated walk (30 / 60 / 90 minutes).
+    @State private var oneHourMinutes = 60
     /// Surfaced when the 1-hour walk can't be built (too few stops, or offline).
     @State private var oneHourError: String?
     /// The city whose walk is currently being routed (drives the hero spinner).
@@ -91,13 +93,15 @@ struct ToursScreen: View {
         Section {
             OneHourHero(
                 city: router.selectedCity,
+                minutes: oneHourMinutes,
                 isGenerating: generatingCity == router.selectedCity
             ) {
                 let city = router.selectedCity
+                let minutes = oneHourMinutes
                 generatingCity = city
                 Task {
                     do {
-                        if let tour = try await model.oneHourTour(city: city) {
+                        if let tour = try await model.oneHourTour(city: city, durationMin: minutes) {
                             generatedTour = tour
                         } else {
                             oneHourError = "There aren't enough stops in \(cityLabel(city)) yet for a full walk. Try another city."
@@ -108,6 +112,13 @@ struct ToursScreen: View {
                     generatingCity = nil
                 }
             }
+
+            Picker("Walk length", selection: $oneHourMinutes) {
+                Text("30 min").tag(30)
+                Text("1 hour").tag(60)
+                Text("90 min").tag(90)
+            }
+            .pickerStyle(.segmented)
         } header: {
             HStack(spacing: 10) {
                 Text("Made for you")
@@ -150,11 +161,20 @@ struct ToursScreen: View {
 /// then push the standard tour stepper.
 struct OneHourHero: View {
     let city: String
+    var minutes: Int = 60
     var isGenerating: Bool = false
     let action: () -> Void
 
     private var cityLabel: String {
         city.replacingOccurrences(of: "-", with: " ").capitalized
+    }
+
+    private var titleText: String {
+        switch minutes {
+        case 30: return "30 Minutes In \(cityLabel)"
+        case 90: return "90 Minutes In \(cityLabel)"
+        default: return "1 Hour In \(cityLabel)"
+        }
     }
 
     var body: some View {
@@ -171,10 +191,10 @@ struct OneHourHero: View {
                     }
                 }
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("1 Hour In \(cityLabel)")
+                    Text(titleText)
                         .font(LoreType.display(size: 19, weight: .semibold))
                         .foregroundStyle(LoreColor.ink)
-                    Text(isGenerating ? "Routing your walk…" : "Auto-routed · a perfect hour on foot")
+                    Text(isGenerating ? "Routing your walk…" : "Auto-routed · a perfect walk on foot")
                         .font(LoreType.caption)
                         .foregroundStyle(LoreColor.ink600)
                 }
@@ -265,8 +285,8 @@ final class ToursModel {
     /// the city's places and routes them. Throws on a network failure (so the
     /// caller can distinguish "offline" from "too few stops"); returns nil when
     /// the fetch succeeds but there aren't enough stops to route a walk.
-    func oneHourTour(city: String) async throws -> Tour? {
+    func oneHourTour(city: String, durationMin: Int = 60) async throws -> Tour? {
         let places = try await LoreAPI.shared.places(city: city)
-        return OneHourTour.generate(city: city, places: places, from: nil)
+        return OneHourTour.generate(city: city, places: places, from: nil, durationMin: durationMin)
     }
 }
