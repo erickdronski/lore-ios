@@ -1,14 +1,14 @@
 // Cloud landmark identification for the scanner's opt-in "What is this?" tap.
-// Reuses the SAME Google key as streetview (Vault secret `google_maps_key`;
-// billing already enabled because Street View needs it). Called ONE frame per
-// explicit user tap, only after geospatial + on-device Vision came up empty.
+// Calls Google Cloud Vision LANDMARK_DETECTION with a DEDICATED server-side key
+// (Vault secret `google_vision_key` — the Street View key is iOS-app-restricted
+// and Google blocks a server call with it). Fired ONE frame per explicit user
+// tap, only after geospatial + on-device Vision came up empty.
 // Returns the top landmark (name + confidence + coords), and if it sits on a
 // known Lore place, that place's slug so the app can open the real story.
 // Returns 204 when nothing is recognized — never a fabricated name.
 //
 // DEPLOYED to Supabase project uiuwzymvyrgfyiugqlkp (verify_jwt: false, guarded
-// by the anon key + a frame-size cap). Owner one-time step: enable the Cloud
-// Vision API on the same Google Cloud project as the Street View key.
+// by the anon key + a frame-size cap).
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { encodeBase64 } from "jsr:@std/encoding/base64";
 
@@ -33,7 +33,10 @@ Deno.serve(async (req) => {
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
-  const { data: key } = await supa.rpc("get_app_secret", { secret_name: "google_maps_key" });
+  // Uses a DEDICATED Vision key (google_vision_key), not the Street View key:
+  // that one is restricted to iOS apps and Google blocks a server-side Vision
+  // call with it ("Requests from this iOS client application are blocked").
+  const { data: key } = await supa.rpc("get_app_secret", { secret_name: "google_vision_key" });
   if (!key) return new Response("no key", { status: 500, headers: CORS });
 
   const visionReq = {
