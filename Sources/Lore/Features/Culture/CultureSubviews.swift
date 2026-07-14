@@ -254,33 +254,39 @@ struct LingoFlipCard: View {
                         .font(LoreType.button)
                         .foregroundStyle(LoreColor.amber)
                     if let body = entry.body {
+                        // A teaser that always clears the "More" chip in the
+                        // bottom corner; the full meaning lives in the sheet.
                         Text(body)
                             .font(LoreType.caption)
                             .foregroundStyle(LoreColor.bone)
                             .fixedSize(horizontal: false, vertical: true)
-                            .lineLimit(6)
+                            .lineLimit(4)
                     }
                 }
             }
         }
         .frame(width: 180, height: 150)
-        // A visible expand affordance (long-press also works) so it's obvious
-        // you can read the full entry (TestFlight feedback: "still can't read
-        // more in the slang tiles"). The button sits above the flip so tapping
-        // it opens the detail instead of flipping.
-        .overlay(alignment: .topTrailing) {
+        // An unmistakable "More" chip (long-press also works) so it's obvious
+        // the full entry is a tap away, the old expand glyph read as decoration
+        // (owner: "when I flip these I can't read all the text"). It sits above
+        // the flip so tapping it opens the detail instead of flipping the card.
+        .overlay(alignment: .bottomTrailing) {
             Button {
                 Haptics.play(.chipTap)
                 showExpanded = true
             } label: {
-                Image(systemName: "arrow.up.left.and.arrow.down.right")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(LoreColor.ink900)
-                    .frame(width: 26, height: 26)
-                    .background(LoreColor.amber, in: Circle())
+                HStack(spacing: 3) {
+                    Text("More")
+                    Image(systemName: "chevron.right").font(.system(size: 8, weight: .bold))
+                }
+                .font(LoreType.micro)
+                .foregroundStyle(LoreColor.ink900)
+                .padding(.horizontal, 9)
+                .frame(height: 22)
+                .background(LoreColor.amber, in: Capsule())
             }
             .buttonStyle(.plain)
-            .padding(6)
+            .padding(8)
             .accessibilityLabel("Read the full meaning")
         }
         .onLongPressGesture(minimumDuration: 0.4) {

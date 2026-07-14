@@ -21,6 +21,10 @@ struct TourDetailView: View {
     /// follow-up. One narrator, stopped on stop-change + disappear.
     @State private var narration = NarrationService()
     @State private var currentNarrative: String?
+    /// Camera for the route overview map. Framed to fit every stop once the
+    /// city's places resolve (an explicit region, never `.automatic`, which
+    /// mis-frames a sparse set of pins).
+    @State private var mapCamera: MapCameraPosition = .automatic
 
     /// A premium curated walk the current viewer hasn't unlocked.
     private var isLocked: Bool { tour.isPremium && !entitlements.isPlus }
@@ -43,16 +47,26 @@ struct TourDetailView: View {
                     lockedTourPreview
                 } else {
                     progressRail
+                    // See the whole walk first: every stop laid out in order, the
+                    // current one highlighted. A tour that starts with a map reads
+                    // as a real guided walk, not just a list of write-ups.
+                    routeMap
                     stopCard
                         // The stop card slides+fades to the next stop rather than
                         // hot-swapping its text (LUXURY-MOTION §6 continuity).
                         .id(stopIndex)
                         .transition(stopTransition)
                         .animation(LoreSpring.smooth(reduceMotion: reduceMotion), value: stopIndex)
+                    // A walker's per-stop actions, top to bottom in the order they
+                    // are used: listen hands-free, then walk there, then advance.
                     audioControl
-                    liveActivityControl
                     directionsControl
                     stepperControls
+                    // The Live Activity is a companion, not the "start" button, so
+                    // it sits last with a caption explaining what it does (it used
+                    // to head the screen labelled "Start walking tour", which read
+                    // as broken when nothing changed in-app).
+                    liveActivityControl
                 }
             }
             .padding(16)
@@ -60,7 +74,7 @@ struct TourDetailView: View {
         .background(LoreColor.bone100)
         .navigationTitle(tour.title)
         .navigationBarTitleDisplayMode(.inline)
-        .task { await model.load(city: tour.city); await loadNarrative() }
+        .task { await model.load(city: tour.city); await loadNarrative(); focusRouteMap() }
         // Push each stop change into the Live Activity so the Lock Screen /
         // Dynamic Island track the walk (docs/16 §8). No-op when not running.
         .onChange(of: stopIndex) { _, _ in
@@ -108,34 +122,53 @@ struct TourDetailView: View {
         }
     }
 
-    // MARK: Live Activity
+    // MARK: Live Activity (Lock-Screen companion)
 
-    /// Start / stop the active-tour Live Activity. Only meaningful when the tour
-    /// has stops and the system permits Live Activities.
+    /// Pin the walk to the Lock Screen / Dynamic Island. Deliberately *not* the
+    /// headline "start" of the tour: it drives an Activity that lives OUTSIDE the
+    /// app, so tapping it changes nothing on this screen (and shows nothing at
+    /// all on Simulator, which doesn't render Live Activities). It used to be
+    /// labelled "Start walking tour", which read as broken. Now it names exactly
+    /// what it does, with a caption, and reads as an optional extra.
     @ViewBuilder
     private var liveActivityControl: some View {
         if !tour.stops.isEmpty && liveActivity.areActivitiesEnabled {
-            Button {
-                if liveActivity.isRunning {
-                    liveActivity.end()
-                } else {
-                    startLiveActivity()
+            VStack(alignment: .leading, spacing: 6) {
+                Button {
+                    Haptics.play(.chipTap)
+                    if liveActivity.isRunning {
+                        liveActivity.end()
+                    } else {
+                        startLiveActivity()
+                    }
+                } label: {
+                    Label(
+                        liveActivity.isRunning ? "Pinned to Lock Screen · tap to stop" : "Pin tour to Lock Screen",
+                        systemImage: liveActivity.isRunning ? "checkmark.circle.fill" : "lock.iphone"
+                    )
+                    .font(LoreType.button)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 44)
+                    .background(
+                        liveActivity.isRunning ? LoreColor.brass700 : LoreColor.bone200,
+                        in: Capsule()
+                    )
+                    .foregroundStyle(liveActivity.isRunning ? LoreColor.bone : LoreColor.ink)
+                    .overlay {
+                        if !liveActivity.isRunning {
+                            Capsule().strokeBorder(LoreColor.ink.opacity(0.15), lineWidth: 1)
+                        }
+                    }
                 }
-            } label: {
-                Label(
-                    liveActivity.isRunning ? "End Live Activity" : "Start walking tour",
-                    systemImage: liveActivity.isRunning ? "stop.circle" : "figure.walk.circle.fill"
-                )
-                .font(LoreType.button)
-                .frame(maxWidth: .infinity)
-                .frame(height: 44)
-                .background(
-                    liveActivity.isRunning ? LoreColor.bone200 : LoreColor.brass700,
-                    in: Capsule()
-                )
-                .foregroundStyle(liveActivity.isRunning ? LoreColor.ink : LoreColor.bone)
+                .buttonStyle(.pressable)
+
+                Text(liveActivity.isRunning
+                    ? "Your current stop now shows on the Lock Screen and Dynamic Island as you walk."
+                    : "Optional. Keeps your current stop on the Lock Screen and Dynamic Island so you can glance at it without opening Lore. Shows on a real iPhone, not the Simulator.")
+                    .font(LoreType.micro)
+                    .foregroundStyle(LoreColor.ink600)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .buttonStyle(.pressable)
         }
     }
 
@@ -177,6 +210,86 @@ struct TourDetailView: View {
         mapItem.openInMaps(launchOptions: [
             MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeWalking
         ])
+    }
+
+    // MARK: Route map (TestFlight feedback: "let me see the whole walk")
+
+    /// The tour's stops in order, paired with their resolved place. Empty until
+    /// the city's places load; drives both the overview map and its framing.
+    private var orderedStopPlaces: [(index: Int, place: Place)] {
+        tour.stops.enumerated().compactMap { i, stop in
+            model.place(id: stop.placeID).map { (i, $0) }
+        }
+    }
+
+    /// An overview map of the entire walk: every stop as a numbered pin, the
+    /// current stop swollen + amber, and a dotted line threading them in order.
+    /// Tapping a pin springs the stepper to that stop. The dotted segments show
+    /// stop *order*, not the routed path — Apple Maps draws the real walking
+    /// route from the "Walking directions" button, so this never needs a network
+    /// round-trip and never shows a route it can't stand behind.
+    @ViewBuilder
+    private var routeMap: some View {
+        let stops = orderedStopPlaces
+        if stops.count >= 2 {
+            Map(position: $mapCamera, interactionModes: [.pan, .zoom]) {
+                MapPolyline(coordinates: stops.map(\.place.coordinate))
+                    .stroke(
+                        LoreColor.brass700.opacity(0.55),
+                        style: StrokeStyle(lineWidth: 3, lineCap: .round, dash: [1, 7])
+                    )
+                ForEach(stops, id: \.index) { item in
+                    Annotation(item.place.name, coordinate: item.place.coordinate) {
+                        Button {
+                            withAnimation(LoreSpring.bounce(reduceMotion: reduceMotion)) {
+                                stopIndex = item.index
+                            }
+                        } label: {
+                            routePin(number: item.index + 1, active: item.index == stopIndex)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(Text("Stop \(item.index + 1), \(item.place.name)"))
+                    }
+                }
+            }
+            .mapStyle(.standard(pointsOfInterest: .excludingAll))
+            .frame(height: 190)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .loreElevation(.elev1)
+            .animation(LoreSpring.smooth(reduceMotion: reduceMotion), value: stopIndex)
+        }
+    }
+
+    /// A numbered map pin; the active stop swells to amber so the route reads
+    /// which stop the stepper is on.
+    private func routePin(number: Int, active: Bool) -> some View {
+        Text("\(number)")
+            .font(.system(size: active ? 13 : 11, weight: .bold))
+            .foregroundStyle(active ? LoreColor.ink : LoreColor.bone)
+            .frame(width: active ? 30 : 24, height: active ? 30 : 24)
+            .background(active ? LoreColor.amber : LoreColor.brass700, in: Circle())
+            .overlay(Circle().strokeBorder(LoreColor.bone, lineWidth: 2))
+            .shadow(color: .black.opacity(0.25), radius: active ? 4 : 1, y: 1)
+    }
+
+    /// Frame the overview map to fit every stop once the places resolve. An
+    /// explicit region (never `.automatic`, which mis-frames a sparse pin set).
+    private func focusRouteMap() {
+        let coords = orderedStopPlaces.map(\.place.coordinate)
+        guard coords.count >= 2 else { return }
+        let lats = coords.map(\.latitude)
+        let lngs = coords.map(\.longitude)
+        guard let minLat = lats.min(), let maxLat = lats.max(),
+              let minLng = lngs.min(), let maxLng = lngs.max() else { return }
+        let center = CLLocationCoordinate2D(
+            latitude: (minLat + maxLat) / 2,
+            longitude: (minLng + maxLng) / 2
+        )
+        let span = MKCoordinateSpan(
+            latitudeDelta: max(0.006, (maxLat - minLat) * 1.5),
+            longitudeDelta: max(0.006, (maxLng - minLng) * 1.5)
+        )
+        mapCamera = .region(MKCoordinateRegion(center: center, span: span))
     }
 
     /// Kick off the Live Activity from the current stop.
