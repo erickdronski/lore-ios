@@ -16,6 +16,11 @@ struct TourDetailView: View {
     @State private var liveActivity = TourLiveActivityController()
     /// Present the paywall when a free user opens a premium curated walk.
     @State private var showPaywall = false
+    /// Hands-free audio-tour narration: the current stop's dossier read aloud
+    /// (Lore+). Manual per-stop for now; GPS auto-advance is a device-tested
+    /// follow-up. One narrator, stopped on stop-change + disappear.
+    @State private var narration = NarrationService()
+    @State private var currentNarrative: String?
 
     /// A premium curated walk the current viewer hasn't unlocked.
     private var isLocked: Bool { tour.isPremium && !entitlements.isPlus }
@@ -44,6 +49,7 @@ struct TourDetailView: View {
                         .id(stopIndex)
                         .transition(stopTransition)
                         .animation(LoreSpring.smooth(reduceMotion: reduceMotion), value: stopIndex)
+                    audioControl
                     liveActivityControl
                     directionsControl
                     stepperControls
@@ -54,12 +60,15 @@ struct TourDetailView: View {
         .background(LoreColor.bone100)
         .navigationTitle(tour.title)
         .navigationBarTitleDisplayMode(.inline)
-        .task { await model.load(city: tour.city) }
+        .task { await model.load(city: tour.city); await loadNarrative() }
         // Push each stop change into the Live Activity so the Lock Screen /
         // Dynamic Island track the walk (docs/16 §8). No-op when not running.
-        .onChange(of: stopIndex) { _, _ in syncLiveActivity() }
+        .onChange(of: stopIndex) { _, _ in
+            syncLiveActivity()
+            Task { await loadNarrative() }
+        }
         // End the activity if the user leaves the tour screen without finishing.
-        .onDisappear { liveActivity.end() }
+        .onDisappear { liveActivity.end(); narration.stop() }
         .sheet(isPresented: $showPaywall) {
             PaywallView(entitlements: entitlements, store: store, auth: auth, context: .tours)
         }
@@ -365,6 +374,53 @@ struct TourDetailView: View {
         }
         .padding(16)
         .background(LoreColor.bone50, in: RoundedRectangle(cornerRadius: 14))
+    }
+
+    /// The hands-free "listen to this stop" control (Lore+). Speaks the current
+    /// stop's dossier so a walker can pocket the phone. Free users get a locked
+    /// affordance that opens the paywall.
+    @ViewBuilder
+    private var audioControl: some View {
+        Button {
+            if entitlements.isPlus {
+                Haptics.play(.chipTap)
+                if narration.isSpeaking { narration.stop() }
+                else if let text = currentNarrative { narration.speakDossier(text) }
+            } else {
+                showPaywall = true
+            }
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: narration.isSpeaking ? "stop.circle.fill" : "headphones")
+                    .font(.system(size: 18))
+                Text(narration.isSpeaking ? "Stop audio" : "Play this stop")
+                    .font(LoreType.button)
+                Spacer()
+                if !entitlements.isPlus {
+                    Image(systemName: "lock.fill").font(.system(size: 12, weight: .semibold))
+                }
+            }
+            .foregroundStyle(LoreColor.ink)
+            .padding(.horizontal, 16)
+            .frame(height: 50)
+            .background(LoreColor.bone200, in: Capsule())
+            .overlay(Capsule().strokeBorder(LoreColor.brass700.opacity(0.4), lineWidth: 1))
+        }
+        .buttonStyle(.pressable)
+        .disabled(entitlements.isPlus && currentNarrative == nil)
+        .accessibilityLabel(entitlements.isPlus
+            ? (narration.isSpeaking ? "Stop audio" : "Play this stop's audio")
+            : "Play this stop's audio, a Lore Plus feature")
+    }
+
+    /// Load the current stop's dossier narrative for audio playback, stopping any
+    /// in-flight narration so switching stops never overlaps two voices.
+    private func loadNarrative() async {
+        narration.stop()
+        currentNarrative = nil
+        guard let placeID = currentStop?.placeID else { return }
+        let dive = (try? await LoreAPI.shared.dive(placeID: placeID)) ?? nil
+        currentNarrative = dive?.narrative
     }
 
     private var stepperControls: some View {
