@@ -300,7 +300,7 @@ struct ScannerScreen: View {
     @ViewBuilder
     private var recognitionReadout: some View {
         if case .nothingRecognized = model.scanState {
-            VStack(spacing: 6) {
+            VStack(spacing: 10) {
                 if let phrase = model.vision.latest.phrase {
                     HStack(spacing: 7) {
                         Image(systemName: "sparkle.magnifyingglass")
@@ -318,10 +318,12 @@ struct ScannerScreen: View {
                     .foregroundStyle(LoreColor.bone.opacity(0.85))
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
+
+                identifyAffordance
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
-            .frame(maxWidth: 320)
+            .frame(maxWidth: 330)
             .background(LoreColor.scrimSky, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
@@ -329,7 +331,82 @@ struct ScannerScreen: View {
             )
             .padding(.bottom, 10)
             .transition(.opacity.combined(with: .move(edge: .bottom)))
-            .accessibilityElement(children: .combine)
+        }
+    }
+
+    /// The opt-in cloud landmark identification: a "What is this?" tap, its
+    /// in-flight + result states, and (for a resolved Lore place) an open-story
+    /// action. Plus-gated — it's a paid cloud call; free users get the paywall.
+    /// Everything above it (the on-device read + honest nudge) stays free.
+    @ViewBuilder
+    private var identifyAffordance: some View {
+        switch model.identifyState {
+        case .idle:
+            Button {
+                if entitlements.isPlus {
+                    Task { await model.identifyLandmark() }
+                } else {
+                    showPaywall = true
+                }
+            } label: {
+                HStack(spacing: 7) {
+                    Image(systemName: "building.columns")
+                        .font(.system(size: 13, weight: .semibold))
+                    Text("Identify this landmark")
+                        .font(LoreType.button)
+                    if !entitlements.isPlus {
+                        Image(systemName: "lock.fill").font(.system(size: 10, weight: .semibold))
+                    }
+                }
+                .foregroundStyle(LoreColor.ink900)
+                .padding(.horizontal, 16)
+                .frame(height: 40)
+                .background(LoreColor.amber, in: Capsule())
+            }
+            .buttonStyle(.pressable)
+
+        case .loading:
+            HStack(spacing: 8) {
+                ProgressView().tint(LoreColor.bone)
+                Text("Identifying…").font(LoreType.caption).foregroundStyle(LoreColor.bone)
+            }
+            .frame(height: 40)
+
+        case .result(let id):
+            VStack(spacing: 6) {
+                Text(id.name)
+                    .font(LoreType.button)
+                    .foregroundStyle(LoreColor.bone)
+                    .multilineTextAlignment(.center)
+                Text(id.confidence != nil
+                    ? "Cloud identification · \(Int((id.confidence ?? 0) * 100))% match"
+                    : "Cloud identification")
+                    .font(LoreType.micro)
+                    .foregroundStyle(LoreColor.bone.opacity(0.7))
+                if let slug = id.slug {
+                    Button {
+                        model.openIdentified(slug: slug)
+                    } label: {
+                        Text("Open its story")
+                            .font(LoreType.button)
+                            .foregroundStyle(LoreColor.ink900)
+                            .padding(.horizontal, 16)
+                            .frame(height: 38)
+                            .background(LoreColor.amber, in: Capsule())
+                    }
+                    .buttonStyle(.pressable)
+                }
+            }
+
+        case .none:
+            Text("Couldn't identify a landmark from here.")
+                .font(LoreType.caption)
+                .foregroundStyle(LoreColor.bone.opacity(0.8))
+
+        case .unavailable:
+            Text("Landmark ID isn't available right now.")
+                .font(LoreType.caption)
+                .foregroundStyle(LoreColor.bone.opacity(0.8))
         }
     }
 
@@ -706,6 +783,33 @@ struct GeoPinDisplay: Identifiable {
     var id: UUID { anchorID }
 }
 
+/// A cloud landmark identification (Google Cloud Vision), the opt-in "what is
+/// this?" tap. A real, specific name — the honest thing on-device Vision can't
+/// give — labeled as a cloud ID.
+struct LandmarkID: Equatable {
+    let name: String
+    let confidence: Double?
+    /// The Lore place slug if this landmark sits on one we know (so we can open
+    /// its real story), else nil.
+    let slug: String?
+}
+
+/// The state of the opt-in cloud landmark identification.
+enum IdentifyState: Equatable {
+    case idle          // not asked
+    case loading       // one frame in flight to the cloud
+    case result(LandmarkID)
+    case none          // ran, cloud recognized no landmark
+    case unavailable   // error / offline / API not enabled yet
+}
+
+/// The `landmark-id` edge function's JSON shape.
+private struct LandmarkResponse: Decodable {
+    let landmark: String
+    let confidence: Double?
+    let slug: String?
+}
+
 /// The one always-alive scanner state. Every reproject resolves to exactly one
 /// of these — there is no silent path. Drives the status line, the on-frame
 /// readout, and the feedback haptics.
@@ -755,6 +859,10 @@ final class ScannerModel {
     /// When coarse acquisition started with no fix yet, so a long dead wait can
     /// escalate its copy ("try stepping outside") instead of spinning forever.
     private var acquiringSince: Date?
+
+    /// The opt-in cloud landmark identification (Google Cloud Vision), fired one
+    /// frame per explicit tap in the nothing-recognized state.
+    private(set) var identifyState: IdentifyState = .idle
 
     /// Places the user has ever opened, the novelty signal (docs/12 §3 `w_fresh`).
     /// Persisted across launches so a repeat visitor stops re-scoring already-seen
@@ -916,6 +1024,7 @@ final class ScannerModel {
         camera.stop()
         camera.onFrame = nil
         vision.reset()
+        identifyState = .idle
         pose.stop()
         narration.stop()
         // Leaving the screen always lands back on the coarse default; the
@@ -1023,6 +1132,53 @@ final class ScannerModel {
         )
     }
 
+    /// Fire ONE frame at the cloud landmark identifier (opt-in "what is this?").
+    /// Only meaningful in coarse mode (the AVCapture session owns the camera).
+    /// Never fabricates: a miss lands in `.none`, any error in `.unavailable`.
+    func identifyLandmark() async {
+        guard !preciseMode else { return }
+        identifyState = .loading
+        guard let data = await camera.capturePhotoData() else {
+            identifyState = .unavailable
+            return
+        }
+        do {
+            var request = URLRequest(url: Config.functionsURL.appending(path: "landmark-id"))
+            request.httpMethod = "POST"
+            request.setValue(Config.supabaseAnonKey, forHTTPHeaderField: "apikey")
+            request.setValue("Bearer \(Config.supabaseAnonKey)", forHTTPHeaderField: "Authorization")
+            request.setValue("image/jpeg", forHTTPHeaderField: "Content-Type")
+            let (body, response) = try await URLSession.shared.upload(for: request, from: data)
+            guard let http = response as? HTTPURLResponse else {
+                identifyState = .unavailable
+                return
+            }
+            if http.statusCode == 204 { identifyState = .none; return }
+            guard http.statusCode == 200,
+                  let decoded = try? JSONDecoder().decode(LandmarkResponse.self, from: body) else {
+                identifyState = .unavailable
+                return
+            }
+            identifyState = .result(LandmarkID(
+                name: decoded.landmark,
+                confidence: decoded.confidence,
+                slug: decoded.slug
+            ))
+            Haptics.play(.scannerLock)
+        } catch {
+            identifyState = .unavailable
+        }
+    }
+
+    /// Open the story for an identified landmark when Lore knows the place (the
+    /// slug resolved to a loaded place); else a no-op — the cloud name stands on
+    /// its own.
+    func openIdentified(slug: String) {
+        if let place = places.first(where: { $0.slug == slug }) {
+            select(place)
+        }
+    }
+
     /// A stack candidate the user confirmed → it becomes the locked pin and
     /// (P1) would feed a `verification` (docs/12 §2.1 confirm-a-look).
     func confirmFromStack(_ ranked: ScannerRanking.Ranked) {
@@ -1067,6 +1223,8 @@ final class ScannerModel {
     /// flickering fix can't machine-gun it.
     private func setScanState(_ new: ScanState) {
         guard new != scanState else { return }
+        // Leaving the empty state clears any stale identify result.
+        if case .nothingRecognized = new {} else { identifyState = .idle }
         scanState = new
         if case .nothingRecognized = new {
             let now = Date()
