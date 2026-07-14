@@ -1,4 +1,7 @@
 import AVFoundation
+import CoreMedia
+import ImageIO
+import QuartzCore
 import SwiftUI
 import UIKit
 
@@ -11,10 +14,25 @@ import UIKit
 /// Tier-A resolve where GPS never could (indoors, urban canyons, plaques).
 /// The AR pipeline (ARKit + GARSession) replaces this session wholesale at P1
 /// (docs/05 §2.2 step 1).
-final class ScannerCameraService: NSObject, AVCaptureMetadataOutputObjectsDelegate {
+final class ScannerCameraService: NSObject, AVCaptureMetadataOutputObjectsDelegate, AVCaptureVideoDataOutputSampleBufferDelegate {
     let session = AVCaptureSession()
     private let sessionQueue = DispatchQueue(label: "com.erickdronski.lore.camera-session")
     private var configured = false
+
+    /// Live-frame output for on-device Vision recognition (docs/05 §5 ladder:
+    /// an honest "what does the camera see" read that fuses with the geospatial
+    /// pointer). Frames NEVER leave the device — they go straight to Apple
+    /// Vision on-device, same privacy promise as the QR rung.
+    private let videoOutput = AVCaptureVideoDataOutput()
+    private let videoQueue = DispatchQueue(label: "com.erickdronski.lore.camera-video", qos: .userInitiated)
+    /// Called on the video queue (background) with each throttled frame's pixel
+    /// buffer + orientation. The receiver runs Vision off-main and publishes to
+    /// main itself; this closure must never touch UI directly.
+    var onFrame: ((CVPixelBuffer, CGImagePropertyOrientation) -> Void)?
+    /// Cap frame forwarding to ~3 Hz so we don't enqueue 30 buffers a second the
+    /// recognizer will just drop.
+    private var lastFrameAt: TimeInterval = 0
+    private static let frameInterval: TimeInterval = 0.3
     /// Whether the session is *meant* to be running, so an interruption/runtime
     /// recovery never fights a deliberate stop (background, tab switch).
     private var wantsRunning = false
@@ -117,6 +135,17 @@ final class ScannerCameraService: NSObject, AVCaptureMetadataOutputObjectsDelega
             }
         }
 
+        // Live frames for on-device Vision recognition. BGRA, late frames
+        // discarded (we only need the newest), delivered on a dedicated queue.
+        videoOutput.videoSettings = [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA
+        ]
+        videoOutput.alwaysDiscardsLateVideoFrames = true
+        if session.canAddOutput(videoOutput) {
+            session.addOutput(videoOutput)
+            videoOutput.setSampleBufferDelegate(self, queue: videoQueue)
+        }
+
         // An AVCaptureSession does NOT auto-resume after a runtime error or the
         // end of an interruption (a phone call, another app grabbing the camera),
         // so without this the preview stays permanently black after one.
@@ -163,6 +192,24 @@ final class ScannerCameraService: NSObject, AVCaptureMetadataOutputObjectsDelega
         DispatchQueue.main.async { [weak self] in
             self?.onMarkerSlug?(slug)
         }
+    }
+
+    // MARK: AVCaptureVideoDataOutputSampleBufferDelegate (Vision frames)
+
+    func captureOutput(
+        _ output: AVCaptureOutput,
+        didOutput sampleBuffer: CMSampleBuffer,
+        from connection: AVCaptureConnection
+    ) {
+        // Throttle on the video queue so we forward ~3 frames/sec, not 30.
+        let now = CACurrentMediaTime()
+        guard now - lastFrameAt >= Self.frameInterval else { return }
+        guard let onFrame,
+              let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+        lastFrameAt = now
+        // Back camera in portrait delivers a landscape-native buffer; `.right`
+        // presents it upright to Vision without rotating pixels.
+        onFrame(pixelBuffer, .right)
     }
 
     /// Parse a Lore marker payload into a place slug; nil for foreign QR codes

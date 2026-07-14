@@ -33,6 +33,16 @@ enum Haptics {
         case scannerLock
         /// A chip crossed the scanner's center line, selection tick.
         case scannerChipPass
+        /// The scanner became active / the camera was raised, `.light` impact.
+        /// A single "I'm awake and looking" pulse so pointing the phone always
+        /// *feels* like something started (never a dead viewfinder).
+        case scanAttempt
+        /// A new on-device read appeared ("Looks like a skyscraper"), selection
+        /// tick, so the user feels the scanner respond to what they aim at.
+        case scanRecognizing
+        /// The honest "nothing here" thunk, notification `.warning`, fired ONCE
+        /// on entering the nothing-recognized state (never a per-frame buzz).
+        case scanNothing
         /// A contribution badge landed, notification `.success`.
         case badgeEarned
         /// "First to Chronicle" claimed, notification `.success`.
@@ -67,11 +77,13 @@ enum Haptics {
             impact(.medium)
         case .scannerLock:
             impact(.rigid)
-        case .scannerChipPass, .timelineSnap:
+        case .scannerChipPass, .timelineSnap, .scanRecognizing:
             selection()
+        case .scanAttempt:
+            impact(.light)
         case .badgeEarned, .firstToChronicle:
             notify(.success)
-        case .meterGate:
+        case .meterGate, .scanNothing:
             notify(.warning)
         }
     }

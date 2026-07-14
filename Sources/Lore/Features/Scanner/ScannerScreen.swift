@@ -122,6 +122,13 @@ struct ScannerScreen: View {
                             .padding(.bottom, 8)
                     }
                     if !model.preciseMode {
+                        recognitionReadout
+                            .animation(
+                                LoreSpring.smooth(reduceMotion: reduceMotion),
+                                value: model.scanState
+                            )
+                    }
+                    if !model.preciseMode {
                         directionalRail
                     }
                     bottomBar
@@ -169,6 +176,13 @@ struct ScannerScreen: View {
         .onChange(of: scenePhase) { _, phase in
             guard isVisible else { return }
             if phase == .active { model.resumeSensors() } else { model.stopSensors() }
+        }
+        // A fresh on-device read while nothing is locked — a gentle tick so the
+        // user feels the scanner respond to what they aim at (never a buzz: the
+        // recognizer is throttled to ~2 Hz and reads are mostly stable).
+        .onChange(of: model.vision.latest.phrase) { old, new in
+            guard case .nothingRecognized = model.scanState, let new, new != old else { return }
+            Haptics.play(.scanRecognizing)
         }
     }
 
@@ -273,6 +287,49 @@ struct ScannerScreen: View {
                 value: cluster.screenFraction
             )
             .transition(.opacity.combined(with: .scale(scale: 0.85)))
+        }
+    }
+
+    // MARK: Recognition readout (the honest "what did I see" response)
+
+    /// The always-visible response when Lore has nothing to point you at: the
+    /// on-device Vision read (honest category / signage it can literally see),
+    /// then a truthful nudge that the scanner reads real places around you, not
+    /// photos. This turns "it did nothing" into "it saw a skyscraper and was
+    /// honest about what it can and can't name."
+    @ViewBuilder
+    private var recognitionReadout: some View {
+        if case .nothingRecognized = model.scanState {
+            VStack(spacing: 6) {
+                if let phrase = model.vision.latest.phrase {
+                    HStack(spacing: 7) {
+                        Image(systemName: "sparkle.magnifyingglass")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(LoreColor.amber)
+                        Text(phrase)
+                            .font(LoreType.button)
+                            .foregroundStyle(LoreColor.bone)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.center)
+                    }
+                }
+                Text(L10n.t("scan.pointAtLandmark"))
+                    .font(LoreType.caption)
+                    .foregroundStyle(LoreColor.bone.opacity(0.85))
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .frame(maxWidth: 320)
+            .background(LoreColor.scrimSky, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .strokeBorder(LoreColor.amber.opacity(0.35), lineWidth: 1)
+            )
+            .padding(.bottom, 10)
+            .transition(.opacity.combined(with: .move(edge: .bottom)))
+            .accessibilityElement(children: .combine)
         }
     }
 
@@ -649,6 +706,21 @@ struct GeoPinDisplay: Identifiable {
     var id: UUID { anchorID }
 }
 
+/// The one always-alive scanner state. Every reproject resolves to exactly one
+/// of these — there is no silent path. Drives the status line, the on-frame
+/// readout, and the feedback haptics.
+enum ScanState: Equatable {
+    /// No usable GPS/heading yet — the scanner is warming up.
+    case acquiringSensors
+    /// Warming up has dragged on (often indoors) — nudge to step outside.
+    case searchingOutside
+    /// Known places resolved around the user (a lock, chips, or rail hints).
+    case foundNearby(Int)
+    /// Sensors are ready but Lore knows nothing here; the honest on-device
+    /// read (if any) and a "point at a real landmark" nudge are shown.
+    case nothingRecognized
+}
+
 @Observable
 @MainActor
 final class ScannerModel {
@@ -656,6 +728,10 @@ final class ScannerModel {
     let pose = LocationHeadingProvider()
     let scouting = GeoScoutingService()
     let narration = NarrationService()
+    /// On-device Vision read of the live frame (honest category + visible text).
+    /// Fused with the geospatial ranking so the scanner responds to what the
+    /// camera actually sees, never a specific landmark name (that's cloud-only).
+    let vision = VisionRecognitionService()
     /// The precise pipeline (docs/05 §5 rung 1): Apple ARGeoTracking behind
     /// the `VPSProvider` seam. Idle until the user opts in via "Lock on".
     let geoAR = GeoARSessionController()
@@ -673,6 +749,12 @@ final class ScannerModel {
     private(set) var inViewClusters: [ScannerRanking.Cluster] = []
     private(set) var inViewStories: [ProjectedStory] = []
     private(set) var directionalCandidates: [ScannerRanking.Ranked] = []
+
+    /// The always-alive state (never silent). Resolved every reproject.
+    private(set) var scanState: ScanState = .acquiringSensors
+    /// When coarse acquisition started with no fix yet, so a long dead wait can
+    /// escalate its copy ("try stepping outside") instead of spinning forever.
+    private var acquiringSince: Date?
 
     /// Places the user has ever opened, the novelty signal (docs/12 §3 `w_fresh`).
     /// Persisted across launches so a repeat visitor stops re-scoring already-seen
@@ -723,7 +805,17 @@ final class ScannerModel {
             case .failed: return "Precise mode unavailable here"
             }
         }
-        return pose.statusLine + scouting.statusSuffix
+        // Coarse mode reflects the always-alive state honestly.
+        switch scanState {
+        case .acquiringSensors:
+            return pose.statusLine + scouting.statusSuffix
+        case .searchingOutside:
+            return L10n.t("scan.stepOutside")
+        case .foundNearby(let n):
+            return String(format: L10n.t("scan.foundNearby"), n)
+        case .nothingRecognized:
+            return L10n.t("scan.nothingHere")
+        }
     }
 
     /// The reticle firms up on a Tier-A commitment in either mode: a coarse
@@ -782,8 +874,19 @@ final class ScannerModel {
         locationDenied = false
         camera.onPermissionDenied = { [weak self] in self?.cameraDenied = true }
         pose.onPermissionDenied = { [weak self] in self?.locationDenied = true }
+        // Feed live frames to the on-device recognizer. Capture the service (not
+        // self) so the closure runs cleanly off the main actor; frames never
+        // leave the device — they go straight to Apple Vision on-device.
+        let recognizer = vision
+        camera.onFrame = { buffer, orientation in
+            recognizer.recognize(pixelBuffer: buffer, orientation: orientation)
+        }
         camera.start()
         pose.start()
+        // A single "I'm awake and looking" pulse so raising the phone always
+        // *feels* like the scan began (the old scanner started dead-silent).
+        Haptics.play(.scanAttempt)
+        acquiringSince = Date()
         startProjectionLoop()
         await loadContent(city: city)
     }
@@ -811,6 +914,8 @@ final class ScannerModel {
 
     func stopSensors() {
         camera.stop()
+        camera.onFrame = nil
+        vision.reset()
         pose.stop()
         narration.stop()
         // Leaving the screen always lands back on the coarse default; the
@@ -831,8 +936,14 @@ final class ScannerModel {
         guard !preciseMode, projectionTask == nil else { return }
         cameraDenied = false
         locationDenied = false
+        let recognizer = vision
+        camera.onFrame = { buffer, orientation in
+            recognizer.recognize(pixelBuffer: buffer, orientation: orientation)
+        }
         camera.start()
         pose.start()
+        Haptics.play(.scanAttempt)
+        acquiringSince = Date()
         startProjectionLoop()
     }
 
@@ -946,6 +1057,26 @@ final class ScannerModel {
         }
     }
 
+    /// The last time the "nothing here" thunk fired, so a flickering fix can't
+    /// buzz it every 200 ms.
+    private var lastNothingHapticAt: Date?
+
+    /// Transition the always-alive state, firing the state's feedback exactly on
+    /// entry (never per frame). Only `nothingRecognized` carries a haptic here
+    /// (a found lock already thunks via `.scannerLock`); it's debounced so a
+    /// flickering fix can't machine-gun it.
+    private func setScanState(_ new: ScanState) {
+        guard new != scanState else { return }
+        scanState = new
+        if case .nothingRecognized = new {
+            let now = Date()
+            if lastNothingHapticAt == nil || now.timeIntervalSince(lastNothingHapticAt!) > 4 {
+                Haptics.play(.scanNothing)
+                lastNothingHapticAt = now
+            }
+        }
+    }
+
     private func reproject() {
         // Precise mode owns the frame: the coarse chips are hidden, so the
         // bearing math is skipped. The one job here is the ladder watchdog,
@@ -963,8 +1094,15 @@ final class ScannerModel {
             inViewClusters = []
             inViewStories = []
             directionalCandidates = []
+            // Never silent: acknowledge we're acquiring, and escalate the copy
+            // to a "step outside" nudge if the wait drags on (usually indoors).
+            if acquiringSince == nil { acquiringSince = Date() }
+            let waited = Date().timeIntervalSince(acquiringSince ?? Date())
+            setScanState(waited > 8 ? .searchingOutside : .acquiringSensors)
             return
         }
+        // A fix arrived: stop the acquisition clock.
+        acquiringSince = nil
 
         if !scoutedOnce {
             scoutedOnce = true
@@ -1046,6 +1184,14 @@ final class ScannerModel {
             Haptics.play(.scannerLock)
             narration.offer(newLock.place) // §3.2 auto-offer, not auto-play
         }
+
+        // 6.5 Resolve the always-alive state (never silent). Anything Lore knows
+        // around the user — a lock, in-view chips, or off-screen rail hints —
+        // is `foundNearby`; a truly empty field is `nothingRecognized`, where
+        // the honest on-device read + "point at a real landmark" nudge show and
+        // the `.scanNothing` thunk fires once.
+        let knownCount = (newLock != nil ? 1 : 0) + inViewClusters.count + directionalCandidates.count
+        setScanState(knownCount > 0 ? .foundNearby(knownCount) : .nothingRecognized)
 
         // 7. Selection tick as a chip crosses the reticle center (docs/12 §3
         // "gaze"; brand/ELEVATION §4 `.scannerChipPass`). Fire once per chip as
