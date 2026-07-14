@@ -5,8 +5,7 @@ import SwiftUI
 /// Signed out, it carries the 5.1.1 posture in copy (reading never requires
 /// an account, docs/10 §5 row 1) and offers sign-in. Signed in, it shows the
 /// `user_profile` row: handle, trust tier (Scout → Curator ladder,
-/// docs/06-CROWDSOURCING.md), Insight points. Contributions and Lore+ are
-/// deliberate stubs, their rows state which phase ships them.
+/// docs/06-CROWDSOURCING.md), Insight points, and a live Lore+ membership row.
 struct ProfileScreen: View {
     @Environment(AuthService.self) private var auth
     @Environment(EntitlementStore.self) private var entitlements
@@ -289,28 +288,5 @@ struct TrustBadge: View {
                         lineWidth: 1
                     )
             )
-    }
-}
-
-struct StubRow: View {
-    let icon: String
-    let title: String
-    let note: String
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: icon)
-                .foregroundStyle(LoreColor.ink600)
-                .frame(width: 24)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(LoreType.body)
-                    .foregroundStyle(LoreColor.ink)
-                Text(note)
-                    .font(LoreType.caption)
-                    .foregroundStyle(LoreColor.ink600)
-            }
-        }
-        .opacity(0.75)
     }
 }

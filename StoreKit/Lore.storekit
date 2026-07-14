@@ -47,7 +47,7 @@
           },
           "localizations" : [
             {
-              "description" : "Unlimited deep dives, curated walks, offline cities, and audio narration.",
+              "description" : "Unlimited deep dives, curated walking tours, and audio narration.",
               "displayName" : "Lore+ Monthly",
               "locale" : "en_US"
             }
@@ -72,7 +72,7 @@
           },
           "localizations" : [
             {
-              "description" : "Unlimited deep dives, curated walks, offline cities, and audio narration. Save over 50% vs monthly.",
+              "description" : "Unlimited deep dives, curated walking tours, and audio narration. Save over 50% vs monthly.",
               "displayName" : "Lore+ Annual",
               "locale" : "en_US"
             }

@@ -1226,6 +1226,12 @@ final class ScannerModel {
         // Leaving the empty state clears any stale identify result.
         if case .nothingRecognized = new {} else { identifyState = .idle }
         scanState = new
+        // Only run on-device Vision when its read is actually shown (the
+        // nothing-recognized readout). In the common "found a place" case the
+        // whole recognition pipeline idles — no classification, no OCR, no
+        // battery/thermal cost producing a read nothing displays.
+        if case .nothingRecognized = new { vision.setEnabled(true) }
+        else { vision.setEnabled(false) }
         if case .nothingRecognized = new {
             let now = Date()
             if lastNothingHapticAt == nil || now.timeIntervalSince(lastNothingHapticAt!) > 4 {

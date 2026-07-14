@@ -176,6 +176,35 @@ final class AuthService {
         profile = nil
     }
 
+    /// Permanently delete the account and all its data (App Store Guideline
+    /// 5.1.1(v)). Calls the service-role `delete-account` edge function with the
+    /// user's OWN token; the function verifies it and deletes only that uid's
+    /// auth user, rows, and journal photos. On success we clear the local
+    /// session so the app returns to signed-out. Returns true on success.
+    func deleteAccount() async -> Bool {
+        guard let token = session?.accessToken else { return false }
+        isBusy = true
+        defer { isBusy = false }
+        var request = URLRequest(url: Config.functionsURL.appending(path: "delete-account"))
+        request.httpMethod = "POST"
+        request.setValue(Config.supabaseAnonKey, forHTTPHeaderField: "apikey")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            guard (response as? HTTPURLResponse)?.statusCode == 200 else {
+                lastError = "Couldn't delete your account. Please try again."
+                return false
+            }
+            session = nil
+            profile = nil
+            return true
+        } catch {
+            lastError = error.localizedDescription
+            return false
+        }
+    }
+
     /// Restore a persisted session on launch: load it from the Keychain, show
     /// signed-in immediately, then exchange the refresh token for a fresh access
     /// token and hydrate the profile. If nothing is stored (or the refresh

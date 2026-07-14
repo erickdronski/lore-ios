@@ -20,9 +20,6 @@ struct VisionRead: Equatable, Sendable {
     var confidence: Float
     /// Text actually read in-frame, most-confident first, de-duplicated.
     var readableText: [String]
-    /// Normalized subject box in Vision space (origin bottom-left, 0…1).
-    /// Callers must flip Y to draw in UIKit / SwiftUI top-left space.
-    var subjectBox: CGRect?
 
     /// True when this read carries anything worth surfacing to the user.
     var hasSignal: Bool { topCategory != nil || !readableText.isEmpty }
@@ -45,9 +42,7 @@ struct VisionRead: Equatable, Sendable {
         return vowels.contains(word.lowercased().first ?? "x") ? "an" : "a"
     }
 
-    static let empty = VisionRead(
-        topCategory: nil, confidence: 0, readableText: [], subjectBox: nil
-    )
+    static let empty = VisionRead(topCategory: nil, confidence: 0, readableText: [])
 }
 
 /// Throttled, on-device Apple Vision recognizer that turns raw camera frames
@@ -92,14 +87,26 @@ final class VisionRecognitionService {
     private let queue = DispatchQueue(label: "app.lore.vision.recognition", qos: .userInitiated)
     /// Touched only on `queue`: guards single-in-flight + the interval throttle.
     @ObservationIgnored private var lastCompleted: CFTimeInterval = 0
+    /// Touched only on `queue`: when false, live frames are dropped without any
+    /// Vision work. The scanner only consumes the read in the nothing-recognized
+    /// state, so it enables recognition only then — the whole pipeline idles
+    /// (no classification, no OCR) in the common "found a place" case.
+    @ObservationIgnored private var enabled = false
 
     // MARK: - Entry points
 
-    /// Recognize a live camera frame. Throttled + serial: extra frames inside
-    /// the interval are dropped. Safe to call from a background queue.
+    /// Turn live-frame recognition on/off. Cheap; safe from any thread. The
+    /// scanner calls this as its state changes so Vision never burns battery
+    /// producing a read nothing will show.
+    func setEnabled(_ on: Bool) {
+        queue.async { [weak self] in self?.enabled = on }
+    }
+
+    /// Recognize a live camera frame. No-ops unless enabled; throttled + serial;
+    /// extra frames inside the interval are dropped. Safe from a background queue.
     func recognize(pixelBuffer: CVPixelBuffer, orientation: CGImagePropertyOrientation = .up) {
         queue.async { [weak self] in
-            guard let self, self.shouldRun() else { return }
+            guard let self, self.enabled, self.shouldRun() else { return }
             let read = Self.perform(cgImage: nil, pixelBuffer: pixelBuffer, orientation: orientation)
             self.lastCompleted = CACurrentMediaTime()
             self.publish(read)
@@ -124,7 +131,10 @@ final class VisionRecognitionService {
     /// Clear state when the scanner disappears.
     func reset() {
         publish(.empty)
-        queue.async { [weak self] in self?.lastCompleted = 0 }
+        queue.async { [weak self] in
+            self?.lastCompleted = 0
+            self?.enabled = false
+        }
     }
 
     // MARK: - Throttle plumbing (all on `queue`)
@@ -139,10 +149,11 @@ final class VisionRecognitionService {
 
     // MARK: - Recognition (pure, off the main actor)
 
-    /// Runs the three reads independently, each with a fresh handler, so one
-    /// request failing (e.g. saliency on some frames) can never wipe out the
-    /// OCR or classification read. Order doesn't matter; nothing is claimed
-    /// that wasn't actually read.
+    /// Runs classification + text reads, each with its own handler so one
+    /// failing can never wipe out the other. `.fast` OCR (no language
+    /// correction) is right for a live viewfinder reading large signage /
+    /// building names — dramatically cheaper than `.accurate` at ~2 Hz. Nothing
+    /// is claimed that wasn't actually read.
     private static func perform(
         cgImage: CGImage?,
         pixelBuffer: CVPixelBuffer?,
@@ -167,8 +178,8 @@ final class VisionRecognitionService {
         }
 
         let textRequest = VNRecognizeTextRequest()
-        textRequest.recognitionLevel = .accurate
-        textRequest.usesLanguageCorrection = true
+        textRequest.recognitionLevel = .fast
+        textRequest.usesLanguageCorrection = false
         let text: [String]
         if let handler = makeHandler(), (try? handler.perform([textRequest])) != nil {
             text = readableText(from: textRequest)
@@ -176,19 +187,10 @@ final class VisionRecognitionService {
             text = []
         }
 
-        let saliency = VNGenerateAttentionBasedSaliencyImageRequest()
-        let box: CGRect?
-        if let handler = makeHandler(), (try? handler.perform([saliency])) != nil {
-            box = subjectBox(from: saliency)
-        } else {
-            box = nil
-        }
-
         return VisionRead(
             topCategory: category.name,
             confidence: category.confidence,
-            readableText: text,
-            subjectBox: box
+            readableText: text
         )
     }
 
@@ -220,18 +222,6 @@ final class VisionRecognitionService {
             if out.count >= maxTextTokens { break }
         }
         return out
-    }
-
-    private static func subjectBox(
-        from request: VNGenerateAttentionBasedSaliencyImageRequest
-    ) -> CGRect? {
-        guard let observation = request.results?.first,
-              let salient = observation.salientObjects?.max(by: {
-                  ($0.boundingBox.width * $0.boundingBox.height)
-                      < ($1.boundingBox.width * $1.boundingBox.height)
-              })
-        else { return nil }
-        return salient.boundingBox
     }
 
     /// Cleans a Vision identifier into human-readable copy. Stays a *category*,

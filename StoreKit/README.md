@@ -12,8 +12,11 @@ One subscription group **Lore+** with the two live products, matching
 
 | Product ID | Price | Period | Intro offer |
 |---|---|---|---|
-| `lore_plus_monthly_4_99` | $4.99 | 1 month (`P1M`) | 7-day free trial (`P1W`, free) |
-| `lore_plus_annual_29_99` | $29.99 | 1 year (`P1Y`) | 7-day free trial (`P1W`, free) |
+| `lore_plus_monthly` | $5.99 | 1 month (`P1M`) | 7-day free trial (`P1W`, free) |
+| `lore_plus_annual` | $34.99 | 1 year (`P1Y`) | 7-day free trial (`P1W`, free) |
+| `lore_plus_lifetime` | $99.99 | non-consumable (one-time) | — |
+
+> Source of truth = `StoreKitService.ProductID` + `StoreKit/Lore.storekit`. App Store Connect product IDs/prices MUST match these exactly, or `Product.products(for:)` returns nothing and purchases fail.
 
 Because both products share one subscription group, intro-offer eligibility is
 per-group — exactly what `StoreKitService.isEligibleForIntroOffer(productID:)`

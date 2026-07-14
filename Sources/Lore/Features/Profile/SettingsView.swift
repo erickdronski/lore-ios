@@ -18,8 +18,14 @@ struct SettingsView: View {
     /// The same store the map's filter chips use, so a toggle here persists to
     /// `user_prefs.hidden_kinds` and re-filters the map + nearby lists live.
     @Environment(MapFilterStore.self) private var filters
+    @Environment(AuthService.self) private var auth
     @Environment(\.openURL) private var openURL
     @Environment(\.requestReview) private var requestReview
+    @Environment(\.dismiss) private var dismiss
+
+    /// Account-deletion confirmation (App Store 5.1.1(v)).
+    @State private var showDeleteConfirm = false
+    @State private var deleting = false
 
     /// The master haptics switch, read by `Haptics.play` via the same key.
     @AppStorage(Haptics.enabledDefaultsKey) private var hapticsEnabled = true
@@ -43,6 +49,7 @@ struct SettingsView: View {
             permissionsSection
             subscriptionSection
             aboutLegalSection
+            if auth.isSignedIn { accountSection }
             #if DEBUG
             developerSection
             #endif
@@ -52,6 +59,41 @@ struct SettingsView: View {
         .background(LoreColor.bone100)
         .navigationTitle(L10n.t("settings.title"))
         .navigationBarTitleDisplayMode(.inline)
+        .alert("Delete your account?", isPresented: $showDeleteConfirm) {
+            Button("Delete account", role: .destructive) {
+                Task {
+                    deleting = true
+                    let ok = await auth.deleteAccount()
+                    deleting = false
+                    if ok { dismiss() } // session cleared → back to signed-out
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This permanently deletes your account and all your data — your visits, notes, journal photos, badges, and Lore+ record. This cannot be undone.")
+        }
+    }
+
+    // MARK: Account (App Store 5.1.1(v): in-app account deletion)
+
+    private var accountSection: some View {
+        Section {
+            Button(role: .destructive) {
+                showDeleteConfirm = true
+            } label: {
+                HStack {
+                    Label("Delete account", systemImage: "trash")
+                        .foregroundStyle(LoreColor.error)
+                    Spacer()
+                    if deleting { ProgressView() }
+                }
+            }
+            .disabled(deleting)
+        } header: {
+            Text("Account")
+        } footer: {
+            Text("Permanently deletes your account and all associated data.")
+        }
     }
 
     // MARK: Language (scanner-lab port: nine interface languages + Auto)
