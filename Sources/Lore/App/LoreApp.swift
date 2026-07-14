@@ -160,6 +160,20 @@ struct RootTabView: View {
                 .tabItem { Label(L10n.t("tab.profile"), systemImage: "person.crop.circle") }
                 .tag(Tab.profile)
         }
+        // The badge-earned reward moment, app-wide: a visit logged on ANY tab
+        // feeds VisitStore.onUnlocks -> TravelSession.pendingUnlocks; this raises
+        // the same UnlockCelebration the Passport uses, over everything, so a
+        // freshly-earned badge actually celebrates instead of landing silently.
+        .overlay {
+            if !travel.pendingUnlocks.isEmpty {
+                UnlockCelebration(unlocked: travel.pendingUnlocks) {
+                    withAnimation(LoreMotion.tap) { travel.clearUnlocks() }
+                }
+                .zIndex(50)
+                .transition(.opacity)
+            }
+        }
+        .animation(LoreMotion.unfurl, value: travel.pendingUnlocks.count)
         // Global search, resolves a `LoreRoute` and hands it to the router.
         .sheet(isPresented: $showSearch) {
             SearchView(router: router)
