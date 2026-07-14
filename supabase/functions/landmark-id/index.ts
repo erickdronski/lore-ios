@@ -18,6 +18,10 @@ const CORS = {
 };
 const R = 6371000;
 const rad = (d: number) => (d * Math.PI) / 180;
+// Global daily Vision-call ceiling. The Plus gate is client-side, so this is
+// the real cost guard: even if the public anon key leaks and someone loops the
+// endpoint, the Google bill is hard-bounded to ~CAP * $1.50/1000 per day.
+const DAILY_CAP = 400;
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
@@ -33,6 +37,16 @@ Deno.serve(async (req) => {
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
+
+  // Global daily spend cap (bounds the Google bill under abuse). Atomic
+  // increment; over the ceiling we stop before ever calling the paid API.
+  const { data: used } = await supa.rpc("bump_vision_usage");
+  if (typeof used === "number" && used > DAILY_CAP) {
+    return new Response(JSON.stringify({ error: "daily limit reached" }), {
+      status: 429, headers: { ...CORS, "Content-Type": "application/json" },
+    });
+  }
+
   // Uses a DEDICATED Vision key (google_vision_key), not the Street View key:
   // that one is restricted to iOS apps and Google blocks a server-side Vision
   // call with it ("Requests from this iOS client application are blocked").
