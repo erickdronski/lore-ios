@@ -97,6 +97,35 @@ final class VisitStore {
         }
     }
 
+    // MARK: - Journal (visit history + the user's own "lore" notes)
+
+    /// The user's full visit history with place details + their notes, newest
+    /// first. Loaded on demand when the Journal appears.
+    private(set) var visitHistory: [VisitLogEntry] = []
+    private(set) var historyLoaded = false
+
+    func loadHistory() async {
+        guard let creds = credentials() else { visitHistory = []; historyLoaded = true; return }
+        do {
+            visitHistory = try await TravelReads.visitHistory(accessToken: creds.accessToken)
+            historyLoaded = true
+            lastError = nil
+        } catch {
+            lastError = "Couldn't load your journal."
+        }
+    }
+
+    /// Save the user's note ("their lore") on a visited place, then refresh.
+    func saveNote(placeID: String, note: String) async {
+        guard let creds = credentials() else { return }
+        do {
+            try await TravelReads.updateVisitNote(placeID: placeID, note: note, accessToken: creds.accessToken)
+            await loadHistory()
+        } catch {
+            lastError = "Couldn't save your note."
+        }
+    }
+
     // MARK: - Writes
 
     /// Outcome of a visit-log attempt, so the toggle can react (haptic, copy).

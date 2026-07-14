@@ -91,6 +91,10 @@ struct PassportView: View {
                         .padding(.horizontal, 16)
                 }
 
+                NavigationLink { JournalView() } label: { journalCard }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 16)
+
                 ForEach(model.sections) { section in
                     CategorySection(section: section)
                 }
@@ -98,6 +102,32 @@ struct PassportView: View {
             .padding(.bottom, 40)
         }
         .scrollContentBackground(.hidden)
+    }
+
+    /// Entry to the Journal: every place the user has been + their own notes.
+    private var journalCard: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "book.closed.fill")
+                .font(.system(size: 20))
+                .foregroundStyle(LoreColor.amber)
+                .frame(width: 40, height: 40)
+                .background(Circle().fill(LoreColor.ink800))
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Your Journal")
+                    .font(LoreType.display(size: 18, weight: .semibold))
+                    .foregroundStyle(LoreColor.bone)
+                Text("Everywhere you've been, and your own notes")
+                    .font(LoreType.caption)
+                    .foregroundStyle(LoreColor.ink600)
+            }
+            Spacer()
+            Image(systemName: "chevron.right")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(LoreColor.ink600)
+        }
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: 16).fill(LoreColor.ink800))
+        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(LoreColor.ink700, lineWidth: 1))
     }
 
     /// Content-shaped loading wall (LUXURY-MOTION §3, "delete every spinner"): a

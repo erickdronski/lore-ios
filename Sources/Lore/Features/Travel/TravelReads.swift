@@ -99,6 +99,64 @@ enum TravelReads {
         try ensureOK(response, data: data)
     }
 
+    /// The signed-in user's visit history with the place details + their own
+    /// note ("your lore"), newest first, for the Journal surface.
+    /// `GET /rest/v1/visit?select=place_id,visited_at,note,place(name,emoji,city,kind)&order=visited_at.desc`
+    static func visitHistory(
+        accessToken: String,
+        session: URLSession = .shared
+    ) async throws -> [VisitLogEntry] {
+        var components = URLComponents(
+            url: Config.restURL.appending(path: "visit"),
+            resolvingAgainstBaseURL: false
+        )
+        components?.queryItems = [
+            URLQueryItem(name: "select", value: "place_id,visited_at,note,place(name,emoji,city,kind)"),
+            URLQueryItem(name: "order", value: "visited_at.desc"),
+        ]
+        guard let url = components?.url else { throw TravelError.badURL }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        apply(&request, accessToken: accessToken)
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        let (data, response) = try await session.data(for: request)
+        try ensureOK(response, data: data)
+        do {
+            return try JSONDecoder().decode([VisitLogEntry].self, from: data)
+        } catch {
+            throw TravelError.decoding(error)
+        }
+    }
+
+    /// Save the user's own note ("lore") on a visited place. RLS scopes the rows
+    /// to the caller, so a filter on `place_id` updates only their own visit(s).
+    /// `PATCH /rest/v1/visit?place_id=eq.{placeID}` `{ "note": "..." }`
+    static func updateVisitNote(
+        placeID: String,
+        note: String,
+        accessToken: String,
+        session: URLSession = .shared
+    ) async throws {
+        var components = URLComponents(
+            url: Config.restURL.appending(path: "visit"),
+            resolvingAgainstBaseURL: false
+        )
+        components?.queryItems = [URLQueryItem(name: "place_id", value: "eq.\(placeID)")]
+        guard let url = components?.url else { throw TravelError.badURL }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "PATCH"
+        apply(&request, accessToken: accessToken)
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("return=minimal", forHTTPHeaderField: "Prefer")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: ["note": note])
+
+        let (data, response) = try await session.data(for: request)
+        try ensureOK(response, data: data)
+    }
+
     // MARK: - Plumbing
 
     private static func apply(_ request: inout URLRequest, accessToken: String) {
