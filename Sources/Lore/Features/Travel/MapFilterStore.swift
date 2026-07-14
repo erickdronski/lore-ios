@@ -33,6 +33,18 @@ final class MapFilterStore {
 
     var lastError: String?
 
+    /// An optional positive "collection" filter (Family, Music, Museums, Food,
+    /// Free, Art, Nature, Nightlife). When set, only places matching the
+    /// collection show, on top of the hard kind filter. Single-select and NOT
+    /// persisted, a transient "show me the X" lens, tap the active chip to clear.
+    private(set) var activeCollection: PlaceCollection?
+
+    /// Set (or, if already active, clear) the collection lens. Never persisted.
+    func setCollection(_ collection: PlaceCollection?) {
+        activeCollection = (activeCollection == collection) ? nil : collection
+        Haptics.play(.chipTap)
+    }
+
     /// UserDefaults key for a signed-out user's hidden-kinds, flushed post-login.
     static let pendingHiddenKindsKey = "lore.map.pendingHiddenKinds.v1"
 
@@ -73,13 +85,15 @@ final class MapFilterStore {
         !hiddenKinds.contains(category.kind)
     }
 
-    /// Any chip toggled off ⇒ the map is actively filtered. Drives whether
-    /// `MapRelevance` dims (a fresh, unfiltered map never dims).
-    var hasActiveFilter: Bool { !hiddenKinds.isEmpty }
+    /// Any kind hidden OR a collection lens active ⇒ the map is filtered. Drives
+    /// whether `MapRelevance` dims (a fresh, unfiltered map never dims).
+    var hasActiveFilter: Bool { !hiddenKinds.isEmpty || activeCollection != nil }
 
-    /// Whether a place survives the hard filter.
+    /// Whether a place survives the hard kind filter AND the collection lens.
     func allows(_ place: Place) -> Bool {
-        !hiddenKinds.contains(place.kind)
+        if hiddenKinds.contains(place.kind) { return false }
+        if let collection = activeCollection, !collection.matches(place) { return false }
+        return true
     }
 
     // MARK: - Mutation
@@ -99,8 +113,9 @@ final class MapFilterStore {
     /// "Show everything", clear the hard filter (§3: always one tap back to
     /// the full map). No-op when nothing is hidden.
     func clear() {
-        guard !hiddenKinds.isEmpty else { return }
+        guard !hiddenKinds.isEmpty || activeCollection != nil else { return }
         hiddenKinds.removeAll()
+        activeCollection = nil
         Haptics.play(.chipTap)
         persist()
     }
@@ -156,6 +171,63 @@ final class MapFilterStore {
             if lo != ro { return lo < ro }
             return lhs.label < rhs.label
         }
+    }
+}
+
+/// A positive "collection" lens over the map: tap "Family" and only family
+/// places show. Matched from `place.tags` + `place.kind` (the app has no price
+/// data, so "Free" is a heuristic over free-to-see public/outdoor kinds). These
+/// answer the family / music / museum / foodie personas without new content.
+enum PlaceCollection: String, CaseIterable, Identifiable {
+    case family, music, museums, food, free, art, nature, nightlife
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .family: return "Family"
+        case .music: return "Live Music"
+        case .museums: return "Museums"
+        case .food: return "Food"
+        case .free: return "Free"
+        case .art: return "Art"
+        case .nature: return "Nature"
+        case .nightlife: return "Nightlife"
+        }
+    }
+
+    var emoji: String {
+        switch self {
+        case .family: return "👨‍👩‍👧"
+        case .music: return "🎸"
+        case .museums: return "🏛️"
+        case .food: return "🍽️"
+        case .free: return "🆓"
+        case .art: return "🎨"
+        case .nature: return "🌳"
+        case .nightlife: return "🍸"
+        }
+    }
+
+    func matches(_ place: Place) -> Bool {
+        let tags = Set(place.tags.map { $0.lowercased() })
+        let hasTag: (String) -> Bool = { needle in tags.contains { $0.contains(needle) } }
+        switch self {
+        case .family:    return hasTag("family") || hasTag("kid") || tags.contains("wildlife") || tags.contains("playground")
+        case .music:     return hasTag("music") || tags.contains("live-music")
+        case .museums:   return tags.contains("museum") || hasTag("museum")
+        case .food:      return hasTag("food") || hasTag("bbq") || hasTag("restaurant") || hasTag("taco") || hasTag("dining")
+        case .free:      return ["park", "nature", "plaza", "monument", "mural", "district", "bridge", "statue"].contains(place.kind)
+        case .art:       return place.kind == "mural" || hasTag("public-art") || hasTag("art")
+        case .nature:    return place.kind == "nature" || place.kind == "park" || hasTag("garden") || hasTag("spring") || tags.contains("trail")
+        case .nightlife: return tags.contains("nightlife") || hasTag("night") || hasTag("bar") || hasTag("club")
+        }
+    }
+
+    /// The collections that actually have >=2 matching places in the current set,
+    /// so the chip row never offers an empty lens.
+    static func available(in places: [Place]) -> [PlaceCollection] {
+        allCases.filter { c in places.filter(c.matches).count >= 2 }
     }
 }
 

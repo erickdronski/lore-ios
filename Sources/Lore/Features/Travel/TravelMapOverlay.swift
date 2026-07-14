@@ -51,6 +51,7 @@ struct TravelMapControls: View {
 
             if !collapsed {
                 VStack(spacing: 12) {
+                    CollectionChips(places: places)
                     MapFilterChips()
 
                     NearMeShelf(

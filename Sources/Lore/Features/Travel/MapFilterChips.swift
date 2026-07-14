@@ -104,3 +104,51 @@ struct MapFilterChips: View {
             )
     }
 }
+
+/// A single-select "collection" lens above the kind chips: tap Family / Live
+/// Music / Museums / Food / Free / Art / Nature / Nightlife to show only those
+/// places. The active chip fills Amber (the pin-lens metaphor). Only collections
+/// with real content in the current city appear, so no lens is ever empty.
+struct CollectionChips: View {
+    @Environment(MapFilterStore.self) private var store
+    let places: [Place]
+
+    private var collections: [PlaceCollection] { PlaceCollection.available(in: places) }
+
+    var body: some View {
+        if !collections.isEmpty {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(collections) { collection in
+                        chip(collection)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 2)
+            }
+            .accessibilityLabel(Text("Show a collection of places"))
+        }
+    }
+
+    private func chip(_ collection: PlaceCollection) -> some View {
+        let active = store.activeCollection == collection
+        return Button {
+            store.setCollection(collection)
+        } label: {
+            HStack(spacing: 6) {
+                Text(collection.emoji).font(.system(size: 13))
+                Text(collection.label).font(LoreType.button)
+            }
+            .padding(.horizontal, 14)
+            .frame(height: 34)
+            .background(Capsule().fill(active ? LoreColor.amber : LoreColor.bone50))
+            .overlay(Capsule().strokeBorder(active ? LoreColor.amber : LoreColor.bone300, lineWidth: active ? 1.5 : 1))
+            .foregroundStyle(active ? LoreColor.ink : LoreColor.ink600)
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.pressableSilent)
+        .accessibilityLabel(Text(collection.label))
+        .accessibilityValue(Text(active ? "Showing only these" : "Off"))
+        .accessibilityAddTraits(active ? [.isSelected, .isButton] : .isButton)
+    }
+}
