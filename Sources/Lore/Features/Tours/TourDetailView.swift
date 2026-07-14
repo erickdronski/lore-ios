@@ -32,11 +32,10 @@ struct TourDetailView: View {
                         description: Text("This tour hasn't been routed.")
                     )
                 } else if isLocked {
-                    // A curated Lore+ walk: the header (title, blurb, trip facts)
-                    // still shows what it is, then the route resolves to a lock.
-                    PlusGate(isPlus: false, feature: .tours, onUnlock: { showPaywall = true }) {
-                        EmptyView()
-                    }
+                    // A curated Lore+ walk: preview the stops (a table of contents)
+                    // so the value is visible, then the guided route, turn-by-turn
+                    // notes, and audio resolve to a lock.
+                    lockedTourPreview
                 } else {
                     progressRail
                     stopCard
@@ -63,6 +62,40 @@ struct TourDetailView: View {
         .onDisappear { liveActivity.end() }
         .sheet(isPresented: $showPaywall) {
             PaywallView(entitlements: entitlements, store: store, auth: auth, context: .tours)
+        }
+    }
+
+    /// Locked premium tour: a numbered preview of the stops so a shopper can see
+    /// what the walk covers before deciding, then the Lore+ unlock. The guided
+    /// experience (route order, turn-by-turn notes, live activity, audio) stays
+    /// gated, only the "what you'll see" list is shown.
+    private var lockedTourPreview: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("\(tour.stops.count) stops on this walk")
+                    .font(LoreType.button)
+                    .foregroundStyle(LoreColor.ink)
+                ForEach(Array(tour.stops.enumerated()), id: \.offset) { i, stop in
+                    HStack(spacing: 10) {
+                        Text("\(i + 1)")
+                            .font(LoreType.caption)
+                            .foregroundStyle(LoreColor.brass700)
+                            .frame(width: 18, alignment: .leading)
+                        Text(model.place(id: stop.placeID)?.name ?? "Stop \(i + 1)")
+                            .font(LoreType.body)
+                            .foregroundStyle(LoreColor.ink600)
+                            .lineLimit(1)
+                        Spacer()
+                    }
+                }
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(LoreColor.bone50, in: RoundedRectangle(cornerRadius: 14))
+
+            PlusGate(isPlus: false, feature: .tours, onUnlock: { showPaywall = true }) {
+                EmptyView()
+            }
         }
     }
 

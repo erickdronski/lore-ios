@@ -75,6 +75,21 @@ final class NarrationService {
         synthesizer.speak(utterance)
     }
 
+    /// Speak a full dossier narrative aloud, the Lore+ "audio narration" of the
+    /// deep dive (not just the 20-second scanner hook). Cancels any in-flight
+    /// speech first and drives the same isSpeaking state so a button can toggle.
+    func speakDossier(_ text: String) {
+        offered = nil
+        guard !text.isEmpty else { return }
+        if synthesizer.isSpeaking { synthesizer.stopSpeaking(at: .immediate) }
+        configureSession()
+        let utterance = AVSpeechUtterance(string: text)
+        utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 0.94
+        utterance.postUtteranceDelay = 0.15
+        isSpeaking = true
+        synthesizer.speak(utterance)
+    }
+
     /// Dismiss the offer without speaking (the quiet-street / museum case).
     func dismissOffer() {
         offered = nil

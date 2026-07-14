@@ -21,6 +21,9 @@ struct DiveView: View {
     @Environment(StoreKitService.self) private var store
     @Environment(AuthService.self) private var auth
     @State private var model = DiveModel()
+    /// On-device narration of the full dossier (the Lore+ audio pillar). One per
+    /// dossier; stopped on disappear so it never keeps talking off-screen.
+    @State private var narration = NarrationService()
     /// True once the free daily dive allowance is spent: the dossier body defers
     /// to the gate card (docs/00 §7). Lore+ members are never gated.
     @State private var gated = false
@@ -62,6 +65,7 @@ struct DiveView: View {
             .padding(.top, 44)
         }
         .background(LoreColor.ink950.ignoresSafeArea())
+        .onDisappear { narration.stop() }
         .task {
             // Dive-open gate (docs/00 §7): members and free users with dives left
             // open normally (spending one); a spent free user sees the gate card.
@@ -89,12 +93,19 @@ struct DiveView: View {
     /// The dossier header: the emoji medallion (the morph *target*, it grows
     /// from the Layer-1 card's medallion) beside the place name in display XL.
     private var header: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 14) {
-            medallion
-            Text(place.name)
-                .font(LoreType.displayXL)
-                .foregroundStyle(LoreColor.bone)
-                .fixedSize(horizontal: false, vertical: true)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline, spacing: 14) {
+                medallion
+                Text(place.name)
+                    .font(LoreType.displayXL)
+                    .foregroundStyle(LoreColor.bone)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            // Free users see their remaining daily dives up front, so the 4th-dive
+            // gate is anticipated rather than a surprise mid-read.
+            if !entitlements.isPlus && !gated {
+                DiveMeterBadge(remaining: diveMeter.remainingToday)
+            }
         }
     }
 
@@ -136,6 +147,9 @@ struct DiveView: View {
                 }
             }
             .diveEntrance(index: 0)
+
+            listenControl(narrative)
+                .diveEntrance(index: 0)
         }
 
         if let wikipediaTitle = dive.media.wikipediaTitle {
@@ -152,6 +166,43 @@ struct DiveView: View {
             TimelineStrip(events: dive.timeline)
                 .diveEntrance(index: 3)
         }
+    }
+
+    /// The Lore+ "Listen to the full story" control: on-device narration of the
+    /// whole dossier (the real audio pillar, not just the scanner hook). Free
+    /// users get a locked affordance that opens the paywall; members hear it.
+    @ViewBuilder
+    private func listenControl(_ narrative: String) -> some View {
+        Button {
+            if entitlements.isPlus {
+                Haptics.play(.chipTap)
+                if narration.isSpeaking { narration.stop() } else { narration.speakDossier(narrative) }
+            } else {
+                showPaywall = true
+            }
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: narration.isSpeaking ? "stop.circle.fill" : "play.circle.fill")
+                    .font(.system(size: 20))
+                    .foregroundStyle(LoreColor.amber)
+                Text(narration.isSpeaking ? "Stop" : "Listen to the full story")
+                    .font(LoreType.button)
+                    .foregroundStyle(LoreColor.bone)
+                Spacer()
+                if !entitlements.isPlus {
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(LoreColor.amber)
+                }
+            }
+            .padding(14)
+            .background(LoreColor.ink800, in: RoundedRectangle(cornerRadius: 14))
+            .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(LoreColor.amber.opacity(0.3), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(entitlements.isPlus
+            ? (narration.isSpeaking ? "Stop narration" : "Listen to the full story")
+            : "Listen to the full story, a Lore Plus feature")
     }
 
     // MARK: Narrative
