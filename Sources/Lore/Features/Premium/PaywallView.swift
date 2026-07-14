@@ -47,6 +47,7 @@ struct PaywallView: View {
                     if !entitlements.isPlus {
                         planPicker
                         featureTable
+                        tripPassSection
                     }
                     purchaseButton
                     if !entitlements.isPlus {
@@ -222,6 +223,59 @@ struct PaywallView: View {
                         .multilineTextAlignment(.center)
                 }
             }
+        }
+    }
+
+    /// A non-renewing "just visiting" option for one-trip users (the beta-fleet's
+    /// #1 pricing recommendation). Hidden until the pass products exist in App
+    /// Store Connect, `product(for:)` is nil otherwise, so shipping this ahead of
+    /// the ASC products is safe (the section simply doesn't render).
+    @ViewBuilder
+    private var tripPassSection: some View {
+        let pass72 = store.product(for: StoreKitService.ProductID.pass72h)
+        let pass7 = store.product(for: StoreKitService.ProductID.pass7d)
+        if pass72 != nil || pass7 != nil {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("JUST VISITING?")
+                    .font(LoreType.label).tracking(0.6)
+                    .foregroundStyle(LoreColor.ink600)
+                Text("A one-time pass. Everything in Lore+ for your trip, no subscription.")
+                    .font(LoreType.caption)
+                    .foregroundStyle(LoreColor.ink600)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 10) {
+                    if let p = pass72 { passButton(title: "72-hour pass", price: p.displayPrice, id: p.id) }
+                    if let p = pass7 { passButton(title: "7-day pass", price: p.displayPrice, id: p.id) }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func passButton(title: String, price: String, id: String) -> some View {
+        Button {
+            Task { await purchasePass(id: id) }
+        } label: {
+            VStack(spacing: 4) {
+                Text(title).font(LoreType.button).foregroundStyle(LoreColor.bone)
+                Text(price).font(LoreType.caption).foregroundStyle(LoreColor.ink600)
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 58)
+            .background(RoundedRectangle(cornerRadius: 16).fill(LoreColor.ink800))
+            .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(LoreColor.ink700, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(title), \(price)")
+    }
+
+    private func purchasePass(id: String) async {
+        let outcome = await store.purchase(productID: id)
+        if case .success = outcome {
+            await store.refreshEntitlements()
+            await entitlements.refresh(accessToken: auth.session?.accessToken)
+            Haptics.play(.badgeEarned)
+            dismiss()
         }
     }
 

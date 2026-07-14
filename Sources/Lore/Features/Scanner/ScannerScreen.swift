@@ -674,9 +674,15 @@ final class ScannerModel {
     private(set) var inViewStories: [ProjectedStory] = []
     private(set) var directionalCandidates: [ScannerRanking.Ranked] = []
 
-    /// Places the user has already opened this session, the novelty signal
-    /// (docs/12 §3 `w_fresh`). In-memory only at P0; P1 seeds it from `visit`.
-    private var seenPlaceIDs: Set<String> = []
+    /// Places the user has ever opened, the novelty signal (docs/12 §3 `w_fresh`).
+    /// Persisted across launches so a repeat visitor stops re-scoring already-seen
+    /// buildings as novel (was in-memory only, reset every launch).
+    private static let seenDefaultsKey = "lore.scanner.seenPlaceIDs.v1"
+    private var seenPlaceIDs: Set<String> = Set(UserDefaults.standard.stringArray(forKey: ScannerModel.seenDefaultsKey) ?? []) {
+        didSet {
+            UserDefaults.standard.set(Array(seenPlaceIDs), forKey: ScannerModel.seenDefaultsKey)
+        }
+    }
 
     var selectedPlace: Place?
     var selectedStory: Story?

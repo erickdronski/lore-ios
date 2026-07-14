@@ -46,7 +46,25 @@ final class StoreKitService {
         static let monthly = "lore_plus_monthly"
         static let annual = "lore_plus_annual"
         static let lifetime = "lore_plus_lifetime"
-        static let all: [String] = [monthly, annual, lifetime]
+        /// Non-renewing Trip Passes for one-trip visitors (no recurring charge).
+        /// Each grants Lore+ for a fixed window from its purchase date. Create
+        /// these as **non-renewing subscription** products in App Store Connect.
+        static let pass72h = "lore_pass_72h"
+        static let pass7d = "lore_pass_7d"
+        /// Subs + lifetime unlock (these appear in `currentEntitlements`).
+        static let subsAndLifetime: [String] = [monthly, annual, lifetime]
+        /// The non-renewing passes (tracked by purchase date + window).
+        static let passes: [String] = [pass72h, pass7d]
+        static let all: [String] = subsAndLifetime + passes
+
+        /// The access window a Trip Pass grants from its purchase date.
+        static func passDuration(_ id: String) -> TimeInterval? {
+            switch id {
+            case pass72h: return 72 * 3600
+            case pass7d: return 7 * 24 * 3600
+            default: return nil
+            }
+        }
     }
 
     /// The `entitlements` grant name these products confer. Matches the row
@@ -124,7 +142,18 @@ final class StoreKitService {
     /// `EntitlementStore` reads, it can only *open* the gate, never close one
     /// the server (RevenueCat/`entitlements`) has opened.
     var hasActiveEntitlement: Bool {
-        !ownedProductIDs.isEmpty
+        !ownedProductIDs.isEmpty || tripPassActive
+    }
+
+    /// The expiry of the most recent Trip Pass, if any. A non-renewing pass does
+    /// NOT appear in `currentEntitlements`, so it's tracked from its purchase
+    /// date plus the pass window (recomputed in `refreshEntitlements`).
+    private(set) var tripPassExpiresAt: Date?
+
+    /// True while an unexpired Trip Pass grants Lore+.
+    var tripPassActive: Bool {
+        guard let expiry = tripPassExpiresAt else { return false }
+        return expiry > Date()
     }
 
     /// Whether the current on-device entitlement is within an introductory
@@ -140,7 +169,7 @@ final class StoreKitService {
         var trialing = false
         for await result in Transaction.currentEntitlements {
             guard case .verified(let transaction) = result else { continue }
-            guard ProductID.all.contains(transaction.productID) else { continue }
+            guard ProductID.subsAndLifetime.contains(transaction.productID) else { continue }
             // Not revoked and (for subscriptions) not past expiry.
             if transaction.revocationDate != nil { continue }
             if let expiry = transaction.expirationDate, expiry < Date() { continue }
@@ -155,6 +184,20 @@ final class StoreKitService {
         }
         ownedProductIDs = owned
         isInIntroPeriod = trialing
+
+        // Trip Passes are non-renewing: they never appear in currentEntitlements,
+        // so scan the full transaction history and keep the latest purchase's
+        // access window (purchase date + 72h / 7d). Restores work because
+        // Transaction.all is receipt-backed.
+        var latestPassExpiry: Date?
+        for await result in Transaction.all {
+            guard case .verified(let t) = result else { continue }
+            guard let window = ProductID.passDuration(t.productID) else { continue }
+            if t.revocationDate != nil { continue }
+            let expiry = t.purchaseDate.addingTimeInterval(window)
+            if latestPassExpiry == nil || expiry > latestPassExpiry! { latestPassExpiry = expiry }
+        }
+        tripPassExpiresAt = latestPassExpiry
     }
 
     // MARK: - Purchase
