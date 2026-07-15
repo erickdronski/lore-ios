@@ -60,6 +60,7 @@ struct SettingsView: View {
         .background(LoreColor.bone100)
         .navigationTitle(L10n.t("settings.title"))
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.visible, for: .navigationBar)
         .alert("Delete your account?", isPresented: $showDeleteConfirm) {
             if let manageSubscriptionsURL {
                 Button("Manage Apple subscription") {

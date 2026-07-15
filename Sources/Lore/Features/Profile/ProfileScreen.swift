@@ -19,6 +19,14 @@ struct ProfileScreen: View {
     var body: some View {
         NavigationStack {
             List {
+                Text("Profile")
+                    .font(.largeTitle.weight(.bold))
+                    .foregroundStyle(LoreColor.ink)
+                    .listRowInsets(EdgeInsets(top: 16, leading: 20, bottom: 8, trailing: 20))
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                    .accessibilityAddTraits(.isHeader)
+
                 if let profile = auth.profile {
                     signedInHeader(profile)
                 } else if auth.isSignedIn {
@@ -69,10 +77,7 @@ struct ProfileScreen: View {
             .listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)
             .background(LoreColor.bone100.ignoresSafeArea())
-            .navigationTitle("Profile")
-            .toolbarBackground(.visible, for: .navigationBar)
-            .toolbarBackground(LoreColor.bone100, for: .navigationBar)
-            .toolbarColorScheme(.light, for: .navigationBar)
+            .toolbar(.hidden, for: .navigationBar)
             .sheet(isPresented: $showSignIn) {
                 SignInView()
                     .presentationDetents([.large])
@@ -82,7 +87,6 @@ struct ProfileScreen: View {
             }
             .task { await loadProfile() }
         }
-        .environment(\.colorScheme, .light)
         .background(LoreColor.bone100.ignoresSafeArea())
     }
 
