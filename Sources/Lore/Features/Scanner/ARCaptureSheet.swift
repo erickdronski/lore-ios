@@ -87,7 +87,7 @@ struct ARCaptureSheet: View {
             items.append(ShareCaption.url(for: place))
         } else {
             items.append("\(city) through Lore. Every place has a story.")
-            items.append(URL(string: "https://getlore.app")!)
+            items.append(Config.webURL)
         }
         activityItems = items
     }

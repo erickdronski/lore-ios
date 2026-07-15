@@ -6,6 +6,7 @@ struct AuthSession: Codable {
     let accessToken: String
     let refreshToken: String
     let expiresIn: Int
+    let expiresAt: Int?
     let tokenType: String
     let user: AuthUser
 
@@ -14,8 +15,45 @@ struct AuthSession: Codable {
         case accessToken = "access_token"
         case refreshToken = "refresh_token"
         case expiresIn = "expires_in"
+        case expiresAt = "expires_at"
         case tokenType = "token_type"
     }
+
+    init(
+        accessToken: String,
+        refreshToken: String,
+        expiresIn: Int,
+        expiresAt: Int? = nil,
+        tokenType: String,
+        user: AuthUser
+    ) {
+        self.accessToken = accessToken
+        self.refreshToken = refreshToken
+        self.expiresIn = expiresIn
+        self.expiresAt = expiresAt
+        self.tokenType = tokenType
+        self.user = user
+    }
+
+    func expires(within interval: TimeInterval) -> Bool {
+        guard let expiresAt else {
+            // Sessions saved before expiry tracking was added refresh once.
+            return true
+        }
+        return Date(timeIntervalSince1970: TimeInterval(expiresAt))
+            .timeIntervalSinceNow <= interval
+    }
+
+    func refreshDelay(leeway: TimeInterval) -> TimeInterval {
+        guard let expiresAt else { return 0 }
+        return max(
+            0,
+            Date(timeIntervalSince1970: TimeInterval(expiresAt))
+                .timeIntervalSinceNow - leeway
+        )
+    }
+
+    var isExpired: Bool { expires(within: 0) }
 }
 
 struct AuthUser: Codable {
@@ -39,6 +77,7 @@ final class AuthService {
             } else {
                 SessionStore.clear()
             }
+            scheduleSessionRefresh()
         }
     }
     private(set) var profile: UserProfile?
@@ -47,6 +86,15 @@ final class AuthService {
     /// doesn't flash before a persisted session is rehydrated.
     private(set) var isRestoring = true
     var lastError: String?
+    var lastNotice: String?
+
+    /// Access tokens normally last about an hour. Refresh two minutes early so
+    /// stores that read the current token synchronously do not cross expiry.
+    private static let refreshLeeway: TimeInterval = 2 * 60
+    private static let initialRefreshRetry: TimeInterval = 5
+    private static let maximumRefreshRetry: TimeInterval = 5 * 60
+    @ObservationIgnored private var refreshTimerTask: Task<Void, Never>?
+    @ObservationIgnored private var sessionRefreshTask: Task<Bool, Never>?
 
     /// Runs the `ASWebAuthenticationSession` for Supabase OAuth providers.
     private let webAuth = WebAuthCoordinator()
@@ -71,6 +119,7 @@ final class AuthService {
     func signIn(email: String, password: String) async {
         isBusy = true
         lastError = nil
+        lastNotice = nil
         defer { isBusy = false }
         do {
             var components = URLComponents(
@@ -110,6 +159,7 @@ final class AuthService {
     func signUp(email: String, password: String) async {
         isBusy = true
         lastError = nil
+        lastNotice = nil
         defer { isBusy = false }
         do {
             var request = URLRequest(url: Config.authURL.appending(path: "signup"))
@@ -130,20 +180,43 @@ final class AuthService {
                 session = newSession
                 await refreshProfile()
             } else {
-                lastError = "Account created. Check your email to confirm, then sign in."
+                lastNotice = "Account created. Check your email to confirm, then sign in."
             }
         } catch {
             lastError = error.localizedDescription
         }
     }
 
-    /// Send a password-reset email, `POST /auth/v1/recover` with the anon key.
+    /// Send a password-reset email that finishes on Lore's secure web reset
+    /// screen. This works from any mail client without relying on an app deep
+    /// link or a locally stored PKCE verifier.
     func sendPasswordReset(email: String) async {
         isBusy = true
         lastError = nil
+        lastNotice = nil
         defer { isBusy = false }
         do {
-            var request = URLRequest(url: Config.authURL.appending(path: "recover"))
+            var resetComponents = URLComponents(
+                url: Config.webURL.appending(path: "auth"),
+                resolvingAgainstBaseURL: false
+            )
+            resetComponents?.queryItems = [URLQueryItem(name: "mode", value: "reset")]
+            guard let resetURL = resetComponents?.url else {
+                throw AuthError.http(status: 0, message: "Couldn't create the reset link.")
+            }
+
+            var recoverComponents = URLComponents(
+                url: Config.authURL.appending(path: "recover"),
+                resolvingAgainstBaseURL: false
+            )
+            recoverComponents?.queryItems = [
+                URLQueryItem(name: "redirect_to", value: resetURL.absoluteString)
+            ]
+            guard let recoverURL = recoverComponents?.url else {
+                throw AuthError.http(status: 0, message: "Couldn't create the reset request.")
+            }
+
+            var request = URLRequest(url: recoverURL)
             request.httpMethod = "POST"
             request.setValue(Config.supabaseAnonKey, forHTTPHeaderField: "apikey")
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -157,7 +230,7 @@ final class AuthService {
                     message: Self.errorMessage(from: data) ?? "Couldn't send the reset email."
                 )
             }
-            lastError = "If that email has an account, a reset link is on its way."
+            lastNotice = "If that email has an account, a reset link is on its way. Open it to choose a new password."
         } catch {
             lastError = error.localizedDescription
         }
@@ -165,7 +238,7 @@ final class AuthService {
 
     /// Best-effort server-side revoke, then clear local state either way.
     func signOut() async {
-        if let token = session?.accessToken {
+        if let token = await validAccessToken() {
             var request = URLRequest(url: Config.authURL.appending(path: "logout"))
             request.httpMethod = "POST"
             request.setValue(Config.supabaseAnonKey, forHTTPHeaderField: "apikey")
@@ -182,17 +255,22 @@ final class AuthService {
     /// auth user, rows, and journal photos. On success we clear the local
     /// session so the app returns to signed-out. Returns true on success.
     func deleteAccount() async -> Bool {
-        guard let token = session?.accessToken else { return false }
         isBusy = true
+        lastError = nil
         defer { isBusy = false }
-        var request = URLRequest(url: Config.functionsURL.appending(path: "delete-account"))
-        request.httpMethod = "POST"
-        request.setValue(Config.supabaseAnonKey, forHTTPHeaderField: "apikey")
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         do {
-            let (_, response) = try await URLSession.shared.data(for: request)
-            guard (response as? HTTPURLResponse)?.statusCode == 200 else {
+            guard let token = await validAccessToken() else {
+                lastError = "Your session has expired. Sign in and try again."
+                return false
+            }
+
+            var response = try await performDeleteAccount(accessToken: token)
+            if response.statusCode == 401,
+               let refreshedToken = await validAccessToken(forceRefresh: true) {
+                response = try await performDeleteAccount(accessToken: refreshedToken)
+            }
+
+            guard response.statusCode == 200 else {
                 lastError = "Couldn't delete your account. Please try again."
                 return false
             }
@@ -205,6 +283,20 @@ final class AuthService {
         }
     }
 
+    private func performDeleteAccount(accessToken: String) async throws -> HTTPURLResponse {
+        var request = URLRequest(url: Config.functionsURL.appending(path: "delete-account"))
+        request.httpMethod = "POST"
+        request.setValue(Config.supabaseAnonKey, forHTTPHeaderField: "apikey")
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = Data("{}".utf8)
+        let (_, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw AuthError.http(status: 0, message: "The server returned an invalid response.")
+        }
+        return http
+    }
+
     /// Restore a persisted session on launch: load it from the Keychain, show
     /// signed-in immediately, then exchange the refresh token for a fresh access
     /// token and hydrate the profile. If nothing is stored (or the refresh
@@ -214,7 +306,7 @@ final class AuthService {
         defer { isRestoring = false }
         guard session == nil, let saved = SessionStore.load() else { return }
         session = saved
-        await refreshSession()
+        _ = await refreshSession()
         await refreshProfile()
     }
 
@@ -222,15 +314,30 @@ final class AuthService {
     /// (`grant_type=refresh_token`). On an invalid/expired refresh token we sign
     /// out; on a network blip we keep the restored session so a later call can
     /// retry rather than bouncing the user to sign-in.
-    private func refreshSession() async {
-        guard let refreshToken = session?.refreshToken else { return }
+    private func refreshSession() async -> Bool {
+        if let sessionRefreshTask {
+            return await sessionRefreshTask.value
+        }
+        guard let refreshToken = session?.refreshToken else { return false }
+
+        let task = Task { [weak self] in
+            guard let self else { return false }
+            return await self.performSessionRefresh(refreshToken: refreshToken)
+        }
+        sessionRefreshTask = task
+        let refreshed = await task.value
+        sessionRefreshTask = nil
+        return refreshed
+    }
+
+    private func performSessionRefresh(refreshToken: String) async -> Bool {
         do {
             var components = URLComponents(
                 url: Config.authURL.appending(path: "token"),
                 resolvingAgainstBaseURL: false
             )
             components?.queryItems = [URLQueryItem(name: "grant_type", value: "refresh_token")]
-            guard let url = components?.url else { return }
+            guard let url = components?.url else { return false }
 
             var request = URLRequest(url: url)
             request.httpMethod = "POST"
@@ -240,20 +347,85 @@ final class AuthService {
 
             let (data, response) = try await URLSession.shared.data(for: request)
             if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-                // The refresh token is dead; sign out so the UI is honest.
-                session = nil
-                return
+                // Only an auth verdict kills the session. A 5xx or transient
+                // platform failure keeps it so foregrounding can retry.
+                if [400, 401, 403].contains(http.statusCode) {
+                    session = nil
+                }
+                return false
             }
             session = try JSONDecoder().decode(AuthSession.self, from: data)
+            return true
         } catch {
-            // Transient failure: keep the restored session (a later 401 re-auths).
+            // Transient failure: keep the session and retry on foreground/401.
+            return false
+        }
+    }
+
+    /// Return a token that is not near expiry. `forceRefresh` is used for the
+    /// single retry after an authenticated endpoint returns 401.
+    func validAccessToken(forceRefresh: Bool = false) async -> String? {
+        guard let current = session else { return nil }
+        if forceRefresh || current.expires(within: Self.refreshLeeway) {
+            let refreshed = await refreshSession()
+            // A forced refresh follows a server auth rejection. Reusing the
+            // same token after that refresh failed would only repeat the 401.
+            if forceRefresh && !refreshed { return nil }
+        }
+        guard let candidate = session, !candidate.isExpired else { return nil }
+        return candidate.accessToken
+    }
+
+    /// Called when the app becomes active; a suspended refresh timer may have
+    /// missed its deadline while iOS froze the process.
+    func refreshIfNeeded() async {
+        guard session?.expires(within: Self.refreshLeeway) == true else { return }
+        _ = await refreshSession()
+    }
+
+    private func scheduleSessionRefresh() {
+        refreshTimerTask?.cancel()
+        refreshTimerTask = nil
+        guard let session else { return }
+
+        let delay = session.refreshDelay(leeway: Self.refreshLeeway)
+        refreshTimerTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: .seconds(delay))
+            } catch {
+                return
+            }
+            var retryDelay = Self.initialRefreshRetry
+            while !Task.isCancelled {
+                guard let self else { return }
+                let refreshed = await self.refreshSession()
+                if refreshed || self.session == nil { return }
+
+                // A transient network/platform failure must not strand the
+                // session after this one timer fires. Retry quietly with a
+                // bounded backoff; foreground calls still coalesce into the
+                // same refresh task.
+                do {
+                    try await Task.sleep(for: .seconds(retryDelay))
+                } catch {
+                    return
+                }
+                retryDelay = min(retryDelay * 2, Self.maximumRefreshRetry)
+            }
         }
     }
 
     /// Loads the signed-in user's `user_profile` row (trust tier, points).
     func refreshProfile() async {
-        guard let token = session?.accessToken else { return }
-        profile = try? await LoreAPI.shared.profile(accessToken: token)
+        guard let token = await validAccessToken() else { return }
+        do {
+            profile = try await LoreAPI.shared.profile(accessToken: token)
+        } catch LoreAPI.APIError.http(let status, _) where status == 401 {
+            guard let refreshedToken = await validAccessToken(forceRefresh: true) else { return }
+            profile = try? await LoreAPI.shared.profile(accessToken: refreshedToken)
+        } catch {
+            // Profile is supplemental; keep the rest of the signed-in app live.
+        }
     }
 
     /// Native **Sign in with Apple**, exchange the Apple identity token for a
@@ -369,6 +541,7 @@ final class AuthService {
                 accessToken: tokens.access,
                 refreshToken: tokens.refresh,
                 expiresIn: tokens.expiresIn,
+                expiresAt: Int(Date().timeIntervalSince1970) + tokens.expiresIn,
                 tokenType: tokens.tokenType,
                 user: user
             )

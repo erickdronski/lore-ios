@@ -82,7 +82,8 @@ struct PaywallView: View {
             await model.refreshEligibility()
             // Reflect any membership the user already has (e.g. re-opened the
             // paywall) so the CTA reads "You're a member" rather than selling.
-            await entitlements.refresh(accessToken: auth.session?.accessToken)
+            let token = await auth.validAccessToken()
+            await entitlements.refresh(accessToken: token)
         }
     }
 
@@ -105,7 +106,7 @@ struct PaywallView: View {
 
             Text(context.subhead)
                 .font(LoreType.body)
-                .foregroundStyle(LoreColor.ink600)
+                .foregroundStyle(LoreColor.bone.opacity(0.72))
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 8)
@@ -138,11 +139,11 @@ struct PaywallView: View {
                 Text("What you get")
                     .font(LoreType.label)
                     .tracking(0.6)
-                    .foregroundStyle(LoreColor.ink600)
+                    .foregroundStyle(LoreColor.bone.opacity(0.72))
                 Spacer()
                 Text("Free")
                     .font(LoreType.label).tracking(0.6)
-                    .foregroundStyle(LoreColor.ink600)
+                    .foregroundStyle(LoreColor.bone.opacity(0.72))
                     .frame(width: 52)
                 Text("Lore+")
                     .font(LoreType.label).tracking(0.6)
@@ -196,7 +197,7 @@ struct PaywallView: View {
                                     // otherwise sell the plan straight (docs/16 §1).
                                     Text(model.ctaTitle)
                                         .font(LoreType.button)
-                                    Text(model.selectedPlan.ctaSubtitle)
+                                    Text(model.ctaSubtitle)
                                         .font(LoreType.caption)
                                         .opacity(0.85)
                                 }
@@ -213,13 +214,20 @@ struct PaywallView: View {
                     Task { await restore() }
                 }
                 .font(LoreType.caption)
-                .foregroundStyle(LoreColor.ink600)
+                .foregroundStyle(LoreColor.bone.opacity(0.72))
                 .disabled(model.isPurchasing)
 
                 if let error = model.purchaseError {
                     Text(error)
                         .font(LoreType.caption)
                         .foregroundStyle(LoreColor.errorDark)
+                        .multilineTextAlignment(.center)
+                }
+
+                if let notice = model.purchaseNotice {
+                    Text(notice)
+                        .font(LoreType.caption)
+                        .foregroundStyle(LoreColor.bone.opacity(0.82))
                         .multilineTextAlignment(.center)
                 }
             }
@@ -238,10 +246,10 @@ struct PaywallView: View {
             VStack(alignment: .leading, spacing: 10) {
                 Text("JUST VISITING?")
                     .font(LoreType.label).tracking(0.6)
-                    .foregroundStyle(LoreColor.ink600)
+                    .foregroundStyle(LoreColor.bone.opacity(0.72))
                 Text("A one-time pass. Everything in Lore+ for your trip, no subscription.")
                     .font(LoreType.caption)
-                    .foregroundStyle(LoreColor.ink600)
+                    .foregroundStyle(LoreColor.bone.opacity(0.72))
                     .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 10) {
                     if let p = pass72 { passButton(title: "72-hour pass", price: p.displayPrice, id: p.id) }
@@ -258,7 +266,7 @@ struct PaywallView: View {
         } label: {
             VStack(spacing: 4) {
                 Text(title).font(LoreType.button).foregroundStyle(LoreColor.bone)
-                Text(price).font(LoreType.caption).foregroundStyle(LoreColor.ink600)
+                Text(price).font(LoreType.caption).foregroundStyle(LoreColor.bone.opacity(0.72))
             }
             .frame(maxWidth: .infinity)
             .frame(height: 58)
@@ -266,14 +274,17 @@ struct PaywallView: View {
             .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(LoreColor.ink700, lineWidth: 1))
         }
         .buttonStyle(.plain)
+        .disabled(model.isPurchasing)
+        .opacity(model.isPurchasing ? 0.6 : 1)
         .accessibilityLabel("\(title), \(price)")
     }
 
     private func purchasePass(id: String) async {
-        let outcome = await store.purchase(productID: id)
+        let outcome = await model.purchase(productID: id)
         if case .success = outcome {
             await store.refreshEntitlements()
-            await entitlements.refresh(accessToken: auth.session?.accessToken)
+            let token = await auth.validAccessToken()
+            await entitlements.refresh(accessToken: token)
             Haptics.play(.badgeEarned)
             dismiss()
         }
@@ -282,7 +293,7 @@ struct PaywallView: View {
     private var finePrint: some View {
         Text(model.finePrintText)
         .font(LoreType.caption)
-        .foregroundStyle(LoreColor.ink600)
+        .foregroundStyle(LoreColor.bone.opacity(0.72))
         .multilineTextAlignment(.center)
         .fixedSize(horizontal: false, vertical: true)
         .padding(.horizontal, 8)
@@ -333,7 +344,8 @@ struct PaywallView: View {
             if let userID = auth.session?.user.id {
                 entitlements.applyLocalPurchase(userID: userID, trialing: trialing)
             }
-            await entitlements.refresh(accessToken: auth.session?.accessToken)
+            let token = await auth.validAccessToken()
+            await entitlements.refresh(accessToken: token)
             Haptics.play(.badgeEarned)  // the unlock is a reward moment
             dismiss()
         case .pending:
@@ -342,15 +354,18 @@ struct PaywallView: View {
             break
         case .userCancelled:
             break  // no-op, no error
+        case .inProgress:
+            break
         case .failed:
             break  // model.purchaseError already set
         }
     }
 
     private func restore() async {
-        let restored = await model.restore()
-        if restored {
-            await entitlements.refresh(accessToken: auth.session?.accessToken)
+        let outcome = await model.restore()
+        if case .restored = outcome {
+            let token = await auth.validAccessToken()
+            await entitlements.refresh(accessToken: token)
             dismiss()
         }
     }
@@ -391,7 +406,7 @@ private struct PlanRow: View {
             HStack(spacing: 12) {
                 Image(systemName: selected ? "largecircle.fill.circle" : "circle")
                     .font(.system(size: 20))
-                    .foregroundStyle(selected ? LoreColor.brass300 : LoreColor.ink600)
+                    .foregroundStyle(selected ? LoreColor.brass300 : LoreColor.bone.opacity(0.72))
 
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 8) {
@@ -409,7 +424,7 @@ private struct PlanRow: View {
                     }
                     Text(priceLine)
                         .font(LoreType.caption)
-                        .foregroundStyle(LoreColor.ink600)
+                        .foregroundStyle(LoreColor.bone.opacity(0.72))
                 }
                 Spacer()
             }
@@ -461,7 +476,7 @@ struct FeatureComparison: Identifiable {
         .init(label: "Deep dives", free: .text("3/day"), plus: .yes),
         .init(label: "Curated walking tours", free: .no, plus: .yes),
         .init(label: "Audio narration", free: .no, plus: .yes),
-        .init(label: "Contribute & earn badges", free: .yes, plus: .yes),
+        .init(label: "Visit journal & badges", free: .yes, plus: .yes),
     ]
 }
 
@@ -491,11 +506,11 @@ private struct FeatureRow: View {
         case .no:
             Image(systemName: "minus")
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(LoreColor.ink600)
+                .foregroundStyle(LoreColor.bone.opacity(0.72))
         case .text(let string):
             Text(string)
                 .font(LoreType.caption)
-                .foregroundStyle(LoreColor.ink600)
+                .foregroundStyle(LoreColor.bone.opacity(0.72))
         }
     }
 }
@@ -544,15 +559,6 @@ final class PaywallModel {
             }
         }
 
-        /// Sub-line under the CTA after the trial ("then $5.99/mo").
-        var ctaSubtitle: String {
-            switch self {
-            case .monthly: return "then $5.99/mo"
-            case .annual: return "then $34.99/yr"
-            case .lifetime: return "one-time · yours forever"
-            }
-        }
-
         /// The "save 51%" style badge on annual. $34.99 vs $71.88 ≈ 51% off.
         var savingsBadge: String? {
             switch self {
@@ -581,6 +587,7 @@ final class PaywallModel {
     var selectedPlan: Plan = .annual  // default to the better value
     private(set) var isPurchasing = false
     private(set) var purchaseError: String?
+    private(set) var purchaseNotice: String?
 
     /// Whether the current Apple ID is eligible for the 7-day intro offer.
     /// Drives the CTA copy so it never promises a trial to a returning user.
@@ -601,6 +608,14 @@ final class PaywallModel {
     var ctaTitle: String {
         if selectedPlan == .lifetime { return "Unlock Lore+ forever" }
         return isEligibleForTrial ? "Start 7-day free trial" : "Subscribe"
+    }
+
+    /// Localized price context beneath the CTA. Never repeat hardcoded USD when
+    /// StoreKit has supplied the storefront's actual display price.
+    var ctaSubtitle: String {
+        let price = displayPriceLine(for: selectedPlan)
+        if selectedPlan == .lifetime { return "\(price) · one-time" }
+        return isEligibleForTrial ? "then \(price)" : price
     }
 
     /// The fine print under the CTA, correct per plan (no trial/cancel language
@@ -631,17 +646,30 @@ final class PaywallModel {
     /// its webhook writes the `entitlements` row. Keep the `PurchaseOutcome`
     /// return so the paywall wiring is untouched by that swap.
     func purchase() async -> StoreKitService.PurchaseOutcome {
+        await purchase(productID: selectedPlan.productID)
+    }
+
+    /// Purchase a specific product. Trip passes use the same status handling as
+    /// recurring and lifetime plans, including visible Ask-to-Buy pending state.
+    func purchase(productID: String) async -> StoreKitService.PurchaseOutcome {
+        guard !isPurchasing else { return .inProgress }
         guard let store else {
             purchaseError = "The store isn't available right now. Try again."
             return .failed(message: purchaseError!)
         }
         isPurchasing = true
         purchaseError = nil
+        purchaseNotice = nil
         defer { isPurchasing = false }
 
-        let outcome = await store.purchase(productID: selectedPlan.productID)
-        if case .failed(let message) = outcome {
+        let outcome = await store.purchase(productID: productID)
+        switch outcome {
+        case .failed(let message):
             purchaseError = message
+        case .pending:
+            purchaseNotice = "Purchase pending approval. Lore+ will unlock automatically when Apple completes it."
+        case .success, .userCancelled, .inProgress:
+            break
         }
         return outcome
     }
@@ -650,18 +678,26 @@ final class PaywallModel {
     /// `Transaction.currentEntitlements`).
     ///
     /// TODO(P3): defer to `Purchases.shared.restorePurchases()` once RC is wired.
-    func restore() async -> Bool {
+    func restore() async -> StoreKitService.RestoreOutcome {
         guard let store else {
             purchaseError = "The store isn't available right now. Try again."
-            return false
+            return .failed(message: purchaseError!)
         }
         isPurchasing = true
         purchaseError = nil
+        purchaseNotice = nil
         defer { isPurchasing = false }
-        let restored = await store.restore()
-        if !restored {
+        let outcome = await store.restore()
+        switch outcome {
+        case .restored:
+            break
+        case .nothingToRestore:
             purchaseError = "No previous membership found on this Apple ID."
+        case .userCancelled:
+            break
+        case .failed(let message):
+            purchaseError = message
         }
-        return restored
+        return outcome
     }
 }

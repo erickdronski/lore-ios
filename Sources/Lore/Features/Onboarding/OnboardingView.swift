@@ -1,7 +1,6 @@
 import CoreLocation
 import SwiftUI
 import UIKit
-import UserNotifications
 
 /// The first-run flow. A single full-screen cover, presented by the integrator
 /// on first launch (gate: `OnboardingStore.shouldPresent`). Four moments plus a
@@ -10,8 +9,7 @@ import UserNotifications
 /// 1. **Arrival**, "Every place has a story." (ELEVATION §5.1)
 /// 2. **Interests + persona**, the real curation signal (13 §4.1)
 /// 3. **Location**, plain-English why (13 §4.2)
-/// 4. **Notifications**, optional nudges (13 §4.3)
-/// 5. **Finish**, the send-off, writes `user_prefs` (13 §4)
+/// 4. **Finish**, the send-off, writes `user_prefs` (13 §4)
 ///
 /// Skippable from any step → broad traveler default (13 §4.4). This view owns no
 /// navigation of its own; `onFinished` fires exactly once when the flow is done
@@ -48,8 +46,6 @@ struct OnboardingView: View {
             InterestsStep(store: store)
         case .location:
             LocationStep(store: store)
-        case .notifications:
-            NotificationsStep(store: store)
         case .finish:
             FinishStep(store: store, onDone: finish)
         }
@@ -263,72 +259,7 @@ private struct LocationStep: View {
     }
 }
 
-// MARK: - Step 4: Notifications (13 §4.3, optional)
-
-private struct NotificationsStep: View {
-    let store: OnboardingStore
-
-    private var isAuthorized: Bool {
-        [.authorized, .provisional, .ephemeral].contains(store.notificationStatus)
-    }
-
-    var body: some View {
-        OnboardingScaffold(
-            progress: store.progress,
-            primaryTitle: "Continue",
-            centered: true,
-            onBack: { store.back() },
-            onSkip: { store.jumpToFinish() },
-            onPrimary: { store.advance() }
-        ) {
-            VStack(spacing: 16) {
-                PermissionCard(
-                    symbol: "bell.badge.fill",
-                    title: OnboardingContent.notificationsTitle,
-                    message: OnboardingContent.notificationsBody,
-                    footnote: notificationFootnote,
-                    footnoteColor: footnoteColor
-                )
-
-                PermissionToggleRow(
-                    symbol: "bell.badge.fill",
-                    title: "Story nudges",
-                    subtitle: "A rare tap when you wander near something great. Off unless you turn it on.",
-                    isOn: isAuthorized,
-                    isBusy: store.isRequestingPermission
-                ) { wantsOn in
-                    guard wantsOn else { return }
-                    switch store.notificationStatus {
-                    case .notDetermined: Task { await store.requestNotifications() }
-                    case .denied: OnboardingSettings.open()
-                    default: break
-                    }
-                }
-            }
-            .animation(LoreMotion.tap, value: store.notificationStatus)
-        }
-    }
-
-    private var notificationFootnote: String? {
-        switch store.notificationStatus {
-        case .authorized, .provisional, .ephemeral:
-            return "You'll get the occasional great-story nudge."
-        case .denied:
-            return "All good, Lore stays quiet. Turn nudges on anytime in Settings."
-        default:
-            return nil
-        }
-    }
-
-    private var footnoteColor: Color {
-        switch store.notificationStatus {
-        case .authorized, .provisional, .ephemeral: return LoreColor.successDark
-        default: return LoreColor.bone.opacity(0.6)
-        }
-    }
-}
-
-// MARK: - Step 5: Finish
+// MARK: - Step 4: Finish
 
 private struct FinishStep: View {
     let store: OnboardingStore

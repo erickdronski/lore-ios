@@ -69,10 +69,12 @@ struct DiveView: View {
         .onDisappear { narration.stop() }
         .task {
             // Dive-open gate (docs/00 §7): members and free users with dives left
-            // open normally (spending one); a spent free user sees the gate card.
+            // open normally. Spend a free dive only after real dossier content
+            // loads; an empty or failed request must not consume the allowance.
             if diveMeter.canOpenDive(isPlus: entitlements.isPlus) {
-                diveMeter.recordDiveOpened(isPlus: entitlements.isPlus)
-                await model.load(placeID: place.id)
+                if await model.load(placeID: place.id) {
+                    diveMeter.recordDiveOpened(isPlus: entitlements.isPlus)
+                }
             } else {
                 gated = true
             }
@@ -81,7 +83,7 @@ struct DiveView: View {
         .onChange(of: entitlements.isPlus) { _, isPlus in
             if isPlus && gated {
                 gated = false
-                Task { await model.load(placeID: place.id) }
+                Task { _ = await model.load(placeID: place.id) }
             }
         }
         .sheet(isPresented: $showPaywall) {
@@ -349,15 +351,20 @@ final class DiveModel {
 
     private(set) var state: State = .loading
 
-    func load(placeID: String) async {
+    /// Returns true only when a real dossier loaded, used by DiveMeter so empty
+    /// and failed requests never consume a free daily dive.
+    func load(placeID: String) async -> Bool {
         do {
             if let dive = try await LoreAPI.shared.dive(placeID: placeID) {
                 state = .loaded(dive)
+                return true
             } else {
                 state = .empty
+                return false
             }
         } catch {
             state = .failed("Couldn't load this dossier, check your connection.")
+            return false
         }
     }
 }

@@ -99,7 +99,7 @@ final class EntitlementStore {
     }
 
     /// Load the user's entitlement. Pass the current access token (from
-    /// `AuthService.session?.accessToken`); a `nil` token means signed-out, so
+    /// `AuthService.validAccessToken()`); a `nil` token means signed-out, so
     /// we clear to free without hitting the network.
     ///
     /// Call this: on sign-in, on app foreground, and after a purchase settles.

@@ -17,6 +17,19 @@ TEAM_ID = "J9DMDH4S58"
 CERTS_REPO = "https://github.com/erickdronski/lore-certs.git"
 
 platform :ios do
+  desc "Run the release unit-test gate on an iPhone simulator"
+  lane :tests do
+    run_tests(
+      project: "Lore.xcodeproj",
+      scheme: "Lore",
+      devices: ["iPhone 16 Pro"],
+      ensure_devices_found: true,
+      clean: true,
+      result_bundle: true,
+      output_directory: "build/test-results",
+    )
+  end
+
   desc "Capture App Store screenshots on the Simulator (no signing needed)"
   lane :screenshots do
     # Reads fastlane/Snapfile: boots the 6.9" Simulator, runs the LoreUITests
@@ -32,6 +45,17 @@ platform :ios do
     # 6.7"/6.5"). skip_binary_upload + skip_metadata mean this touches ONLY the
     # screenshots on the editable version — never the build or the text metadata
     # (description/keywords stay exactly as set). Runs on Linux; no Xcode needed.
+    source_sha_path = File.expand_path("promo_screenshots/SOURCE_SHA", __dir__)
+    UI.user_error!(
+      "Missing fastlane/promo_screenshots/SOURCE_SHA. Regenerate screenshots from the release commit before upload.",
+    ) unless File.exist?(source_sha_path)
+
+    screenshot_sha = File.read(source_sha_path).strip
+    current_sha = sh("git rev-parse HEAD").strip
+    UI.user_error!(
+      "Screenshots were captured from #{screenshot_sha}, but the checkout is #{current_sha}. Regenerate them from this exact commit.",
+    ) unless screenshot_sha == current_sha
+
     api_key = app_store_connect_api_key(
       key_id: ENV.fetch("ASC_KEY_ID"),
       issuer_id: ENV.fetch("ASC_ISSUER_ID"),
@@ -53,6 +77,10 @@ platform :ios do
 
   desc "Build Lore and upload the build to TestFlight"
   lane :beta do
+    # Local/manual invocations cannot bypass tests. CI sets LORE_TESTED=1 only
+    # after the separate test step has passed for this exact checkout.
+    tests unless ENV["LORE_TESTED"] == "1"
+
     # A clean, throwaway keychain on CI so codesign has somewhere to live.
     setup_ci
 
@@ -104,15 +132,16 @@ platform :ios do
     # NOT stick (the archive shipped as "1" every time), so write it into the
     # generated project with agvtool (needs VERSIONING_SYSTEM=apple-generic,
     # set in project.yml). Falls back to 0 when the app has no builds yet.
-    latest = begin
-      latest_testflight_build_number(
-        api_key: api_key,
-        app_identifier: BUNDLE_ID,
-        initial_build_number: 0,
-      )
-    rescue StandardError
-      0
-    end
+    app_version = get_version_number(
+      xcodeproj: "Lore.xcodeproj",
+      target: "Lore",
+    )
+    latest = latest_testflight_build_number(
+      api_key: api_key,
+      app_identifier: BUNDLE_ID,
+      version: app_version,
+      initial_build_number: 0,
+    )
     build_number = latest.to_i + 1
     increment_build_number(
       xcodeproj: "Lore.xcodeproj",

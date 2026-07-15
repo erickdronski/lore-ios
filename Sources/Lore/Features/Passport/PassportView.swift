@@ -56,7 +56,10 @@ struct PassportView: View {
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbarBackground(LoreColor.ink900, for: .navigationBar)
             .toolbarColorScheme(.dark, for: .navigationBar)
-            .task { await model.loadIfNeeded(auth: auth) }
+            // PassportModel is a long-lived @State object. Reload on every
+            // identity transition so badges from one account never cross into
+            // another account or the signed-out state.
+            .task(id: auth.session?.user.id) { await model.load(auth: auth) }
         }
     }
 
@@ -422,23 +425,26 @@ final class PassportModel {
     }
 
     func load(auth: AuthService) async {
+        let expectedUserID = auth.session?.user.id
         state = .loading
         do {
             // Catalog is an anonymous read; the user's rows need a token.
             async let catalogTask = LoreAPI.shared.achievements()
             let userRows: [UserAchievement]
-            if let token = auth.session?.accessToken {
+            if let token = await auth.validAccessToken() {
                 userRows = (try? await LoreAPI.shared.userAchievements(accessToken: token)) ?? []
             } else {
                 userRows = []
             }
             let catalog = try await catalogTask
+            guard auth.session?.user.id == expectedUserID else { return }
 
             self.catalog = catalog
             rebuild(catalog: catalog, userRows: userRows)
             loaded = true
             state = catalog.isEmpty ? .empty : .loaded
         } catch {
+            guard auth.session?.user.id == expectedUserID else { return }
             state = .failed("Check your connection and try again.")
         }
     }
@@ -482,7 +488,7 @@ final class PassportModel {
     /// the wall, and queue any newly-unlocked badges for the celebration
     /// overlay. No-op when signed out (no user to recompute for).
     func recomputeAndCelebrate(auth: AuthService) async {
-        guard let token = auth.session?.accessToken,
+        guard let token = await auth.validAccessToken(),
               let userID = auth.session?.user.id else { return }
         do {
             let newlyUnlocked = try await LoreAPI.shared.recomputeAchievements(

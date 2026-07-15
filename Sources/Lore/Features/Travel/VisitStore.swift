@@ -89,10 +89,12 @@ final class VisitStore {
         }
         do {
             let rows = try await TravelReads.visits(accessToken: creds.accessToken)
+            guard credentials()?.userID == creds.userID else { return }
             visitedPlaceIDs = Set(rows.map(\.placeID))
             loaded = true
             lastError = nil
         } catch {
+            guard credentials()?.userID == creds.userID else { return }
             lastError = "Couldn't load your visits."
         }
     }
@@ -108,6 +110,7 @@ final class VisitStore {
         guard let creds = credentials() else { visitHistory = []; historyLoaded = true; return }
         do {
             let rows = try await TravelReads.visitHistory(accessToken: creds.accessToken)
+            guard credentials()?.userID == creds.userID else { return }
             // One entry per place (a place visited twice shows once, latest
             // first), which also keeps the ForEach ids unique.
             var seen = Set<String>()
@@ -115,6 +118,7 @@ final class VisitStore {
             historyLoaded = true
             lastError = nil
         } catch {
+            guard credentials()?.userID == creds.userID else { return }
             lastError = "Couldn't load your journal."
         }
     }
@@ -196,10 +200,16 @@ final class VisitStore {
                 userID: creds.userID,
                 accessToken: creds.accessToken
             )) ?? []
+            guard credentials()?.userID == creds.userID else {
+                return .logged(unlocked: [])
+            }
             lastError = nil
             if !unlocked.isEmpty { onUnlocks(unlocked) }
             return .logged(unlocked: unlocked)
         } catch {
+            guard credentials()?.userID == creds.userID else {
+                return .failed("The account changed before the visit finished.")
+            }
             // Roll back the optimistic mark, the visit didn't land.
             visitedPlaceIDs.remove(placeID)
             let message = (error as? LoreAPI.APIError)?.errorDescription
@@ -222,6 +232,8 @@ final class VisitStore {
         visitedPlaceIDs = []
         inFlightPlaceIDs = []
         loaded = false
+        visitHistory = []
+        historyLoaded = false
         lastError = nil
     }
 }

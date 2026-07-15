@@ -1,58 +1,97 @@
-# Lore iOS → TestFlight runbook
+# Lore TestFlight Release Runbook
 
-State as of 2026-07-06: the native SwiftUI app (94 files, iPhone-first, iOS 17+)
-parses clean on Swift 6.3.2. Everything that can be prepared without your Apple
-account IS prepared; what remains is ~45 minutes of founder clicking, because
-Apple requires the account holder for signing and upload. This machine has only
-Command Line Tools (no full Xcode), so the archive must happen on your Mac with
-Xcode installed.
+**Audited:** July 14, 2026
+**Bundle ID:** `com.erickdronski.lore`
+**App Store Connect app ID:** `6788171860`
 
-## What is already done (no action needed)
-- App target + LoreWidget extension speced in `project.yml` (XcodeGen), bundle
-  `com.erickdronski.lore`, team `J9DMDH4S58`, iOS 17.0, iPhone-only (deliberate, see
-  docs/10 §1 in the lore repo).
-- StoreKit 2 service + local `StoreKit/Lore.storekit` config (Lore+ products),
-  Sign in with Apple coordinator, WidgetKit widget, tour Live Activity +
-  Dynamic Island, push scaffold, deep links (`lore://`), purpose strings locked
-  from the legal docs.
-- Portal-gated entitlements are deliberately COMMENTED in `project.yml`
-  (Sign in with Apple, aps-environment, App Groups) so the first build signs
-  without portal work; uncomment as you enable each capability later.
+GitHub Actions is the authoritative native build, test, signing, archive, and
+TestFlight lane. This machine has Command Line Tools rather than the full iOS
+SDK; local Xcode is not required to publish Lore.
 
-## The founder path (in order)
+## Release contract
 
-1. **Install Xcode** from the App Store (or `xcodes`), open once, accept the
-   license, let it install iOS platform support.
-2. **Generate the project**: `brew install xcodegen` then, in this repo,
-   `xcodegen generate` → produces `Lore.xcodeproj`.
-3. **Open `Lore.xcodeproj`**, select the `Lore` scheme, run once in the
-   Simulator (sanity: app boots to the map shell).
-4. **Signing**: project → targets `Lore` and `LoreWidget` → Signing &
-   Capabilities → check "Automatically manage signing", team `J9DMDH4S58`.
-   Xcode will create the App ID `com.erickdronski.lore` + profiles on the portal.
-5. **App Store Connect** (appstoreconnect.apple.com): My Apps → "+" → New App →
-   platform iOS, name **Lore**, bundle `com.erickdronski.lore`, SKU `lore-ios`.
-   (Listing copy, keywords, and screenshot plan live in lore repo
-   `docs/10-APPSTORE.md`; screenshots can come later, TestFlight does not
-   need them.)
-6. **Archive + upload**: in Xcode, destination "Any iOS Device (arm64)" →
-   Product → Archive → Distribute App → TestFlight & App Store → Upload.
-7. **TestFlight tab** in App Store Connect: the build appears after
-   processing (~10-30 min). Answer the export-compliance question (the app
-   uses only standard HTTPS: answer "standard encryption, exempt";
-   `ITSAppUsesNonExemptEncryption` is already false in the Info.plist).
-   Add yourself as an internal tester → install via the TestFlight app.
+The workflow at `.github/workflows/ios-testflight.yml` always:
 
-## Gotchas we already routed around
-- Do NOT enable the commented `UIRequiredDeviceCapabilities` (arkit/gps) yet;
-  they are irreversible once shipped and the scaffold runs on any iOS 17
-  device (docs/10 §1).
-- The widget shows sample content until App Groups are provisioned; that is
-  by design (no crash), enable the group later with the other entitlements.
-- If Xcode complains the CLT is selected: `sudo xcode-select -s
-  /Applications/Xcode.app/Contents/Developer`.
+1. Checks out one exact commit.
+2. Selects Xcode 26.3 and generates `Lore.xcodeproj` with XcodeGen.
+3. Runs the Lore unit-test suite on an iPhone simulator.
+4. Compiles the unsigned Release configuration.
+5. Archives, signs, and uploads only when a manual dispatch sets
+   `upload_to_testflight=true`.
 
-## After the first TestFlight build
-- P1 wiring: MapLibre Native for the 3D map (same style doctrine as web),
-  live Supabase data on device, the AR scanner spike (docs/05), then real
-  screenshots for the listing from the device.
+An ordinary push to `main` cannot upload a build. The manual upload dispatch
+repeats the same test and Release-compile gates before signing.
+
+## Credentials
+
+The GitHub repository must contain these Actions secrets:
+
+- `ASC_KEY_ID`
+- `ASC_ISSUER_ID`
+- `ASC_KEY_CONTENT`
+- `MATCH_PASSWORD`
+- `MATCH_GIT_BASIC_AUTHORIZATION`
+
+Never print, copy into a workflow file, or commit their values. Fastlane Match
+stores encrypted signing material in the private `erickdronski/lore-certs`
+repository.
+
+## Publish a tested commit
+
+1. Confirm the intended Lore changes are committed and pushed to `main`.
+2. Wait for the push-triggered `iOS CI and TestFlight` run to finish green.
+3. Confirm the run's head SHA equals the intended commit.
+4. Dispatch the same workflow on `main` with
+   `upload_to_testflight=true`.
+5. Wait for that run to pass. Fastlane reads the latest TestFlight build number,
+   increments it, archives the Release build, and uploads it.
+6. In App Store Connect, wait for processing to complete and confirm the build
+   version, build number, SDK, export-compliance state, and commit evidence.
+7. Install that build from TestFlight on a clean physical iPhone and run the
+   release smoke test.
+
+Useful non-interactive commands:
+
+```bash
+gh run list --workflow ios-testflight.yml --branch main --limit 5
+gh run watch RUN_ID --exit-status
+gh workflow run ios-testflight.yml --ref main -f upload_to_testflight=true
+```
+
+Do not dispatch from a local-only commit or assume a successful upload means
+Apple has finished processing the build.
+
+## Required TestFlight smoke test
+
+- Clean launch, onboarding, map, city selection, place card, and deep dive
+- Scanner permission denial, grant, restart, weak location, and known-place flow
+- Optional Google identification disclosure, cancellation, success, auth expiry,
+  and quota response
+- Email registration, confirmation, sign-in, recovery, and sign-out
+- Lore+ product loading, eligible/ineligible trial copy, purchase cancellation,
+  pending purchase, completed purchase, and restore
+- Visit, journal note/photo, badge progress, and account deletion
+- Legal, support, sharing, and subscription-management links
+
+Record device model, iOS version, build number, test account, city, and outcome.
+Account deletion should use a disposable account.
+
+## Screenshots are a separate release artifact
+
+`fastlane screenshots_upload` intentionally cannot upload the existing
+promotional set. The lane requires
+`fastlane/promo_screenshots/SOURCE_SHA`, containing the full Git commit SHA from
+which every screenshot was captured, and refuses to run unless it equals the
+current checkout.
+
+Regenerate the complete set from the exact release build, including a genuine
+physical-device scanner capture. Audit every visible claim, flatten alpha, and
+verify App Store Connect's current dimensions before creating `SOURCE_SHA`.
+Never upload the old map/profile set.
+
+## App Review is separate
+
+A processed TestFlight build is not approval to submit version 1.0 for review.
+Use `/Users/dron/Projects/lore/legal/APP-STORE-LISTING.md` and `HANDOFF.md` for
+the current submission gates. Explicit approval is required before pressing
+Submit for Review.

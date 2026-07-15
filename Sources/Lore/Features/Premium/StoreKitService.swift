@@ -88,11 +88,9 @@ final class StoreKitService {
     /// Non-fatal load/purchase error surfaced where it helps; never blocks.
     private(set) var lastError: String?
 
-    /// The long-lived `Transaction.updates` listener. Cancelled on deinit.
-    /// `nonisolated(unsafe)` so the nonisolated `deinit` can cancel it: it is
-    /// only written on the main actor in `start()`, and `Task.cancel()` is safe
-    /// to call from any thread, so the escape hatch carries no real race.
-    nonisolated(unsafe) private var updatesTask: Task<Void, Never>?
+    /// The long-lived `Transaction.updates` listener. Observation ignores this
+    /// implementation detail, which also lets nonisolated deinit cancel it.
+    @ObservationIgnored private var updatesTask: Task<Void, Never>?
 
     init() {}
 
@@ -212,6 +210,8 @@ final class StoreKitService {
         /// Apple needs a further step (Ask to Buy / SCA), the transaction will
         /// arrive later via `Transaction.updates`.
         case pending
+        /// Another purchase task already owns the StoreKit sheet.
+        case inProgress
         /// Something failed. `message` is a user-safe line.
         case failed(message: String)
     }
@@ -270,21 +270,38 @@ final class StoreKitService {
 
     // MARK: - Restore
 
+    enum RestoreOutcome: Equatable {
+        case restored
+        case nothingToRestore
+        case userCancelled
+        case failed(message: String)
+    }
+
     /// Restore prior purchases. `AppStore.sync()` refreshes the receipt; then we
-    /// recompute entitlements. Returns whether the user ends up with Lore+.
+    /// recompute entitlements. Sync failures are distinct from a valid receipt
+    /// with no Lore+ purchase, so the UI never reports a network/auth failure as
+    /// "nothing to restore."
     ///
     /// TODO(P3): defer to `Purchases.shared.restorePurchases()` once RC is wired,
     /// so the restore also reconciles server-side.
-    func restore() async -> Bool {
+    func restore() async -> RestoreOutcome {
         lastError = nil
         do {
             try await AppStore.sync()
+        } catch StoreKitError.userCancelled {
+            await refreshEntitlements()
+            return hasActiveEntitlement ? .restored : .userCancelled
         } catch {
-            // A cancelled/failed sync isn't fatal, currentEntitlements may still
-            // reflect prior purchases. Fall through to the recompute.
+            // The existing receipt may still prove access even if the explicit
+            // sync prompt failed, so preserve that verified entitlement.
+            await refreshEntitlements()
+            if hasActiveEntitlement { return .restored }
+            let message = "Couldn't connect to the App Store. Check your connection and try again."
+            lastError = message
+            return .failed(message: message)
         }
         await refreshEntitlements()
-        return hasActiveEntitlement
+        return hasActiveEntitlement ? .restored : .nothingToRestore
     }
 
     // MARK: - Intro-offer eligibility (7-day trial framing)

@@ -121,7 +121,7 @@ struct ToursScreen: View {
             .pickerStyle(.segmented)
         } header: {
             HStack(spacing: 10) {
-                Text("Made for you")
+                Text("Build a city walk")
                     .font(LoreType.displayM)
                     .foregroundStyle(LoreColor.ink)
                     .textCase(nil)
@@ -194,7 +194,7 @@ struct OneHourHero: View {
                     Text(titleText)
                         .font(LoreType.display(size: 19, weight: .semibold))
                         .foregroundStyle(LoreColor.ink)
-                    Text(isGenerating ? "Routing your walk…" : "Auto-routed · a perfect walk on foot")
+                    Text(isGenerating ? "Routing your walk…" : "Auto-routed from published Lore stops")
                         .font(LoreType.caption)
                         .foregroundStyle(LoreColor.ink600)
                 }

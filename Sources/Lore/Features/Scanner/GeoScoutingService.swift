@@ -3,18 +3,17 @@ import CoreLocation
 import Foundation
 import Observation
 
-/// VPS scouting stub, the dual-VPS doctrine hook (docs/05 §2.1 + open Q1).
+/// VPS coverage scouting for Lore's Apple precise-mode release path.
 ///
-/// The production localization stack is **ARCore Geospatial** (`GARSession`:
-/// VPS pose ~1 m / 1–2° + Streetscape Geometry), which is an external SDK and
-/// therefore out of this dependency-free P0 scaffold. What we *can* do today
-/// with pure Apple frameworks is scout: ARKit's own geo tracking
+/// ARKit's own geo tracking
 /// (`ARGeoTrackingConfiguration.checkAvailability(at:)`) answers "does Apple
 /// have VPS-class coverage here?", a free, on-device-initiated probe that
-/// feeds the degraded-modes ladder (docs/05 §5) and the on-foot coverage
-/// survey (docs/05 open Q2) before the ARCore dependency lands.
+/// feeds the degraded-modes ladder before the user starts precise mode.
 ///
-/// TODO(P1): ARCore Geospatial, add `ARCore/Geospatial` (SPM/CocoaPods,
+/// A future ARCore Geospatial backend can add Streetscape occlusion and broader
+/// coverage behind the existing `VPSProvider` seam. It is not required for the
+/// current Apple ARGeoTracking implementation to function or ship. Add
+/// `ARCore/Geospatial` (SPM/CocoaPods,
 /// pin ≥ 1.45 per docs/05 §2.1), create the `GARSession` alongside ARKit,
 /// feed each `ARFrame` via `session.update(_:)`, and gate exact-pin UI on
 /// `horizontalAccuracy < 5 m && orientationYawAccuracy < 5°`. This service
@@ -34,6 +33,7 @@ final class GeoScoutingService {
     }
 
     private(set) var availability: Availability = .unknown
+    private var activeRequestID = UUID()
 
     var statusSuffix: String {
         switch availability {
@@ -47,6 +47,8 @@ final class GeoScoutingService {
     /// Probes geo-tracking availability at a coordinate. Safe to call on
     /// every significant location change; results are per-area, not per-fix.
     func scout(coordinate: CLLocationCoordinate2D) {
+        let requestID = UUID()
+        activeRequestID = requestID
         guard ARGeoTrackingConfiguration.isSupported else {
             availability = .unsupported
             return
@@ -54,6 +56,7 @@ final class GeoScoutingService {
         availability = .checking
         ARGeoTrackingConfiguration.checkAvailability(at: coordinate) { available, _ in
             Task { @MainActor [weak self] in
+                guard self?.activeRequestID == requestID else { return }
                 self?.availability = available ? .available : .unavailable
             }
         }

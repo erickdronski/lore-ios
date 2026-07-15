@@ -55,7 +55,7 @@ struct LoreApp: App {
         let auth = AuthService()
         _auth = State(initialValue: auth)
         _travel = State(initialValue: TravelSession(credentials: {
-            guard let session = auth.session else { return nil }
+            guard let session = auth.session, !session.isExpired else { return nil }
             return (userID: session.user.id, accessToken: session.accessToken)
         }))
     }
@@ -112,6 +112,7 @@ struct RootTabView: View {
     @Environment(EntitlementStore.self) private var entitlements
     @Environment(PrefsCoordinator.self) private var prefs
     @Environment(TravelSession.self) private var travel
+    @Environment(\.scenePhase) private var scenePhase
 
     @State private var selection: Tab = .map
 
@@ -120,12 +121,18 @@ struct RootTabView: View {
     /// Mount Laurel"). Shares CoreLocation permission with the near-me shelf.
     @State private var locator = NearMeLocationProvider()
     @State private var autoCityDone = false
+    /// Identity whose user-scoped stores are currently hydrated.
+    @State private var syncedUserID: String?
 
     // Router-raised presentations.
     @State private var showSearch = false
     @State private var showCitySwitcher = false
     /// A place opened from search (the map's own pin taps present their own sheet).
     @State private var routedPlace: RoutedPlace?
+    /// Story/tour opened directly from global search.
+    @State private var routedStory: Story?
+    @State private var routedTour: Tour?
+    @State private var routeError: String?
     /// A city whose "Meet {City}" culture surface is presented.
     @State private var meetCity: String?
     /// Whether the sign-in nudge is up (raised by a signed-out visit toggle).
@@ -193,6 +200,13 @@ struct RootTabView: View {
                 .presentationBackground(.regularMaterial)
                 .presentationCornerRadius(24)
         }
+        .sheet(item: $routedStory) { story in
+            StorySheet(story: story)
+                .presentationDetents([.medium, .large])
+        }
+        .sheet(item: $routedTour) { tour in
+            NavigationStack { TourDetailView(tour: tour) }
+        }
         // Meet-the-City, the culture surface, raised from the map header, the
         // PlaceCard, or a culture search hit.
         .sheet(item: meetCityBinding) { route in
@@ -204,9 +218,16 @@ struct RootTabView: View {
             SignInView()
                 .presentationDetents([.large])
         }
+        .alert("Couldn't open that result", isPresented: routeErrorBinding) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(routeError ?? "Try again in a moment.")
+        }
         .onAppear {
             installRouter()
-            locator.start()
+            // This view exists beneath onboarding. Observe an existing grant,
+            // but let onboarding explain location before any system prompt.
+            locator.start(requestPermission: false)
             #if DEBUG
             presentScreenshotStageIfNeeded()
             #endif
@@ -223,6 +244,12 @@ struct RootTabView: View {
         .task { await auth.restore() }
         // Session changes ripple to every dependent store.
         .task(id: auth.session?.accessToken) { await syncSession() }
+        // iOS suspends timers in the background. Refresh an expired/near-expiry
+        // Supabase token as soon as the app is usable again.
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active else { return }
+            Task { await auth.refreshIfNeeded() }
+        }
     }
 
     /// Resolve the nearest live city to a fresh location fix and hand it to the
@@ -267,19 +294,22 @@ struct RootTabView: View {
                 selection = .map
             case .place(let id, _):
                 Task { await openPlace(id: id) }
-            case .story:
-                // No standalone story screen at P0, route to the map, where the
-                // meanwhile-nearby markers live (scanner) / pins do. `AppRouter`
-                // already followed the hit's city into `selectedCity`.
-                selection = .map
+            case .story(let id, _):
+                Task { await openStory(id: id) }
             case .culture(_, let cityScoped):
                 meetCity = cityScoped ?? router.selectedCity
-            case .tour:
-                // Tours key on slug; the Tours tab lists them. Deep-linking to a
-                // specific tour detail is a P1 nicety.
+            case .tour(let slug, _):
                 selection = .tours
+                Task { await openTour(slug: slug) }
             }
         }
+    }
+
+    private var routeErrorBinding: Binding<Bool> {
+        Binding(
+            get: { routeError != nil },
+            set: { if !$0 { routeError = nil } }
+        )
     }
 
     /// Resolve a place id to a full `Place` (search hits carry only the id) and
@@ -292,6 +322,26 @@ struct RootTabView: View {
         let places = (try? await LoreAPI.shared.places(city: router.selectedCity)) ?? []
         if let match = places.first(where: { $0.id == id }) {
             routedPlace = RoutedPlace(place: match)
+        } else {
+            routeError = "That place isn't available right now."
+        }
+    }
+
+    private func openStory(id: String) async {
+        let stories = (try? await LoreAPI.shared.stories(city: router.selectedCity)) ?? []
+        if let match = stories.first(where: { $0.id == id }) {
+            routedStory = match
+        } else {
+            routeError = "That story isn't available right now."
+        }
+    }
+
+    private func openTour(slug: String) async {
+        let tours = (try? await LoreAPI.shared.tours(city: router.selectedCity)) ?? []
+        if let match = tours.first(where: { $0.slug == slug }) {
+            routedTour = match
+        } else {
+            routeError = "That tour isn't available right now."
         }
     }
 
@@ -335,23 +385,36 @@ struct RootTabView: View {
     /// prefs (persona lens), and the Travel visit set. Also folds a signed-out
     /// user's stashed filter changes back once they sign in.
     private func syncSession() async {
-        let token = auth.session?.accessToken
+        let token = await auth.validAccessToken()
+        let userID = auth.session?.user.id
+
+        if userID != syncedUserID {
+            travel.visits.reset()
+            travel.clearUnlocks()
+            syncedUserID = userID
+        }
+
         if token == nil {
             entitlements.clear()
             prefs.reset()
-            travel.visits.reset()
         }
+
+        // Replay choices made before account creation before hydrating the
+        // session stores, so the first signed-in render reflects those choices.
+        if let userID, let token {
+            try? await OnboardingPrefsWriter.flushPending(
+                userID: userID,
+                accessToken: token
+            )
+            try? await MapFilterStore.flushPending(
+                userID: userID,
+                accessToken: token
+            )
+        }
+
         await entitlements.refresh(accessToken: token)
         await prefs.load(accessToken: token, force: true)
         await travel.bootstrap(prefs: prefs.prefs)
-
-        // Flush a signed-out user's pending hidden-kinds once we have creds.
-        if let session = auth.session {
-            try? await MapFilterStore.flushPending(
-                userID: session.user.id,
-                accessToken: session.accessToken
-            )
-        }
     }
 }
 

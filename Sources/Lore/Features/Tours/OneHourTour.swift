@@ -51,7 +51,7 @@ enum OneHourTour {
 
         guard ordered.count >= 2 else { return nil }
 
-        let tourID = "one-hour-\(city)"
+        let tourID = "\(durationMin)-minute-\(city)"
         let stops = ordered.enumerated().map { index, place in
             TourStop(tourID: tourID, placeID: place.id, seq: index + 1, note: place.layer1?.hook)
         }
@@ -61,10 +61,10 @@ enum OneHourTour {
         return Tour(
             id: tourID,
             slug: tourID,
-            title: "1 Hour In \(cityLabel(city))",
+            title: "\(durationLabel(durationMin)) In \(cityLabel(city))",
             city: city,
             emoji: "⏱️",
-            blurb: "A perfect hour on foot: \(ordered.count) storied stops, routed for you.",
+            blurb: "A \(durationLabel(durationMin).lowercased()) walk with \(ordered.count) storied stops.",
             durationMin: durationMin,
             distanceKm: totalMeters / 1000,
             stops: stops
@@ -88,5 +88,12 @@ enum OneHourTour {
 
     private static func cityLabel(_ slug: String) -> String {
         slug.replacingOccurrences(of: "-", with: " ").capitalized
+    }
+
+    private static func durationLabel(_ minutes: Int) -> String {
+        switch minutes {
+        case 60: return "1 Hour"
+        default: return "\(minutes) Minutes"
+        }
     }
 }

@@ -99,8 +99,18 @@ struct MapScreen: View {
             }
             .overlay(alignment: .top) {
                 if let status = model.statusLine {
-                    StatusChip(text: status)
+                    if model.errorMessage != nil {
+                        Button {
+                            Task { await model.load(city: city, force: true) }
+                        } label: {
+                            StatusChip(text: "\(status) · Tap to retry")
+                        }
+                        .buttonStyle(.plain)
                         .padding(.top, 56)
+                    } else {
+                        StatusChip(text: status)
+                            .padding(.top, 56)
+                    }
                 }
             }
             .overlay(alignment: .topTrailing) {
@@ -317,9 +327,12 @@ final class MapScreenModel {
         cityNames[slug] ?? slug.capitalized
     }
 
-    func load(city: String) async {
-        guard city != loadedCity else { return }
+    func load(city: String, force: Bool = false) async {
+        guard force || city != loadedCity else { return }
         errorMessage = nil
+        places = []
+        loadedCity = nil
+        cameraTarget = nil
         do {
             // Best-effort roster (for the display name + fly-to center); a
             // failure here never blocks pins.
@@ -346,7 +359,6 @@ final class MapScreenModel {
             }
         } catch {
             errorMessage = "Offline. Check your connection."
-            loadedCity = city
         }
     }
 

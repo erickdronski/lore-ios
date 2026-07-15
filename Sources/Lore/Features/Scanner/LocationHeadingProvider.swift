@@ -15,6 +15,10 @@ import Observation
 /// claim a skyline lock.
 @Observable
 final class LocationHeadingProvider: NSObject, CLLocationManagerDelegate {
+    /// Only accept newly delivered fixes that are genuinely current, but keep a
+    /// known-good stationary fix long enough to survive brief urban-canyon gaps.
+    private static let deliveredFixMaxAge: TimeInterval = 15
+    private static let heldFixMaxAge: TimeInterval = 60
     private let manager = CLLocationManager()
     private let motion = CMMotionManager()
 
@@ -37,12 +41,25 @@ final class LocationHeadingProvider: NSObject, CLLocationManagerDelegate {
             || authorizationStatus == .authorizedAlways
     }
 
-    var hasFix: Bool { location != nil && headingDegrees >= 0 }
+    /// A recent, accurate-enough location for scanner decisions. A fix that was
+    /// fresh when Core Location delivered it can become stale while the camera
+    /// remains open, so consumers must not read `location` directly.
+    func freshLocation(now: Date = Date()) -> CLLocation? {
+        guard let location else { return nil }
+        let age = now.timeIntervalSince(location.timestamp)
+        guard age >= -1, age < Self.heldFixMaxAge,
+              location.horizontalAccuracy > 0,
+              location.horizontalAccuracy < 100
+        else { return nil }
+        return location
+    }
+
+    var hasFix: Bool { freshLocation() != nil && headingDegrees >= 0 }
 
     /// Human-readable status for the StatusChip (localized chrome).
     var statusLine: String {
         if !isAuthorized { return L10n.t("scan.permissionNeeded") }
-        guard let location else { return L10n.t("scan.findingBlock") }
+        guard let location = freshLocation() else { return L10n.t("scan.findingBlock") }
         let radius = max(1, Int(location.horizontalAccuracy.rounded()))
         if headingDegrees < 0 { return "±\(radius) m · \(L10n.t("scan.findingNorth"))" }
         return "\(L10n.t("scan.coarseMode")) · ±\(radius) m"
@@ -53,6 +70,10 @@ final class LocationHeadingProvider: NSObject, CLLocationManagerDelegate {
         manager.delegate = self
         manager.desiredAccuracy = kCLLocationAccuracyBest
         manager.headingFilter = 2 // degrees between callbacks, cheap smoothing
+        // The scanner is an active foreground camera experience. Automatic
+        // pausing can otherwise expire a stationary user's last good fix and
+        // falsely tell them to step outside after a few seconds.
+        manager.pausesLocationUpdatesAutomatically = false
     }
 
     func start() {
@@ -126,8 +147,17 @@ final class LocationHeadingProvider: NSObject, CLLocationManagerDelegate {
         // it were the user's current position.
         guard let fix = locations.last else { return }
         let age = -fix.timestamp.timeIntervalSinceNow
-        guard age < 12, fix.horizontalAccuracy > 0, fix.horizontalAccuracy < 100 else { return }
+        guard age < Self.deliveredFixMaxAge,
+              fix.horizontalAccuracy > 0,
+              fix.horizontalAccuracy < 100
+        else { return }
         location = fix
+    }
+
+    func locationManagerDidPauseLocationUpdates(_ manager: CLLocationManager) {
+        // Defensive recovery for devices that pause despite the explicit policy.
+        guard isAuthorized else { return }
+        manager.startUpdatingLocation()
     }
 
     func locationManager(
@@ -146,6 +176,7 @@ final class LocationHeadingProvider: NSObject, CLLocationManagerDelegate {
         _ manager: CLLocationManager,
         didFailWithError error: Error
     ) {
-        // Keep the last known fix; the scanner degrades honestly on staleness.
+        // Keep the last fix for diagnostics; `freshLocation()` prevents it from
+        // driving scanner locks after it expires.
     }
 }

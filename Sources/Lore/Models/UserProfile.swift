@@ -4,7 +4,7 @@ import Foundation
 /// `lore-web/lib/types.ts`).
 struct UserProfile: Codable, Identifiable, Hashable {
     let id: String
-    let handle: String
+    let handle: String?
     let displayName: String?
     let avatarURL: String?
     let bio: String?
@@ -31,7 +31,8 @@ struct UserProfile: Codable, Identifiable, Hashable {
 
     var displayNameOrHandle: String {
         if let displayName, !displayName.isEmpty { return displayName }
-        return "@\(handle)"
+        if let handle, !handle.isEmpty { return "@\(handle)" }
+        return "Lore traveler"
     }
 
     var trustTierLabel: String { trustTier.uppercased() }

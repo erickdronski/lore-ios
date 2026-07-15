@@ -288,9 +288,9 @@ struct LoreAPI {
         body: [String: Any],
         accessToken: String? = nil
     ) async throws -> T {
-        guard let url = URL(string: "rpc/\(name)", relativeTo: Config.restURL) else {
-            throw APIError.badURL
-        }
+        let url = Config.restURL
+            .appending(path: "rpc")
+            .appending(path: name)
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         applyAuth(&request, accessToken: accessToken)
@@ -311,9 +311,7 @@ struct LoreAPI {
         accessToken: String,
         prefer: String
     ) async throws -> T {
-        guard let url = URL(string: table, relativeTo: Config.restURL) else {
-            throw APIError.badURL
-        }
+        let url = Config.restURL.appending(path: table)
         var request = URLRequest(url: url)
         request.httpMethod = method
         applyAuth(&request, accessToken: accessToken)

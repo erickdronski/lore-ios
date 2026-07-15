@@ -89,7 +89,7 @@ actor AtlasCache {
         guard !refreshing.contains(key) else { return }
         refreshing.insert(key)
         Task {
-            defer { Task { await self.endRefresh(key) } }
+            defer { self.endRefresh(key) }
             if let data = try? await self.fetchValid(request, session: session) {
                 try? data.write(to: file, options: .atomic)
             }

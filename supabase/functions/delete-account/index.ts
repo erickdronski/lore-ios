@@ -1,15 +1,7 @@
-// In-app account deletion (App Store Guideline 5.1.1(v)): any app that creates
-// accounts must let the user delete theirs from within the app.
-//
-// Security: verify_jwt=true (the gateway rejects malformed tokens), AND we
-// re-resolve the caller with their own token via auth.getUser() — the public
-// anon key resolves to NO user, so it can never delete anyone (401). The uid
-// comes from the verified token, never from the request body, so a caller can
-// only ever delete THEIR OWN account. Deletion then runs with the service role
-// (available to edge functions as SUPABASE_SERVICE_ROLE_KEY): every user-owned
-// row + their private journal-photos objects + the auth user itself.
-//
-// DEPLOYED to Supabase project uiuwzymvyrgfyiugqlkp (verify_jwt: true).
+// In-app account deletion (App Store Guideline 5.1.1(v)). The caller is
+// resolved from their bearer token, storage is removed first, relational data
+// is then deleted/anonymized atomically by delete_my_account_data(p_user), and only
+// after both succeed is the Auth user removed.
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const CORS = {
@@ -18,73 +10,132 @@ const CORS = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-// Every table that stores this user's rows, with its owning column.
-const USER_TABLES: [string, string][] = [
-  ["anchor", "created_by"],
-  ["badge_award", "user_id"],
-  ["contributor_stats", "user_id"],
-  ["dive_reads", "user_id"],
-  ["entitlements", "user_id"],
-  ["lore_entry", "author_id"],
-  ["place_media", "user_id"],
-  ["saved_place", "user_id"],
-  ["user_achievement", "user_id"],
-  ["user_prefs", "user_id"],
-  ["visit", "user_id"],
-];
+const json = (body: Record<string, unknown>, status = 200) =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { ...CORS, "Content-Type": "application/json" },
+  });
+
+async function collectOwnedPaths(
+  bucket: ReturnType<ReturnType<typeof createClient>["storage"]["from"]>,
+  prefix: string,
+  uid: string,
+): Promise<string[]> {
+  const paths: string[] = [];
+  let offset = 0;
+
+  while (true) {
+    const { data, error } = await bucket.list(prefix, {
+      limit: 100,
+      offset,
+      sortBy: { column: "name", order: "asc" },
+    });
+    if (error) throw new Error(error.message);
+
+    for (const item of data ?? []) {
+      const path = prefix ? `${prefix}/${item.name}` : item.name;
+      if (!item.id) {
+        paths.push(...await collectOwnedPaths(bucket, path, uid));
+      } else if (item.owner_id === uid || path === uid || path.startsWith(`${uid}/`)) {
+        paths.push(path);
+      }
+    }
+
+    if (!data || data.length < 100) break;
+    offset += data.length;
+  }
+
+  return paths;
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
-  if (req.method !== "POST") return new Response("POST only", { status: 405, headers: CORS });
+  if (req.method !== "POST") return json({ error: "POST only" }, 405);
 
   const url = Deno.env.get("SUPABASE_URL")!;
+  const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
   const authHeader = req.headers.get("Authorization") ?? "";
 
-  // Resolve the caller from THEIR token. The anon key yields no user → 401.
-  const caller = createClient(url, Deno.env.get("SUPABASE_ANON_KEY")!, {
+  const caller = createClient(url, anonKey, {
     global: { headers: { Authorization: authHeader } },
   });
-  const { data: { user }, error: userErr } = await caller.auth.getUser();
-  if (userErr || !user) {
-    return new Response(JSON.stringify({ error: "not authenticated" }), {
-      status: 401, headers: { ...CORS, "Content-Type": "application/json" },
-    });
-  }
-  const uid = user.id;
+  const { data: { user }, error: userError } = await caller.auth.getUser();
+  if (userError || !user) return json({ error: "not authenticated" }, 401);
 
+  const uid = user.id;
   const admin = createClient(url, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
-  // 1. Delete every user-owned row. Continue past a missing table so one gap
-  // never leaves the account half-deleted.
-  for (const [table, col] of USER_TABLES) {
-    const { error } = await admin.from(table).delete().eq(col, uid);
-    if (error) console.error(`delete ${table}.${col}`, error.message);
-  }
-
-  // 2. Delete the user's private journal photos. Layout is {uid}/{placeID}/*,
-  // so walk two levels (storage.list is not recursive).
   try {
-    const bucket = admin.storage.from("journal-photos");
-    const { data: folders } = await bucket.list(uid, { limit: 1000 });
-    const paths: string[] = [];
-    for (const folder of folders ?? []) {
-      const { data: files } = await bucket.list(`${uid}/${folder.name}`, { limit: 1000 });
-      for (const f of files ?? []) paths.push(`${uid}/${folder.name}/${f.name}`);
+    const pathsByBucket = new Map<string, Set<string>>();
+
+    // Include database-tracked contribution media even if it was originally
+    // uploaded by a service process and therefore has no Storage owner_id.
+    const { data: contributions, error: contributionError } = await admin
+      .from("contribution")
+      .select("id")
+      .eq("contributor_id", uid);
+    if (contributionError) throw new Error(contributionError.message);
+
+    const contributionIDs = (contributions ?? []).map((row) => row.id);
+    const { data: ownedMedia, error: ownedMediaError } = await admin
+      .from("media")
+      .select("storage_path")
+      .eq("uploader_id", uid);
+    if (ownedMediaError) throw new Error(ownedMediaError.message);
+
+    let contributionMedia: { storage_path: string }[] = [];
+    if (contributionIDs.length > 0) {
+      const result = await admin
+        .from("media")
+        .select("storage_path")
+        .in("contribution_id", contributionIDs);
+      if (result.error) throw new Error(result.error.message);
+      contributionMedia = result.data ?? [];
     }
-    if (paths.length) await bucket.remove(paths);
-  } catch (e) {
-    console.error("journal-photos cleanup", String(e));
+
+    const mediaPaths = [...(ownedMedia ?? []), ...contributionMedia]
+      .map((row) => row.storage_path)
+      .filter((path): path is string => Boolean(path));
+    pathsByBucket.set("lore-media", new Set(mediaPaths));
+
+    const { data: buckets, error: bucketsError } = await admin.storage.listBuckets();
+    if (bucketsError) throw new Error(bucketsError.message);
+
+    for (const bucketInfo of buckets ?? []) {
+      const bucket = admin.storage.from(bucketInfo.id);
+      const owned = await collectOwnedPaths(bucket, "", uid);
+      const paths = pathsByBucket.get(bucketInfo.id) ?? new Set<string>();
+      for (const path of owned) paths.add(path);
+      pathsByBucket.set(bucketInfo.id, paths);
+    }
+
+    for (const [bucketID, paths] of pathsByBucket) {
+      const all = [...paths];
+      for (let index = 0; index < all.length; index += 100) {
+        const batch = all.slice(index, index + 100);
+        if (batch.length === 0) continue;
+        const { error } = await admin.storage.from(bucketID).remove(batch);
+        if (error) throw new Error(`${bucketID}: ${error.message}`);
+      }
+    }
+  } catch (error) {
+    console.error("account storage cleanup failed", String(error));
+    return json({ error: "account storage cleanup failed" }, 500);
   }
 
-  // 3. Delete the auth user itself (GoTrue admin; needs the service role).
-  const { error: delErr } = await admin.auth.admin.deleteUser(uid);
-  if (delErr) {
-    return new Response(JSON.stringify({ error: "auth deletion failed" }), {
-      status: 500, headers: { ...CORS, "Content-Type": "application/json" },
-    });
-  }
-
-  return new Response(JSON.stringify({ deleted: true }), {
-    headers: { ...CORS, "Content-Type": "application/json" },
+  const { error: dataError } = await admin.rpc("delete_my_account_data", {
+    p_user: uid,
   });
+  if (dataError) {
+    console.error("account data cleanup failed", dataError.message);
+    return json({ error: "account data cleanup failed" }, 500);
+  }
+
+  const { error: deleteError } = await admin.auth.admin.deleteUser(uid);
+  if (deleteError) {
+    console.error("auth deletion failed", deleteError.message);
+    return json({ error: "auth deletion failed" }, 500);
+  }
+
+  return json({ deleted: true });
 });

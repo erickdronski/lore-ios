@@ -1,12 +1,7 @@
 import SwiftUI
 
-/// Sign in with email/password, Sign in with Apple (native id_token grant), and
-/// Google / X / Facebook via Supabase OAuth. Apple is presented first among the
-/// third-party options (Guideline 4.8: a working Apple button is required where
-/// other social logins are offered). Prerequisites: the App ID's
-/// Sign-in-with-Apple capability + the `applesignin` key in Lore.entitlements
-/// (both wired), and each OAuth provider enabled in the Supabase dashboard with
-/// `lore://auth-callback` in the redirect allowlist.
+/// Release authentication uses email and password. Debug builds retain the
+/// dormant social-provider harness for future provisioning tests.
 struct SignInView: View {
     @Environment(AuthService.self) private var auth
     @Environment(\.dismiss) private var dismiss
@@ -15,6 +10,7 @@ struct SignInView: View {
     @State private var password = ""
     @State private var mode: Mode = .signIn
     @State private var apple = AppleSignInCoordinator()
+    @State private var confirmedMinimumAge = false
 
     private enum Mode { case signIn, signUp }
 
@@ -41,10 +37,32 @@ struct SignInView: View {
                             .background(LoreColor.bone200, in: RoundedRectangle(cornerRadius: 14))
                     }
 
+                    if mode == .signUp {
+                        Toggle("I am 13 or older", isOn: $confirmedMinimumAge)
+                            .font(LoreType.caption)
+                            .tint(LoreColor.brass700)
+
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("By creating an account, you agree to:")
+                            HStack(spacing: 8) {
+                                Link("Terms of Use", destination: URL(string: "https://lore-web-liart.vercel.app/terms")!)
+                                Link("Privacy Policy", destination: URL(string: "https://lore-web-liart.vercel.app/privacy")!)
+                            }
+                        }
+                        .font(LoreType.micro)
+                        .foregroundStyle(LoreColor.ink600)
+                        .tint(LoreColor.brass700)
+                    }
+
                     if let lastError = auth.lastError {
                         Text(lastError)
                             .font(LoreType.caption)
                             .foregroundStyle(LoreColor.error)
+                    }
+                    if let lastNotice = auth.lastNotice {
+                        Text(lastNotice)
+                            .font(LoreType.caption)
+                            .foregroundStyle(LoreColor.success)
                     }
 
                     Button {
@@ -70,17 +88,28 @@ struct SignInView: View {
                     }
                     .background(LoreColor.ink, in: Capsule())
                     .foregroundStyle(LoreColor.bone)
-                    .disabled(email.isEmpty || password.isEmpty || auth.isBusy)
+                    .disabled(
+                        email.isEmpty || password.isEmpty || auth.isBusy
+                        || (mode == .signUp && !confirmedMinimumAge)
+                    )
 
+                    // Release builds intentionally offer email/password only
+                    // until Sign in with Apple is provisioned end to end. Apple
+                    // Guideline 4.8 requires Apple sign-in when third-party
+                    // social login is offered.
+                    #if DEBUG
                     socialDivider
                     socialButtons
+                    #endif
 
                     // Switch between sign in and account creation; reset link
                     // only in sign-in mode.
                     HStack {
                         Button(mode == .signUp ? "Have an account? Sign in" : "New here? Create an account") {
                             mode = (mode == .signUp) ? .signIn : .signUp
+                            confirmedMinimumAge = false
                             auth.lastError = nil
+                            auth.lastNotice = nil
                         }
                         .font(LoreType.caption)
                         .foregroundStyle(LoreColor.brass700)
@@ -98,7 +127,7 @@ struct SignInView: View {
                     Text(
                         "Reading never requires an account, browsing, the map, "
                         + "and deep dives all work signed out. Accounts unlock "
-                        + "contributions, Insight sync, and Lore+."
+                        + "visits, your journal, Insight sync, and Lore+."
                     )
                     .font(LoreType.caption)
                     .foregroundStyle(LoreColor.ink600)

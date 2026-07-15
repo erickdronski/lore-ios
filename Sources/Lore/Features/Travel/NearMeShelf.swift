@@ -57,7 +57,14 @@ struct NearMeShelf: View {
                 shelf
             }
         }
-        .onAppear { provider.start() }
+        .onAppear {
+            // The map is mounted beneath first-run onboarding. Do not let it
+            // trigger Apple's prompt before Lore shows the location rationale.
+            let onboardingComplete = UserDefaults.standard.bool(
+                forKey: OnboardingStore.didOnboardDefaultsKey
+            )
+            provider.start(requestPermission: onboardingComplete)
+        }
         .onDisappear { provider.stop() }
         // Publish the nearest places to the home-screen widget whenever the
         // ranking shifts (a new fix, a filter change). No-op until the App Group
@@ -187,6 +194,8 @@ struct NearMeCard: View {
                 }
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(Text("\(place.name), \(ranked.distanceLabel) away"))
+            .accessibilityHint(Text("Opens the place"))
 
             Spacer(minLength: 0)
 
@@ -203,9 +212,6 @@ struct NearMeCard: View {
             RoundedRectangle(cornerRadius: 18)
                 .strokeBorder(LoreColor.ink700, lineWidth: 1)
         )
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(Text("\(place.name), \(ranked.distanceLabel) away"))
-        .accessibilityHint(Text("Opens the place. Contains a visited toggle."))
     }
 
     private var medallion: some View {

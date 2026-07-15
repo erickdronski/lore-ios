@@ -264,7 +264,7 @@ extension GeoARSessionController: ARSessionDelegate {
 /// docs/03 §2. Plain class, no locks: the controller's serial frame queue is
 /// the synchronization boundary, exactly like the ResolverActor doctrine of
 /// an immutable snapshot in, value types out.
-private final class GeoAnchorProjector {
+private final class GeoAnchorProjector: @unchecked Sendable {
     /// AR view bounds in points; zero until the view first lays out, and
     /// projection is skipped until it does.
     var viewportSize: CGSize = .zero

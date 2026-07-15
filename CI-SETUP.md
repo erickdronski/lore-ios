@@ -1,68 +1,91 @@
-# Cloud build to TestFlight (GitHub Actions + Fastlane)
+# Lore iOS CI and TestFlight
 
-The Nalee/EAS experience for the native app: push to `main` and a macOS cloud
-runner builds Lore and uploads it to TestFlight. No local Xcode, no certs
-repo. You do a one-time setup (~15 min) that replaces EAS's Apple-account
-link with an App Store Connect API key.
+Lore is native SwiftUI because the scanner uses Apple camera, Vision, ARKit,
+and StoreKit APIs. GitHub Actions builds it on macOS with XcodeGen and Fastlane;
+Expo/EAS is not part of this release lane.
 
-## Why this instead of EAS
-EAS builds Expo/React Native apps. Lore's mobile app is native SwiftUI (for
-the ARKit AR scanner), which EAS can't build. This pipeline is the native
-equivalent: GitHub's macOS runner runs `xcodegen` + `fastlane`, and Xcode's
-cloud-managed signing (`-allowProvisioningUpdates`) creates the certificate
-and profiles for you, so there is nothing to store or rotate by hand.
+## What publishes
 
-## One-time setup
+- A push to `main` or a pull request runs the unit-test gate only.
+- TestFlight upload requires an explicit **Run workflow** action with
+  `upload_to_testflight` enabled.
+- The upload job tests the exact checkout before it archives, signs, and uploads.
+- The workflow exits after App Store Connect accepts the binary; Apple finishes
+  TestFlight processing asynchronously.
 
-### 1. Create an App Store Connect API key
-1. appstoreconnect.apple.com → Users and Access → Integrations → App Store
-   Connect API → Team Keys → "+".
-2. Name it `lore-ci`, Access role **App Manager** (needed so it can manage
-   signing), Generate.
-3. Download the `.p8` file (you only get one download). Note the **Key ID**
-   and the **Issuer ID** shown on that page.
+## Required repositories
 
-### 2. Add three repo secrets
-In the `erickdronski/lore-ios` repo → Settings → Secrets and variables →
-Actions → New repository secret. Add:
+- `erickdronski/lore-ios`: application source and workflow.
+- `erickdronski/lore-certs`: private Fastlane Match storage for the encrypted
+  Apple Distribution certificate and App Store provisioning profiles.
 
-| Secret name | Value |
+Match handles both bundle identifiers:
+
+- `com.erickdronski.lore`
+- `com.erickdronski.lore.LoreWidget`
+
+## Required GitHub secrets
+
+Configure these in `lore-ios` under **Settings → Secrets and variables →
+Actions**. Never commit their values.
+
+| Secret | Purpose |
 |---|---|
-| `ASC_KEY_ID` | the Key ID (e.g. `A1B2C3D4E5`) |
-| `ASC_ISSUER_ID` | the Issuer ID (a UUID) |
-| `ASC_KEY_CONTENT` | the `.p8` file contents, **base64-encoded** |
+| `ASC_KEY_ID` | App Store Connect API key ID |
+| `ASC_ISSUER_ID` | App Store Connect issuer UUID |
+| `ASC_KEY_CONTENT` | Base64-encoded `.p8` API private key |
+| `MATCH_PASSWORD` | Encrypts/decrypts the Match repository |
+| `MATCH_GIT_BASIC_AUTHORIZATION` | Base64 `github-user:token` credential with read/write access to the private cert repository |
 
-To base64 the key on your Mac (no Xcode needed, just Terminal):
-```
+The App Store Connect key needs enough access to read builds and manage the app
+record. The GitHub token needs **Contents: read and write** on `lore-certs`
+because the first Match run or a certificate renewal can update that repository.
+
+Encode the `.p8` key without adding it to this repository:
+
+```sh
 base64 -i AuthKey_XXXXXXXXXX.p8 | pbcopy
 ```
-then paste as the `ASC_KEY_CONTENT` value.
 
-### 3. Make sure the app record exists in App Store Connect
-The bundle id `com.erickdronski.lore` needs an app record. If you have not made it:
-My Apps → "+" → New App → iOS → name **Lore** → bundle `com.erickdronski.lore` →
-SKU `lore-ios`. (Listing copy can come later; TestFlight does not need it.)
+Encode the Match Git credential:
 
-## Run it
-- Automatic: push to `main` (any change under `Sources/`, `project.yml`,
-  `StoreKit/`, `fastlane/`).
-- Manual: Actions tab → "iOS · TestFlight" → Run workflow.
+```sh
+printf '%s' 'github-user:github-token' | base64 | pbcopy
+```
 
-The build takes ~10-15 min, then appears in App Store Connect → TestFlight a
-few minutes later. Add yourself as an internal tester and install via the
-TestFlight app. Answer the export-compliance prompt with "no / exempt"
-(`ITSAppUsesNonExemptEncryption` is already false in the app).
+## Apple prerequisites
 
-## What runs (no action needed, just so you know)
-`.github/workflows/ios-testflight.yml` → checkout → latest Xcode → install
-XcodeGen → `xcodegen generate` → `bundle exec fastlane beta`, which
-(`fastlane/Fastfile`) sets a per-run build number, `build_app` archives with
-cloud-managed signing, and `upload_to_testflight` ships it.
+1. App Store Connect contains the Lore app record for bundle
+   `com.erickdronski.lore` and SKU `lore-ios`.
+2. The Apple Developer team is `J9DMDH4S58`.
+3. Both app identifiers above exist in the Developer portal.
+4. Paid Apps agreements, tax, and banking are active before testing purchases.
+5. Lore+ products are attached to the app version before App Review.
+
+## Run a build
+
+1. Open GitHub Actions for `erickdronski/lore-ios`.
+2. Select **iOS CI and TestFlight**.
+3. Choose **Run workflow** on the intended branch.
+4. Enable `upload_to_testflight`.
+5. Confirm the unit-test, archive, and upload steps all pass.
+6. In App Store Connect, wait for processing and verify the resulting build,
+   export-compliance state, tester availability, and crash status.
+
+The workflow pins Xcode 26.3, regenerates `Lore.xcodeproj`, installs the locked
+Fastlane bundle, runs `fastlane tests`, then runs `fastlane beta`. Fastlane uses
+one build number above the latest TestFlight build, installs Match signing
+assets into a throwaway CI keychain, archives Release, and uploads the IPA.
 
 ## Troubleshooting
-- "No profiles / signing" on the first run: confirm the API key role is App
-  Manager (not Developer) and the app record exists (step 3).
-- Duplicate build number: the pipeline uses the CI run number, so this should
-  not happen; if it does, re-run the workflow (the number increments).
-- Want a faster path for the very first build only: `lore-ios/TESTFLIGHT.md`
-  is the manual Xcode route. After that, this pipeline is hands-off.
+
+- **Match cannot clone:** verify `MATCH_GIT_BASIC_AUTHORIZATION` is base64 basic
+  auth and its token can read the private `lore-certs` repository.
+- **Match cannot decrypt:** verify `MATCH_PASSWORD` matches the existing cert
+  repository encryption password.
+- **No signing profile:** verify both app identifiers exist and the API key has
+  sufficient Apple access; Match must create/fetch profiles for both targets.
+- **Duplicate build number:** rerun the workflow. The lane queries the latest
+  build for marketing version `1.0` and increments it.
+- **Upload passed but build is absent:** allow Apple processing time, then inspect
+  App Store Connect processing errors and the workflow build logs.

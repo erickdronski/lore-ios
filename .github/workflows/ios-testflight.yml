@@ -1,12 +1,10 @@
-name: iOS · TestFlight
+name: iOS CI and TestFlight
 
-# Push to main (or run manually) and this builds Lore in the cloud on a macOS
-# runner and uploads it to TestFlight. No local Xcode, ever. The Nalee/EAS
-# experience for a native SwiftUI app.
+# Every source change runs the unit-test gate. TestFlight upload is an explicit
+# manual choice so an ordinary main push cannot publish an unreviewed build.
 #
-# One-time setup is in CI-SETUP.md: add an App Store Connect API key as three
-# repo secrets. Cloud-managed signing (-allowProvisioningUpdates) handles the
-# certificate and profiles, so there is no certs repo and no match password.
+# One-time setup is in CI-SETUP.md. App Store Connect and Match credentials stay
+# in GitHub repository secrets; the workflow never prints or persists them.
 
 on:
   push:
@@ -19,27 +17,41 @@ on:
       - "fastlane/**"
       - "Gemfile*"
       - ".github/workflows/ios-testflight.yml"
-  workflow_dispatch: {}
+  pull_request:
+    paths:
+      - "Sources/**"
+      - "project.yml"
+      - "StoreKit/**"
+      - "fastlane/**"
+      - "Gemfile*"
+      - ".github/workflows/ios-testflight.yml"
+  workflow_dispatch:
+    inputs:
+      upload_to_testflight:
+        description: "Upload this exact tested commit to TestFlight"
+        required: true
+        default: false
+        type: boolean
 
 concurrency:
-  group: ios-testflight
+  group: ios-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  testflight:
+  validate-and-release:
     # macos-15 ships Xcode 26 (the iOS 26 SDK), which App Store Connect now
     # REQUIRES for every upload; macos-14 topped out at the iOS 18.2 SDK and
     # Apple rejects those with a 409 "must be built with the iOS 26 SDK".
     runs-on: macos-15
-    timeout-minutes: 40
+    timeout-minutes: 50
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - name: Select the latest stable Xcode
-        uses: maxim-lobanov/setup-xcode@v1
+      - name: Select Xcode 26.3
+        uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1
         with:
-          xcode-version: latest-stable
+          xcode-version: "26.3"
 
       - name: Show Xcode + iOS SDK (must be iOS 26+ for upload)
         run: |
@@ -53,13 +65,29 @@ jobs:
         run: xcodegen generate
 
       - name: Ruby + Fastlane (cached)
-        uses: ruby/setup-ruby@v1
+        uses: ruby/setup-ruby@6e5d382445ae5590b7449d8b3bc8cb1c2c27f617 # v1
         with:
           ruby-version: "3.2"
           bundler-cache: true
 
+      - name: Run Lore unit tests
+        run: bundle exec fastlane tests
+
+      - name: Compile the unsigned Release configuration
+        run: >-
+          xcodebuild
+          -project Lore.xcodeproj
+          -scheme Lore
+          -configuration Release
+          -sdk iphonesimulator
+          -destination 'platform=iOS Simulator,name=iPhone 16 Pro'
+          CODE_SIGNING_ALLOWED=NO
+          build
+
       - name: Build and upload to TestFlight
+        if: github.event_name == 'workflow_dispatch' && inputs.upload_to_testflight
         env:
+          LORE_TESTED: "1"
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_KEY_CONTENT: ${{ secrets.ASC_KEY_CONTENT }}
@@ -69,11 +97,12 @@ jobs:
 
       - name: Save the build log on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: build-logs
           path: |
             ~/Library/Logs/gym/*.log
             fastlane/report.xml
+            build/test-results
           if-no-files-found: ignore
           retention-days: 7

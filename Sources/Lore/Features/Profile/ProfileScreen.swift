@@ -105,7 +105,7 @@ struct ProfileScreen: View {
                 Text(
                     "You don't need an account to read, the map, scanner, "
                     + "cards, and dives all work signed out. An account adds "
-                    + "contributions, Insight points, and Lore+."
+                    + "visits, your journal, Insight points, and Lore+."
                 )
                 .font(LoreType.body)
                 .foregroundStyle(LoreColor.ink600)
@@ -135,9 +135,11 @@ struct ProfileScreen: View {
                     Text(profile.displayNameOrHandle)
                         .font(LoreType.display(size: 20, weight: .semibold))
                         .foregroundStyle(LoreColor.ink)
-                    Text("@\(profile.handle)")
-                        .font(LoreType.caption)
-                        .foregroundStyle(LoreColor.ink600)
+                    if let handle = profile.handle, !handle.isEmpty {
+                        Text("@\(handle)")
+                            .font(LoreType.caption)
+                            .foregroundStyle(LoreColor.ink600)
+                    }
                     if let email = auth.session?.user.email, !email.isEmpty {
                         Text(email)
                             .font(LoreType.caption)

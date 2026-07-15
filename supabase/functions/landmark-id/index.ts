@@ -7,8 +7,8 @@
 // known Lore place, that place's slug so the app can open the real story.
 // Returns 204 when nothing is recognized — never a fabricated name.
 //
-// DEPLOYED to Supabase project uiuwzymvyrgfyiugqlkp (verify_jwt: false, guarded
-// by the anon key + a frame-size cap).
+// Deployed with verify_jwt=true. The function also resolves the caller from the
+// bearer token and applies per-user + global daily quotas before a paid call.
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { encodeBase64 } from "jsr:@std/encoding/base64";
 
@@ -18,30 +18,55 @@ const CORS = {
 };
 const R = 6371000;
 const rad = (d: number) => (d * Math.PI) / 180;
-// Global daily Vision-call ceiling. The Plus gate is client-side, so this is
-// the real cost guard: even if the public anon key leaks and someone loops the
-// endpoint, the Google bill is hard-bounded to ~CAP * $1.50/1000 per day.
 const DAILY_CAP = 400;
+const USER_DAILY_CAP = 25;
+const MAX_IMAGE_BYTES = 3_000_000;
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return new Response("POST only", { status: 405, headers: CORS });
 
+  const url = Deno.env.get("SUPABASE_URL")!;
+  const authHeader = req.headers.get("Authorization") ?? "";
+  const caller = createClient(url, Deno.env.get("SUPABASE_ANON_KEY")!, {
+    global: { headers: { Authorization: authHeader } },
+  });
+  const { data: { user }, error: userError } = await caller.auth.getUser();
+  if (userError || !user) {
+    return new Response("not authenticated", { status: 401, headers: CORS });
+  }
+
+  const declaredLength = Number(req.headers.get("content-length"));
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_IMAGE_BYTES) {
+    return new Response("bad image", { status: 413, headers: CORS });
+  }
+
   const bytes = new Uint8Array(await req.arrayBuffer());
   // Cost + abuse guard: a real scanner JPEG frame is between ~1KB and ~3MB.
-  if (bytes.length < 1024 || bytes.length > 3_000_000) {
+  if (bytes.length < 1024 || bytes.length > MAX_IMAGE_BYTES) {
     return new Response("bad image", { status: 400, headers: CORS });
   }
 
   const supa = createClient(
-    Deno.env.get("SUPABASE_URL")!,
+    url,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
 
-  // Global daily spend cap (bounds the Google bill under abuse). Atomic
-  // increment; over the ceiling we stop before ever calling the paid API.
-  const { data: used } = await supa.rpc("bump_vision_usage");
-  if (typeof used === "number" && used > DAILY_CAP) {
+  const { data: quota, error: quotaError } = await supa.rpc(
+    "consume_vision_quota",
+    { p_user: user.id },
+  );
+  if (quotaError || !quota || typeof quota !== "object") {
+    console.error("vision quota failed", quotaError?.message ?? "invalid response");
+    return new Response("quota unavailable", { status: 503, headers: CORS });
+  }
+  const quotaRecord = quota as Record<string, unknown>;
+  const globalCount = Number(quotaRecord.global_count);
+  const userCount = Number(quotaRecord.user_count);
+  if (!Number.isFinite(globalCount) || !Number.isFinite(userCount)) {
+    return new Response("quota unavailable", { status: 503, headers: CORS });
+  }
+  if (globalCount > DAILY_CAP || userCount > USER_DAILY_CAP) {
     return new Response(JSON.stringify({ error: "daily limit reached" }), {
       status: 429, headers: { ...CORS, "Content-Type": "application/json" },
     });

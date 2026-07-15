@@ -14,7 +14,7 @@ import UIKit
 /// Tier-A resolve where GPS never could (indoors, urban canyons, plaques).
 /// The AR pipeline (ARKit + GARSession) replaces this session wholesale at P1
 /// (docs/05 §2.2 step 1).
-final class ScannerCameraService: NSObject, AVCaptureMetadataOutputObjectsDelegate, AVCaptureVideoDataOutputSampleBufferDelegate {
+final class ScannerCameraService: NSObject, AVCaptureMetadataOutputObjectsDelegate, AVCaptureVideoDataOutputSampleBufferDelegate, @unchecked Sendable {
     let session = AVCaptureSession()
     private let sessionQueue = DispatchQueue(label: "com.erickdronski.lore.camera-session")
     private var configured = false
@@ -25,10 +25,23 @@ final class ScannerCameraService: NSObject, AVCaptureMetadataOutputObjectsDelega
     /// Vision on-device, same privacy promise as the QR rung.
     private let videoOutput = AVCaptureVideoDataOutput()
     private let videoQueue = DispatchQueue(label: "com.erickdronski.lore.camera-video", qos: .userInitiated)
+    private let frameCallbackLock = NSLock()
+    private var frameCallback: ((CVPixelBuffer, CGImagePropertyOrientation) -> Void)?
     /// Called on the video queue (background) with each throttled frame's pixel
     /// buffer + orientation. The receiver runs Vision off-main and publishes to
     /// main itself; this closure must never touch UI directly.
-    var onFrame: ((CVPixelBuffer, CGImagePropertyOrientation) -> Void)?
+    var onFrame: ((CVPixelBuffer, CGImagePropertyOrientation) -> Void)? {
+        get {
+            frameCallbackLock.lock()
+            defer { frameCallbackLock.unlock() }
+            return frameCallback
+        }
+        set {
+            frameCallbackLock.lock()
+            frameCallback = newValue
+            frameCallbackLock.unlock()
+        }
+    }
     /// Cap frame forwarding to ~3 Hz so we don't enqueue 30 buffers a second the
     /// recognizer will just drop.
     private var lastFrameAt: TimeInterval = 0
@@ -47,7 +60,7 @@ final class ScannerCameraService: NSObject, AVCaptureMetadataOutputObjectsDelega
     private var captureDelegate: PhotoCaptureDelegate?
 
     /// QR metadata output for the marker rung. Payloads accepted:
-    /// `https://getlore.app/p/<slug>`, `lore://p/<slug>`, `lore:<slug>`.
+    /// Lore web place links plus `lore://p/<slug>` and `lore:<slug>`.
     private let markerOutput = AVCaptureMetadataOutput()
     /// Called on the main queue with the decoded place slug.
     var onMarkerSlug: ((String) -> Void)?
@@ -216,7 +229,13 @@ final class ScannerCameraService: NSObject, AVCaptureMetadataOutputObjectsDelega
     /// (which the scanner deliberately ignores, this is not a QR reader app).
     static func markerSlug(from payload: String) -> String? {
         let trimmed = payload.trimmingCharacters(in: .whitespacesAndNewlines)
-        for prefix in ["https://getlore.app/p/", "http://getlore.app/p/", "lore://p/", "lore:"] {
+        for prefix in [
+            "https://lore-web-liart.vercel.app/p/",
+            "https://getlore.app/p/",
+            "http://getlore.app/p/",
+            "lore://p/",
+            "lore:"
+        ] {
             if trimmed.lowercased().hasPrefix(prefix) {
                 let slug = String(trimmed.dropFirst(prefix.count))
                     .trimmingCharacters(in: CharacterSet(charactersIn: "/"))

@@ -38,18 +38,18 @@ enum LoreType {
     /// 17/24 medium italic, the Layer-1 hook line.
     static var hook: Font { display(size: 17, weight: .medium).italic() }
     /// 17/24 regular SF Pro, UI copy, forms, settings.
-    static var body: Font { .system(size: 17, weight: .regular) }
+    static var body: Font { .body }
     /// 13/18 regular SF Pro, provenance, timestamps, distances, meters.
-    static var caption: Font { .system(size: 13, weight: .regular) }
+    static var caption: Font { .caption }
     /// 12/16 semibold SF Pro, tracked, badges (SCOUT, CURATOR), chips.
     /// Apply `.tracking(0.6)` at the call site (tracking is a Text modifier).
-    static var label: Font { .system(size: 12, weight: .semibold) }
+    static var label: Font { .caption.weight(.semibold) }
     /// 17–21 New York, Dynamic Type, deep-dive long-form body only.
-    static var reader: Font { .system(size: 19, weight: .regular, design: .serif) }
+    static var reader: Font { .system(.body, design: .serif) }
     /// 15 semibold SF Pro, buttons, chips (`type.label`, 02-PRODUCT §6.1).
-    static var button: Font { .system(size: 15, weight: .semibold) }
+    static var button: Font { .callout.weight(.semibold) }
     /// 11 SF Pro, pin labels in-world only (`type.micro`).
-    static var micro: Font { .system(size: 11, weight: .medium) }
+    static var micro: Font { .caption2.weight(.medium) }
 }
 
 extension Text {

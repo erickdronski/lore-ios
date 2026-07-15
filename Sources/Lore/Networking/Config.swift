@@ -13,6 +13,14 @@ import Foundation
 /// Hardcoding it is the same posture as `lore-web`, do not treat it as a
 /// secret, and never put the service-role key anywhere near this file.
 enum Config {
+    /// Public Lore web surface used for legal, support, and share links until a
+    /// custom domain is configured and verified.
+    static let webURL = URL(string: "https://lore-web-liart.vercel.app")!
+
+    static func placeShareURL(slug: String) -> URL {
+        webURL.appending(path: "p").appending(path: slug)
+    }
+
     /// Supabase project base URL.
     static let supabaseURL = URL(string: "https://uiuwzymvyrgfyiugqlkp.supabase.co")!
 

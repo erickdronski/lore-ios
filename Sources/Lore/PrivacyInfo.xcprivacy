@@ -2,20 +2,17 @@
 <!--
   Privacy manifest for the Lore app (App Store 2026 requirement, docs/25).
 
-  Required-reason APIs: the app uses UserDefaults / @AppStorage (map mode, story
-  lens, onboarding + prefs cache) and nothing else on Apple's required-reason
-  list (no system boot time, disk space, file timestamp, or active-keyboard
-  APIs, verified by grep). So the only declared category is UserDefaults, reason
-  CA92.1 (access to info the app itself stored).
+  Required-reason APIs: the app uses app-local and App-Group UserDefaults, plus
+  file modification dates to expire its own downloaded response cache.
 
   Tracking: Lore does NOT track (no cross-app/data-broker linkage, no ad SDKs),
   so NSPrivacyTracking is false and there are no tracking domains.
 
-  Collected data below reflects what the app genuinely collects for its own
-  functionality, never for tracking. The App Store Connect privacy "nutrition
-  labels" are authoritative and MUST match this list at submission (co-drive).
-  Note: reading is fully anonymous; the account and its data only exist once a
-  user signs in.
+  Collected data below reflects what the app transmits and retains for its own
+  functionality, never for tracking. Precise location and continuous scanner
+  video stay on-device and are not listed as collected. The App Store Connect
+  privacy labels are authoritative and MUST match this list at submission.
+  Reading is anonymous; account data exists only after sign-in.
 -->
 <plist version="1.0">
 <dict>
@@ -31,23 +28,28 @@
       <key>NSPrivacyAccessedAPITypeReasons</key>
       <array>
         <string>CA92.1</string>
+        <string>1C8F.1</string>
+      </array>
+    </dict>
+    <dict>
+      <key>NSPrivacyAccessedAPIType</key>
+      <string>NSPrivacyAccessedAPICategoryFileTimestamp</string>
+      <key>NSPrivacyAccessedAPITypeReasons</key>
+      <array>
+        <string>C617.1</string>
+      </array>
+    </dict>
+    <dict>
+      <key>NSPrivacyAccessedAPIType</key>
+      <string>NSPrivacyAccessedAPICategorySystemBootTime</string>
+      <key>NSPrivacyAccessedAPITypeReasons</key>
+      <array>
+        <string>35F9.1</string>
       </array>
     </dict>
   </array>
   <key>NSPrivacyCollectedDataTypes</key>
   <array>
-    <dict>
-      <key>NSPrivacyCollectedDataType</key>
-      <string>NSPrivacyCollectedDataTypePreciseLocation</string>
-      <key>NSPrivacyCollectedDataTypeLinked</key>
-      <true/>
-      <key>NSPrivacyCollectedDataTypeTracking</key>
-      <false/>
-      <key>NSPrivacyCollectedDataTypePurposes</key>
-      <array>
-        <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
-      </array>
-    </dict>
     <dict>
       <key>NSPrivacyCollectedDataType</key>
       <string>NSPrivacyCollectedDataTypeEmailAddress</string>
@@ -75,6 +77,30 @@
     <dict>
       <key>NSPrivacyCollectedDataType</key>
       <string>NSPrivacyCollectedDataTypeOtherUserContent</string>
+      <key>NSPrivacyCollectedDataTypeLinked</key>
+      <true/>
+      <key>NSPrivacyCollectedDataTypeTracking</key>
+      <false/>
+      <key>NSPrivacyCollectedDataTypePurposes</key>
+      <array>
+        <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+      </array>
+    </dict>
+    <dict>
+      <key>NSPrivacyCollectedDataType</key>
+      <string>NSPrivacyCollectedDataTypePhotosorVideos</string>
+      <key>NSPrivacyCollectedDataTypeLinked</key>
+      <true/>
+      <key>NSPrivacyCollectedDataTypeTracking</key>
+      <false/>
+      <key>NSPrivacyCollectedDataTypePurposes</key>
+      <array>
+        <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+      </array>
+    </dict>
+    <dict>
+      <key>NSPrivacyCollectedDataType</key>
+      <string>NSPrivacyCollectedDataTypeProductInteraction</string>
       <key>NSPrivacyCollectedDataTypeLinked</key>
       <true/>
       <key>NSPrivacyCollectedDataTypeTracking</key>

@@ -32,6 +32,7 @@ final class NearMeLocationProvider: NSObject, CLLocationManagerDelegate {
     override init() {
         super.init()
         manager.delegate = self
+        authorizationStatus = manager.authorizationStatus
         // The shelf shows literal distance labels ("60 m away"), which users
         // read as a promise, so this asks for a genuinely accurate fix
         // (ten-meter class). The old hundred-meter fix could put a place 100 m
@@ -43,8 +44,9 @@ final class NearMeLocationProvider: NSObject, CLLocationManagerDelegate {
 
     /// Request permission (if needed) and begin updates. Safe to call on the
     /// shelf's `.onAppear`; idempotent.
-    func start() {
-        if authorizationStatus == .notDetermined {
+    func start(requestPermission: Bool = true) {
+        authorizationStatus = manager.authorizationStatus
+        if requestPermission && authorizationStatus == .notDetermined {
             manager.requestWhenInUseAuthorization()
         }
         if isAuthorized {

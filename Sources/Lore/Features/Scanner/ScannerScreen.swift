@@ -53,7 +53,11 @@ struct ScannerScreen: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var model = ScannerModel()
     @State private var showPaywall = false
+    @State private var showSignIn = false
     @State private var isVisible = false
+    @State private var showCloudIdentificationDisclosure = false
+    @AppStorage("lore.cloudLandmarkDisclosureAccepted.v1")
+    private var acceptedCloudIdentificationDisclosure = false
 
     /// Raised so a scanner-opened place card can hand off to the city's culture
     /// surface (wired by the tab shell); the no-op default keeps previews working.
@@ -159,6 +163,20 @@ struct ScannerScreen: View {
         }
         .sheet(isPresented: $showPaywall) {
             PaywallView(entitlements: entitlements, store: store, auth: auth, context: .audio)
+        }
+        .sheet(isPresented: $showSignIn) {
+            SignInView()
+        }
+        .alert("Send one photo to Google?", isPresented: $showCloudIdentificationDisclosure) {
+            Button("Send photo") {
+                Task {
+                    acceptedCloudIdentificationDisclosure = true
+                    await identifyLandmarkWithFreshSession()
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("To identify this landmark, Lore sends the current camera frame to Google Cloud Vision for analysis. The photo is used only for this identification request and is not saved by Lore.")
         }
         .task {
             model.apply(prefs: prefs)
@@ -343,16 +361,12 @@ struct ScannerScreen: View {
         switch model.identifyState {
         case .idle:
             Button {
-                if entitlements.isPlus {
-                    Task { await model.identifyLandmark() }
-                } else {
-                    showPaywall = true
-                }
+                beginLandmarkIdentification()
             } label: {
                 HStack(spacing: 7) {
                     Image(systemName: "building.columns")
                         .font(.system(size: 13, weight: .semibold))
-                    Text("Identify this landmark")
+                    Text("Identify with Google")
                         .font(LoreType.button)
                     if !entitlements.isPlus {
                         Image(systemName: "lock.fill").font(.system(size: 10, weight: .semibold))
@@ -379,8 +393,8 @@ struct ScannerScreen: View {
                     .foregroundStyle(LoreColor.bone)
                     .multilineTextAlignment(.center)
                 Text(id.confidence != nil
-                    ? "Cloud identification · \(Int((id.confidence ?? 0) * 100))% match"
-                    : "Cloud identification")
+                    ? "Google Cloud Vision · \(Int((id.confidence ?? 0) * 100))% match"
+                    : "Google Cloud Vision")
                     .font(LoreType.micro)
                     .foregroundStyle(LoreColor.bone.opacity(0.7))
                 if let slug = id.slug {
@@ -407,7 +421,42 @@ struct ScannerScreen: View {
             Text("Landmark ID isn't available right now.")
                 .font(LoreType.caption)
                 .foregroundStyle(LoreColor.bone.opacity(0.8))
+
+        case .quotaReached:
+            Text("Today's landmark limit has been reached. Try again tomorrow.")
+                .font(LoreType.caption)
+                .foregroundStyle(LoreColor.bone.opacity(0.8))
         }
+    }
+
+    private func beginLandmarkIdentification() {
+        guard entitlements.isPlus else {
+            showPaywall = true
+            return
+        }
+        Task {
+            if acceptedCloudIdentificationDisclosure {
+                await identifyLandmarkWithFreshSession()
+            } else {
+                showCloudIdentificationDisclosure = true
+            }
+        }
+    }
+
+    private func identifyLandmarkWithFreshSession() async {
+        guard let accessToken = await auth.validAccessToken() else {
+            showSignIn = true
+            return
+        }
+        let outcome = await model.identifyLandmark(accessToken: accessToken)
+        guard outcome == .unauthorized else { return }
+
+        guard let refreshedToken = await auth.validAccessToken(forceRefresh: true) else {
+            if !auth.isSignedIn { showSignIn = true }
+            return
+        }
+        let retry = await model.identifyLandmark(accessToken: refreshedToken)
+        if retry == .unauthorized, !auth.isSignedIn { showSignIn = true }
     }
 
     // MARK: §3.1, meanwhile-nearby story markers
@@ -614,9 +663,9 @@ struct ScannerScreen: View {
                     .font(LoreType.displayM)
                     .foregroundStyle(LoreColor.bone)
                     .multilineTextAlignment(.center)
-                Text("Lore uses the camera to place stories on the buildings around you, and your location to know which block you are on. Nothing leaves your device.")
+                Text("Lore uses the camera to place stories on the buildings around you and your location to know which block you are on. Live scanning stays on your device. If you choose Identify with Google, Lore asks before sending one camera frame for cloud analysis.")
                     .font(LoreType.body)
-                    .foregroundStyle(LoreColor.ink600)
+                    .foregroundStyle(LoreColor.bone.opacity(0.78))
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
                 Button {
@@ -801,6 +850,12 @@ enum IdentifyState: Equatable {
     case result(LandmarkID)
     case none          // ran, cloud recognized no landmark
     case unavailable   // error / offline / API not enabled yet
+    case quotaReached  // authenticated daily quota exhausted
+}
+
+enum LandmarkRequestOutcome: Equatable {
+    case completed
+    case unauthorized
 }
 
 /// The `landmark-id` edge function's JSON shape.
@@ -889,7 +944,9 @@ final class ScannerModel {
     var permissionDenied: Bool { cameraDenied || locationDenied }
 
     private var loadError = false
-    private var scoutedOnce = false
+    /// Coverage is area-specific. Re-probe after a meaningful move instead of
+    /// keeping the first block's result for the rest of the app session.
+    private var lastScoutedLocation: CLLocation?
     private var projectionTask: Task<Void, Never>?
     /// Temporal lock hysteresis (scanner-lab port): confirms a Tier A over
     /// ~400ms and holds it ~650ms across gate jitter so pins never flicker.
@@ -939,7 +996,7 @@ final class ScannerModel {
         !preciseMode
             && scouting.availability == .available
             && GeoARSessionController.isSupported
-            && pose.location != nil
+            && pose.freshLocation() != nil
             && !places.isEmpty
     }
 
@@ -1062,7 +1119,7 @@ final class ScannerModel {
     /// anchor the top-ranked candidates as ARGeoAnchors. Coarse remains the
     /// fallback at every step; any hard failure lands in exitPreciseMode().
     func enterPreciseMode() {
-        guard !preciseMode, let location = pose.location else { return }
+        guard !preciseMode, let location = pose.freshLocation() else { return }
 
         // Rank the whole nearby field, not just the current FOV, so anchors
         // cover what the user will sweep to. Ranked first, nearest breaking
@@ -1135,29 +1192,40 @@ final class ScannerModel {
     /// Fire ONE frame at the cloud landmark identifier (opt-in "what is this?").
     /// Only meaningful in coarse mode (the AVCapture session owns the camera).
     /// Never fabricates: a miss lands in `.none`, any error in `.unavailable`.
-    func identifyLandmark() async {
-        guard !preciseMode else { return }
+    func identifyLandmark(accessToken: String) async -> LandmarkRequestOutcome {
+        guard !preciseMode else { return .completed }
         identifyState = .loading
         guard let data = await camera.capturePhotoData() else {
             identifyState = .unavailable
-            return
+            return .completed
         }
         do {
             var request = URLRequest(url: Config.functionsURL.appending(path: "landmark-id"))
             request.httpMethod = "POST"
             request.setValue(Config.supabaseAnonKey, forHTTPHeaderField: "apikey")
-            request.setValue("Bearer \(Config.supabaseAnonKey)", forHTTPHeaderField: "Authorization")
+            request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
             request.setValue("image/jpeg", forHTTPHeaderField: "Content-Type")
             let (body, response) = try await URLSession.shared.upload(for: request, from: data)
             guard let http = response as? HTTPURLResponse else {
                 identifyState = .unavailable
-                return
+                return .completed
             }
-            if http.statusCode == 204 { identifyState = .none; return }
+            if http.statusCode == 204 {
+                identifyState = .none
+                return .completed
+            }
+            if http.statusCode == 401 {
+                identifyState = .unavailable
+                return .unauthorized
+            }
+            if http.statusCode == 429 {
+                identifyState = .quotaReached
+                return .completed
+            }
             guard http.statusCode == 200,
                   let decoded = try? JSONDecoder().decode(LandmarkResponse.self, from: body) else {
                 identifyState = .unavailable
-                return
+                return .completed
             }
             identifyState = .result(LandmarkID(
                 name: decoded.landmark,
@@ -1165,8 +1233,10 @@ final class ScannerModel {
                 slug: decoded.slug
             ))
             Haptics.play(.scannerLock)
+            return .completed
         } catch {
             identifyState = .unavailable
+            return .completed
         }
     }
 
@@ -1253,7 +1323,7 @@ final class ScannerModel {
             return
         }
 
-        guard let location = pose.location, pose.headingDegrees >= 0 else {
+        guard let location = pose.freshLocation(), pose.headingDegrees >= 0 else {
             lockedRanked = nil
             inViewClusters = []
             inViewStories = []
@@ -1268,8 +1338,9 @@ final class ScannerModel {
         // A fix arrived: stop the acquisition clock.
         acquiringSince = nil
 
-        if !scoutedOnce {
-            scoutedOnce = true
+        if lastScoutedLocation == nil
+            || location.distance(from: lastScoutedLocation!) > 250 {
+            lastScoutedLocation = location
             scouting.scout(coordinate: location.coordinate)
         }
 

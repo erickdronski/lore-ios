@@ -54,7 +54,7 @@ struct OnboardingPresenter: ViewModifier {
     /// latest token (the user could sign in mid-flow).
     private var prefsWriter: PrefsWriting {
         OnboardingPrefsWriter {
-            guard let session = auth.session else { return nil }
+            guard let session = auth.session, !session.isExpired else { return nil }
             return (userID: session.user.id, accessToken: session.accessToken)
         }
     }
@@ -69,7 +69,7 @@ struct OnboardingPresenter: ViewModifier {
             .task {
                 // Fold the server pref into the gate: if this account already
                 // onboarded (fresh install, existing user), don't present.
-                guard store.shouldPresent, let token = auth.session?.accessToken else { return }
+                guard store.shouldPresent, let token = await auth.validAccessToken() else { return }
                 let prefs = try? await LoreAPI.shared.userPrefs(accessToken: token)
                 store.resolveGate(serverPrefs: prefs)
                 if !store.shouldPresent { isPresented = false }

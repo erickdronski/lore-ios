@@ -50,9 +50,12 @@ final class L10n {
         return AppLanguage(rawValue: device) ?? .en
     }
 
-    /// Translate a key; falls back to English, then to the key itself.
+    /// Release chrome remains English until every user-facing surface is fully
+    /// localized. `language` still drives optional on-device story translation;
+    /// mixing translated tabs with English forms and workflows is worse than an
+    /// honest English-only interface.
     func t(_ key: String) -> String {
-        Self.tables[language]?[key] ?? Self.tables[.en]?[key] ?? key
+        Self.tables[.en]?[key] ?? key
     }
 
     /// Convenience for call sites: `L10n.shared.t(key)`.

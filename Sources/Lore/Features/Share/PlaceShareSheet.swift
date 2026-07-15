@@ -96,10 +96,9 @@ struct PlaceShareSheet: View {
     }
 }
 
-/// Caption + deep link that ride along with the shared image. The link uses the
-/// getlore.app/p/{slug} universal-link shape (roadmap P1); it resolves to the
-/// place in-app once Associated Domains + the web route land, and is a working
-/// web link meanwhile. No em/en dashes anywhere (project rule).
+/// Caption + web link that ride along with the shared image. The route resolves
+/// the place on Lore's living map today and can become a universal link later.
+/// No em/en dashes anywhere (project rule).
 enum ShareCaption {
     static func text(for place: Place) -> String {
         let city = place.city.replacingOccurrences(of: "-", with: " ").capitalized
@@ -110,8 +109,7 @@ enum ShareCaption {
     }
 
     static func url(for place: Place) -> URL {
-        URL(string: "https://getlore.app/p/\(place.slug)")
-            ?? URL(string: "https://getlore.app")!
+        Config.placeShareURL(slug: place.slug)
     }
 }
 

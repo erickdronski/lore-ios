@@ -26,6 +26,7 @@ struct SettingsView: View {
     /// Account-deletion confirmation (App Store 5.1.1(v)).
     @State private var showDeleteConfirm = false
     @State private var deleting = false
+    @State private var deleteFailure: String?
 
     /// The master haptics switch, read by `Haptics.play` via the same key.
     @AppStorage(Haptics.enabledDefaultsKey) private var hapticsEnabled = true
@@ -60,17 +61,26 @@ struct SettingsView: View {
         .navigationTitle(L10n.t("settings.title"))
         .navigationBarTitleDisplayMode(.inline)
         .alert("Delete your account?", isPresented: $showDeleteConfirm) {
-            Button("Delete account", role: .destructive) {
-                Task {
-                    deleting = true
-                    let ok = await auth.deleteAccount()
-                    deleting = false
-                    if ok { dismiss() } // session cleared → back to signed-out
+            if let manageSubscriptionsURL {
+                Button("Manage Apple subscription") {
+                    openURL(manageSubscriptionsURL)
                 }
+            }
+            Button("Delete account", role: .destructive) {
+                Task { await deleteAccount() }
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This permanently deletes your account and all your data — your visits, notes, journal photos, badges, and Lore+ record. This cannot be undone.")
+            Text("This permanently deletes your Lore account and private data, including visits, notes, journal photos, badges, and your Lore+ record. Published factual contributions may be retained without account attribution. Deleting your Lore account does not cancel an Apple subscription; manage it separately in your Apple ID subscription settings. This cannot be undone.")
+        }
+        .alert("Account not deleted", isPresented: Binding(
+            get: { deleteFailure != nil },
+            set: { if !$0 { deleteFailure = nil } }
+        )) {
+            Button("Try again") { Task { await deleteAccount() } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(deleteFailure ?? "Please try again.")
         }
     }
 
@@ -92,32 +102,51 @@ struct SettingsView: View {
         } header: {
             Text("Account")
         } footer: {
-            Text("Permanently deletes your account and all associated data.")
+            Text("Deletes your Lore account and private data. Apple subscriptions must be cancelled separately.")
         }
     }
 
-    // MARK: Language (scanner-lab port: nine interface languages + Auto)
+    private func deleteAccount() async {
+        guard !deleting else { return }
+        deleting = true
+        deleteFailure = nil
+        let deleted = await auth.deleteAccount()
+        deleting = false
+        if deleted {
+            dismiss() // Session cleared, return to the signed-out profile.
+        } else {
+            deleteFailure = auth.lastError ?? "Couldn't delete your account. Please try again."
+        }
+    }
+
+    // MARK: Story translation
 
     private var languageSection: some View {
         Section {
-            Picker(selection: Binding(
-                get: { L10n.shared.choice },
-                set: { L10n.shared.choice = $0 }
-            )) {
-                Text(L10n.t("settings.languageAuto")).tag("auto")
-                ForEach(AppLanguage.allCases) { language in
-                    Text(language.label).tag(language.rawValue)
+            if #available(iOS 18.0, *) {
+                Picker(selection: Binding(
+                    get: { L10n.shared.choice },
+                    set: { L10n.shared.choice = $0 }
+                )) {
+                    Text("Auto (device)").tag("auto")
+                    ForEach(AppLanguage.allCases) { language in
+                        Text(language.label).tag(language.rawValue)
+                    }
+                } label: {
+                    Label("Story translation", systemImage: "character.bubble")
+                        .font(LoreType.body)
+                        .foregroundStyle(LoreColor.ink)
                 }
-            } label: {
-                Label(L10n.t("settings.language"), systemImage: "globe")
+                .tint(LoreColor.brass700)
+            } else {
+                Label("Story translation requires iOS 18 or later", systemImage: "character.bubble")
                     .font(LoreType.body)
-                    .foregroundStyle(LoreColor.ink)
+                    .foregroundStyle(LoreColor.ink600)
             }
-            .tint(LoreColor.brass700)
         } header: {
-            Text(L10n.t("settings.language"))
+            Text("Story translation")
         } footer: {
-            Text(L10n.t("settings.languageNote"))
+            Text("Long-form stories can translate privately on your device. App controls remain in English for this release; the original English is shown when translation is unavailable.")
                 .font(LoreType.caption)
                 .foregroundStyle(LoreColor.ink600)
         }
@@ -198,11 +227,10 @@ struct SettingsView: View {
         Section {
             permissionRow("Location", icon: "location.fill")
             permissionRow("Camera", icon: "camera.fill")
-            permissionRow("Notifications", icon: "bell.fill")
         } header: {
             Text("Permissions")
         } footer: {
-            Text("Opens the iOS Settings app, where Lore's location, camera, and notification access live.")
+            Text("Opens the iOS Settings app, where Lore's location and camera access live.")
                 .font(LoreType.caption)
                 .foregroundStyle(LoreColor.ink600)
         }
@@ -259,11 +287,18 @@ struct SettingsView: View {
     private func restorePurchases() async {
         restoring = true
         restoreNote = nil
-        let ok = await store.restore()
+        let outcome = await store.restore()
         restoring = false
-        restoreNote = ok
-            ? "Purchases restored."
-            : "Nothing to restore on this Apple ID."
+        switch outcome {
+        case .restored:
+            restoreNote = "Purchases restored."
+        case .nothingToRestore:
+            restoreNote = "Nothing to restore on this Apple ID."
+        case .userCancelled:
+            break
+        case .failed(let message):
+            restoreNote = message
+        }
     }
 
     // MARK: About + legal

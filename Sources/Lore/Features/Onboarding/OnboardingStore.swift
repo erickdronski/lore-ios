@@ -1,8 +1,6 @@
 import CoreLocation
 import Observation
 import SwiftUI
-import UIKit
-import UserNotifications
 
 /// The first-run flow's brain: which step we're on, the interest/persona
 /// selection, the permission prompts, and the single `user_prefs` write on
@@ -34,7 +32,6 @@ final class OnboardingStore: NSObject, CLLocationManagerDelegate {
         case arrival
         case interests
         case location
-        case notifications
         case finish
 
         var next: Step? { Step(rawValue: rawValue + 1) }
@@ -46,7 +43,6 @@ final class OnboardingStore: NSObject, CLLocationManagerDelegate {
             case "arrival": return .arrival
             case "interests": return .interests
             case "location": return .location
-            case "notifications": return .notifications
             case "finish": return .finish
             default: return nil
             }
@@ -76,7 +72,6 @@ final class OnboardingStore: NSObject, CLLocationManagerDelegate {
     // MARK: - Permission state (for the UI's reactive copy)
 
     private(set) var locationStatus: CLAuthorizationStatus
-    private(set) var notificationStatus: UNAuthorizationStatus = .notDetermined
     /// True while a permission dialog is in flight, so buttons can show a spinner
     /// and not double-fire.
     private(set) var isRequestingPermission = false
@@ -199,29 +194,6 @@ final class OnboardingStore: NSObject, CLLocationManagerDelegate {
         Task { @MainActor in
             self.locationStatus = status
             self.isRequestingPermission = false
-        }
-    }
-
-    // MARK: - Notification permission (13 §4.3)
-
-    /// Ask for notification authorization. Optional and off-by-default in spirit
-    ///, we only request when the user taps "Turn on nudges".
-    ///
-    /// On grant, also **register for remote notifications** so APNs issues a
-    /// device token (docs/16 §5). The token arrives asynchronously in
-    /// `AppDelegate` → `PushService`; the server sender (a TODO, docs/16 §5)
-    /// targets it. Local proximity notifications (`CLMonitor`) don't need this
-    /// registration, but the remote "new-city" path does.
-    func requestNotifications() async {
-        isRequestingPermission = true
-        defer { isRequestingPermission = false }
-        let center = UNUserNotificationCenter.current()
-        let granted = (try? await center.requestAuthorization(options: [.alert, .sound, .badge])) ?? false
-        let settings = await center.notificationSettings()
-        notificationStatus = settings.authorizationStatus
-        if granted {
-            // Triggers the AppDelegate APNs token callbacks → PushService.
-            UIApplication.shared.registerForRemoteNotifications()
         }
     }
 

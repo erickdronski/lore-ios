@@ -533,6 +533,7 @@ struct TourDetailView: View {
         currentNarrative = nil
         guard let placeID = currentStop?.placeID else { return }
         let dive = (try? await LoreAPI.shared.dive(placeID: placeID)) ?? nil
+        guard currentStop?.placeID == placeID else { return }
         currentNarrative = dive?.narrative
     }
 
