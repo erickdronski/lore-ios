@@ -68,8 +68,11 @@ struct ProfileScreen: View {
             }
             .listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)
-            .background(LoreColor.bone100)
+            .background(LoreColor.bone100.ignoresSafeArea())
             .navigationTitle("Profile")
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarBackground(LoreColor.bone100, for: .navigationBar)
+            .toolbarColorScheme(.light, for: .navigationBar)
             .sheet(isPresented: $showSignIn) {
                 SignInView()
                     .presentationDetents([.large])
@@ -79,6 +82,7 @@ struct ProfileScreen: View {
             }
             .task { await loadProfile() }
         }
+        .background(LoreColor.bone100.ignoresSafeArea())
     }
 
     /// Load the signed-in user's profile, flagging a failure so the row can
