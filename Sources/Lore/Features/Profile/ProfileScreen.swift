@@ -82,6 +82,7 @@ struct ProfileScreen: View {
             }
             .task { await loadProfile() }
         }
+        .environment(\.colorScheme, .light)
         .background(LoreColor.bone100.ignoresSafeArea())
     }
 
