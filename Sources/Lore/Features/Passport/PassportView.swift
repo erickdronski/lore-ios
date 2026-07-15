@@ -56,7 +56,6 @@ struct PassportView: View {
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbarBackground(LoreColor.ink900, for: .navigationBar)
             .toolbarColorScheme(.dark, for: .navigationBar)
-            .preferredColorScheme(.dark)
             // PassportModel is a long-lived @State object. Reload on every
             // identity transition so badges from one account never cross into
             // another account or the signed-out state.

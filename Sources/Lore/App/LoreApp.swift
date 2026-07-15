@@ -84,16 +84,6 @@ struct LoreApp: App {
                 // (Amber is reserved for the world: pins, outlines, beacon —
                 // brand/DESIGN.md §4). brass700 is the AA-safe brass on Bone.
                 .tint(LoreColor.brass700)
-                // Lore's palette is a FIXED brand system (Ink/Bone/Brass/Amber),
-                // not an adaptive light/dark theme: light surfaces (map, tours,
-                // profile, cards) use dark text on Bone, dark surfaces (scanner,
-                // dossier, paywall) set Ink explicitly. Pin the scheme to .light
-                // so the device's Dark Mode never turns system chrome (nav-bar
-                // titles, grouped-list cells) dark and makes the dark brand text
-                // unreadable on the Bone surfaces (TestFlight feedback 2026-07-06:
-                // "can't read Profile / the tiles"). A true adaptive dark theme
-                // is a separate, larger design-system pass.
-                .preferredColorScheme(.light)
                 .loreOnboarding(auth: auth)
         }
     }
@@ -181,6 +171,12 @@ struct RootTabView: View {
             }
         }
         .animation(LoreMotion.unfurl, value: travel.pendingUnlocks.count)
+        // Lore's palette is fixed rather than a device-driven adaptive theme.
+        // Keep Bone tabs in light system chrome, while the full-screen Scanner
+        // and Passport need light status-bar glyphs over camera/Ink surfaces.
+        .preferredColorScheme(
+            selection == .scanner || selection == .passport ? .dark : .light
+        )
         // Global search, resolves a `LoreRoute` and hands it to the router.
         .sheet(isPresented: $showSearch) {
             SearchView(router: router)
