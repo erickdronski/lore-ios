@@ -90,7 +90,14 @@ struct CityFact: Codable, Identifiable, Hashable {
     }
 
     var sourceURL: URL? {
-        guard let source, !source.isEmpty else { return nil }
-        return URL(string: source)
+        guard
+            let source,
+            let url = URL(string: source),
+            let scheme = url.scheme?.lowercased(),
+            ["http", "https"].contains(scheme),
+            url.host != nil
+        else { return nil }
+
+        return url
     }
 }

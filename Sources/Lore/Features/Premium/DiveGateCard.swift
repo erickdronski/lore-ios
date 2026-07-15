@@ -104,7 +104,7 @@ struct DiveMeterBadge: View {
                                 : "\(remaining) free dives left today")
                 .font(LoreType.caption)
         }
-        .foregroundStyle(LoreColor.ink600)
+        .foregroundStyle(LoreColor.bone.opacity(0.72))
         .padding(.horizontal, 10)
         .padding(.vertical, 5)
         .background(LoreColor.ink800, in: Capsule())

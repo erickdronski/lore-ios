@@ -45,4 +45,31 @@ final class LoreAPITests: XCTestCase {
         XCTAssertTrue(legacy.expires(within: 120))
         XCTAssertTrue(legacy.isExpired)
     }
+
+    func testCityFactSourceURLAcceptsOnlyWebLinks() {
+        XCTAssertEqual(cityFact(source: "https://example.com/fact").sourceURL?.absoluteString,
+                       "https://example.com/fact")
+        XCTAssertEqual(cityFact(source: "http://example.com/fact").sourceURL?.absoluteString,
+                       "http://example.com/fact")
+        XCTAssertNil(cityFact(source: "seed:dev").sourceURL)
+        XCTAssertNil(cityFact(source: "ftp://example.com/fact").sourceURL)
+        XCTAssertNil(cityFact(source: "/relative-source").sourceURL)
+        XCTAssertNil(cityFact(source: "").sourceURL)
+        XCTAssertNil(cityFact(source: nil).sourceURL)
+    }
+
+    private func cityFact(source: String?) -> CityFact {
+        CityFact(
+            id: "fact",
+            city: "chicago",
+            category: .quirk,
+            fact: "A sourced fact",
+            detail: nil,
+            statValue: nil,
+            statLabel: nil,
+            emoji: nil,
+            source: source,
+            sort: 1
+        )
+    }
 }

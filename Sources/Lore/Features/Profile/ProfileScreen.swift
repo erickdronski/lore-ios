@@ -248,9 +248,9 @@ struct ProfileScreen: View {
                     .foregroundStyle(LoreColor.ink600)
             }
             HStack {
-                Text("Pilot city").font(LoreType.body)
+                Text("Coverage").font(LoreType.body)
                 Spacer()
-                Text("Chicago, Loop · Riverwalk · Museum Campus")
+                Text("Cities around the world")
                     .font(LoreType.caption)
                     .foregroundStyle(LoreColor.ink600)
             }
