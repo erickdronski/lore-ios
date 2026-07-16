@@ -386,6 +386,21 @@ struct RootTabView: View {
             meetCity = "chicago"
         case "paywall":
             showScreenshotPaywall = true
+        case "card":
+            // The layer-1 place card (no auto-dive): used to verify/capture the
+            // card surface itself — visit toggle, your-lore, teaser, actions.
+            selection = .map
+            Task {
+                for _ in 0..<24 {
+                    let places = (try? await LoreAPI.shared.places(city: "chicago")) ?? []
+                    if let match = places.first(where: { $0.slug == ScreenshotSupport.diveSlug })
+                        ?? places.first(where: { $0.layer1?.hook != nil }) {
+                        routedPlace = RoutedPlace(place: match, autoDive: false)
+                        return
+                    }
+                    try? await Task.sleep(for: .milliseconds(500))
+                }
+            }
         default:
             break
         }
