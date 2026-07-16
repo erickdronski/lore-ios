@@ -23,6 +23,16 @@ actor WikipediaService {
     private var cache: [String: URL?] = [:]
     private let session: URLSession
 
+    /// Durable `title → image URL` map written by city-pack downloads, so a
+    /// downloaded city resolves its hero images with zero network. Loaded once.
+    private var persistent: [String: String]?
+    private let persistentFile: URL = {
+        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let dir = support.appending(path: "lore-packs", directoryHint: .isDirectory)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appending(path: "wiki-titles.json")
+    }()
+
     init(session: URLSession = .shared) {
         self.session = session
     }
@@ -37,9 +47,35 @@ actor WikipediaService {
         guard !key.isEmpty else { return nil }
         if let cached = cache[key] { return cached }
 
+        // A pack-persisted resolution answers offline (and skips the network).
+        if let packed = loadPersistent()[key], let url = URL(string: packed) {
+            cache[key] = url
+            return url
+        }
+
         let resolved = await fetchPortraitURL(for: key)
+        // Never persist (or memoize) a miss that could be a network failure —
+        // only successful resolutions are cached across launches by packs.
         cache[key] = resolved
         return resolved
+    }
+
+    /// Merge pack-resolved titles into the durable map (city-pack downloads).
+    func persistTitles(_ map: [String: URL]) {
+        var current = loadPersistent()
+        for (title, url) in map { current[title] = url.absoluteString }
+        persistent = current
+        if let data = try? JSONEncoder().encode(current) {
+            try? data.write(to: persistentFile, options: .atomic)
+        }
+    }
+
+    private func loadPersistent() -> [String: String] {
+        if let persistent { return persistent }
+        let loaded = (try? Data(contentsOf: persistentFile))
+            .flatMap { try? JSONDecoder().decode([String: String].self, from: $0) } ?? [:]
+        persistent = loaded
+        return loaded
     }
 
     // MARK: - Network

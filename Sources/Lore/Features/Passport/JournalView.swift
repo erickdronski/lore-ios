@@ -10,6 +10,12 @@ struct VisitLogEntry: Decodable, Identifiable {
     let visitedAt: String
     let note: String?
     let photos: [String]?
+    /// The visit row's own id (reports reference it; nil on local stubs).
+    let visitID: String?
+    /// Whether the author shared this lore publicly (opt-in, default private).
+    let isPublic: Bool?
+    /// Server-owned moderation status: visible | auto_hidden | removed | approved.
+    let status: String?
     let place: EmbeddedPlace?
 
     struct EmbeddedPlace: Decodable {
@@ -21,11 +27,18 @@ struct VisitLogEntry: Decodable, Identifiable {
 
     var id: String { placeID }
     var photoPaths: [String] { photos ?? [] }
+    var isShared: Bool { isPublic ?? false }
+    /// Author-facing: their shared lore was hidden by moderation.
+    var isHiddenByModeration: Bool {
+        status == "auto_hidden" || status == "removed"
+    }
 
     enum CodingKeys: String, CodingKey {
         case placeID = "place_id"
         case visitedAt = "visited_at"
-        case note, photos, place
+        case visitID = "id"
+        case isPublic = "is_public"
+        case note, photos, place, status
     }
 
     var displayName: String { place?.name ?? "A place" }
@@ -167,11 +180,15 @@ struct NoteEditorSheet: View {
     @State private var text: String
     @State private var picked: PhotosPickerItem?
     @State private var uploading = false
+    /// Opt-in public sharing; writes immediately (like photos), server-owned
+    /// moderation status.
+    @State private var isShared: Bool
 
     init(entry: VisitLogEntry, onSave: @escaping (String) -> Void) {
         self.entry = entry
         self.onSave = onSave
         _text = State(initialValue: entry.note ?? "")
+        _isShared = State(initialValue: entry.isShared)
     }
 
     /// Live photos for this place from the store, so an upload shows immediately.
@@ -223,6 +240,9 @@ struct NoteEditorSheet: View {
                             }
                         }
                     }
+
+                    shareSection
+
                     Spacer(minLength: 0)
                 }
                 .padding(16)
@@ -252,6 +272,50 @@ struct NoteEditorSheet: View {
                 }
             }
         }
+    }
+
+    /// The live history row for this place (fresher than the captured entry).
+    private var liveEntry: VisitLogEntry {
+        visits.visitHistory.first(where: { $0.placeID == entry.placeID }) ?? entry
+    }
+
+    /// Opt-in community sharing (Guideline 1.2 pairs this with report + block
+    /// on the reading side). Default private; writes immediately like photos.
+    private var shareSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Toggle(isOn: $isShared) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Share with all travelers")
+                        .font(LoreType.button)
+                        .foregroundStyle(LoreColor.ink)
+                    // v1 shares the NOTE only: journal photos live in a private
+                    // bucket other readers can't load, so promising them here
+                    // would be a lie until the public-photo path ships.
+                    Text("Your note appears on this place for every traveler, under your display name. Photos stay private to you.")
+                        .font(LoreType.caption)
+                        .foregroundStyle(LoreColor.ink600)
+                }
+            }
+            .tint(LoreColor.brass700)
+            .onChange(of: isShared) { _, newValue in
+                Task { await visits.setShared(placeID: entry.placeID, isPublic: newValue) }
+            }
+            if isShared {
+                Text("Keep it kind and true. Lore that other travelers report is hidden while we review it; abusive content is removed.")
+                    .font(LoreType.caption)
+                    .foregroundStyle(LoreColor.ink600)
+            }
+            if liveEntry.isHiddenByModeration {
+                Label(
+                    "This entry was reported and is hidden from other travelers while it's reviewed. You still see it here.",
+                    systemImage: "eye.slash"
+                )
+                .font(LoreType.caption)
+                .foregroundStyle(LoreColor.error)
+            }
+        }
+        .padding(12)
+        .background(LoreColor.bone200, in: RoundedRectangle(cornerRadius: 14))
     }
 
     /// Downscale + JPEG-encode the picked image so uploads stay small.

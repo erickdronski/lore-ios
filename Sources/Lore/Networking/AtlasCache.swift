@@ -22,12 +22,19 @@ actor AtlasCache {
     static let defaultFreshFor: TimeInterval = 6 * 60 * 60
 
     private let directory: URL
+    /// Durable copies for downloaded city packs. Lives in Application Support
+    /// (NOT Caches) so iOS storage-pressure purges can't break a pack the user
+    /// explicitly downloaded. Read as the last resort after cache + network.
+    private let pinDirectory: URL
     private var refreshing: Set<String> = []
 
     init() {
         let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
         directory = caches.appending(path: "lore-atlas", directoryHint: .isDirectory)
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        pinDirectory = support.appending(path: "lore-packs/atlas", directoryHint: .isDirectory)
+        try? FileManager.default.createDirectory(at: pinDirectory, withIntermediateDirectories: true)
     }
 
     /// Fetch `request` through the cache. See the type comment for semantics.
@@ -53,7 +60,36 @@ actor AtlasCache {
             return data
         } catch {
             if let stale = read(file) { return stale.data }
+            // Cache purged + no network: a downloaded city pack still answers.
+            // Re-seed the cache copy so subsequent reads skip this branch.
+            if let key = cacheKey(for: request),
+               let pinned = read(pinDirectory.appending(path: key)) {
+                try? pinned.data.write(to: file, options: .atomic)
+                return pinned.data
+            }
             throw error
+        }
+    }
+
+    // MARK: - City packs (durable pins)
+
+    /// Fetch fresh bytes for `request` and store them in BOTH the cache and the
+    /// durable pin store. Returns the bytes. Used by "Download this city".
+    func pinData(for request: URLRequest, session: URLSession) async throws -> Data {
+        let data = try await fetchValid(request, session: session)
+        if let key = cacheKey(for: request) {
+            try? data.write(to: directory.appending(path: key), options: .atomic)
+            try? data.write(to: pinDirectory.appending(path: key), options: .atomic)
+        }
+        return data
+    }
+
+    /// Remove the durable copies for the given request URLs (pack removal).
+    func unpin(urlStrings: [String]) {
+        for urlString in urlStrings {
+            let digest = SHA256.hash(data: Data(urlString.utf8))
+            let key = digest.map { String(format: "%02x", $0) }.joined()
+            try? FileManager.default.removeItem(at: pinDirectory.appending(path: key))
         }
     }
 

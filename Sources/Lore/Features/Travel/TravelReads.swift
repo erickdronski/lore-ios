@@ -111,7 +111,7 @@ enum TravelReads {
             resolvingAgainstBaseURL: false
         )
         components?.queryItems = [
-            URLQueryItem(name: "select", value: "place_id,visited_at,note,photos,place(name,emoji,city,kind)"),
+            URLQueryItem(name: "select", value: "id,place_id,visited_at,note,photos,is_public,status,place(name,emoji,city,kind)"),
             URLQueryItem(name: "order", value: "visited_at.desc"),
         ]
         guard let url = components?.url else { throw TravelError.badURL }
@@ -174,6 +174,80 @@ enum TravelReads {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("return=minimal", forHTTPHeaderField: "Prefer")
         request.httpBody = try? JSONSerialization.data(withJSONObject: ["photos": photos])
+        let (data, response) = try await session.data(for: request)
+        try ensureOK(response, data: data)
+    }
+
+    // MARK: - Public traveler lore (share / report / block)
+
+    /// Toggle sharing the caller's lore on a place with all travelers. RLS
+    /// scopes the PATCH to their own visit rows; the server-side status guard
+    /// stamps `shared_at` and owns the moderation status.
+    /// `PATCH /rest/v1/visit?place_id=eq.{placeID}` `{ "is_public": bool }`
+    static func setVisitPublic(
+        placeID: String,
+        isPublic: Bool,
+        accessToken: String,
+        session: URLSession = .shared
+    ) async throws {
+        var components = URLComponents(url: Config.restURL.appending(path: "visit"), resolvingAgainstBaseURL: false)
+        components?.queryItems = [URLQueryItem(name: "place_id", value: "eq.\(placeID)")]
+        guard let url = components?.url else { throw TravelError.badURL }
+        var request = URLRequest(url: url)
+        request.httpMethod = "PATCH"
+        apply(&request, accessToken: accessToken)
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("return=minimal", forHTTPHeaderField: "Prefer")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: ["is_public": isPublic])
+        let (data, response) = try await session.data(for: request)
+        try ensureOK(response, data: data)
+    }
+
+    /// Report a shared lore entry (Guideline 1.2). Insert-only; three distinct
+    /// reporters auto-hide the entry server-side pending review.
+    /// `POST /rest/v1/lore_report` `{ visit_id, reporter, reason }`
+    static func reportLore(
+        visitID: String,
+        reason: String,
+        reporterID: String,
+        accessToken: String,
+        session: URLSession = .shared
+    ) async throws {
+        let url = Config.restURL.appending(path: "lore_report")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        apply(&request, accessToken: accessToken)
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("return=minimal", forHTTPHeaderField: "Prefer")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: [
+            "visit_id": visitID,
+            "reporter": reporterID,
+            "reason": reason,
+        ])
+        let (data, response) = try await session.data(for: request)
+        try ensureOK(response, data: data)
+    }
+
+    /// Block an author: their shared lore never appears to this caller again
+    /// (enforced server-side inside the `lore_public` view).
+    /// `POST /rest/v1/lore_block` `{ blocker, blocked }`
+    static func blockAuthor(
+        blockerID: String,
+        blockedID: String,
+        accessToken: String,
+        session: URLSession = .shared
+    ) async throws {
+        let url = Config.restURL.appending(path: "lore_block")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        apply(&request, accessToken: accessToken)
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        // Ignore duplicates so re-blocking is a friendly no-op.
+        request.setValue("return=minimal,resolution=ignore-duplicates", forHTTPHeaderField: "Prefer")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: [
+            "blocker": blockerID,
+            "blocked": blockedID,
+        ])
         let (data, response) = try await session.data(for: request)
         try ensureOK(response, data: data)
     }

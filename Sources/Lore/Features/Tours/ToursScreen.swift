@@ -7,7 +7,11 @@ struct ToursScreen: View {
     /// re-scopes the whole Tours surface, the 1-Hour hero and the curated list.
     @Environment(AppRouter.self) private var router
     @Environment(EntitlementStore.self) private var entitlements
+    @Environment(StoreKitService.self) private var store
+    @Environment(AuthService.self) private var auth
     @State private var model = ToursModel()
+    /// The paywall raised by the offline-pack button's locked state.
+    @State private var showPackPaywall = false
     /// The generated "1 Hour In" walk, presented in a sheet once routed.
     @State private var generatedTour: Tour?
     /// Chosen length for the generated walk (30 / 60 / 90 minutes).
@@ -24,6 +28,16 @@ struct ToursScreen: View {
         NavigationStack {
             List {
                 madeForYouSection
+
+                // Take this city with you: pins every story, tour, and photo
+                // so the walk survives subways and roaming dead zones (Lore+).
+                Section {
+                    CityPackButton(city: router.selectedCity) {
+                        showPackPaywall = true
+                    }
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets())
+                }
 
                 switch model.state {
                 case .loading:
@@ -66,6 +80,9 @@ struct ToursScreen: View {
             .sheet(isPresented: $showCitySwitcher) {
                 CitySwitcherView(router: router)
                     .presentationDetents([.medium, .large])
+            }
+            .sheet(isPresented: $showPackPaywall) {
+                PaywallView(entitlements: entitlements, store: store, auth: auth, context: .tours)
             }
             // Load (and reload) the selected city's tours; switching cities in
             // the sheet re-scopes the list without leaving Tours.

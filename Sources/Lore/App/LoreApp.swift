@@ -41,6 +41,8 @@ struct LoreApp: App {
     @State private var diveMeter = DiveMeter()
     /// Owns the Travel stores (visits + filters) and the unlock bridge.
     @State private var travel: TravelSession
+    /// Offline city packs: "Download this city" state + orchestration (Lore+).
+    @State private var packs = CityPackStore()
 
     init() {
         // Screenshot pipeline only (DEBUG builds): fast-forward past first-run
@@ -73,6 +75,7 @@ struct LoreApp: App {
                 .environment(travel)
                 .environment(travel.visits)
                 .environment(travel.filters)
+                .environment(packs)
                 // Wire the StoreKit client path into the entitlement store and
                 // start the Transaction.updates listener once, at launch. Both
                 // are @MainActor app-lifetime singletons (docs/16 §1).
@@ -388,12 +391,14 @@ struct RootTabView: View {
             showScreenshotPaywall = true
         case "card":
             // The layer-1 place card (no auto-dive): used to verify/capture the
-            // card surface itself — visit toggle, your-lore, teaser, actions.
+            // card surface itself — visit toggle, your-lore, traveler lore,
+            // teaser, actions. City/slug come from LORE_CARD_CITY/LORE_CARD_SLUG
+            // (default: the Chicago dive landmark).
             selection = .map
             Task {
                 for _ in 0..<24 {
-                    let places = (try? await LoreAPI.shared.places(city: "chicago")) ?? []
-                    if let match = places.first(where: { $0.slug == ScreenshotSupport.diveSlug })
+                    let places = (try? await LoreAPI.shared.places(city: ScreenshotSupport.cardCity)) ?? []
+                    if let match = places.first(where: { $0.slug == ScreenshotSupport.cardSlug })
                         ?? places.first(where: { $0.layer1?.hook != nil }) {
                         routedPlace = RoutedPlace(place: match, autoDive: false)
                         return

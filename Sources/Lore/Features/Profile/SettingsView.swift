@@ -47,6 +47,7 @@ struct SettingsView: View {
             whatYouSeeSection
             preferencesSection
             languageSection
+            OfflinePacksSection()
             permissionsSection
             subscriptionSection
             aboutLegalSection

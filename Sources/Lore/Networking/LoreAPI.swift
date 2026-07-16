@@ -162,6 +162,146 @@ struct LoreAPI {
         )
     }
 
+    // MARK: - Public traveler lore (community layer)
+
+    /// The shared traveler lore on one place, newest first, via the moderated
+    /// `lore_public` view (opt-in rows, visible/approved only; signed-in
+    /// callers get their blocks applied server-side). DELIBERATELY bypasses
+    /// AtlasCache even for anonymous reads: moderation (report -> hide) must
+    /// take effect on next open, never after a six-hour cache window.
+    /// `GET /rest/v1/lore_public?place_id=eq.{id}&order=shared_at.desc`
+    func publicLore(
+        placeID: String,
+        accessToken: String? = nil,
+        limit: Int = 20
+    ) async throws -> [PublicLore] {
+        let request = try atlasRequest(
+            "lore_public",
+            query: [
+                URLQueryItem(name: "place_id", value: "eq.\(placeID)"),
+                URLQueryItem(name: "order", value: "shared_at.desc"),
+                URLQueryItem(name: "limit", value: String(limit)),
+            ],
+            accessToken: accessToken
+        )
+        return try await send(request)
+    }
+
+    // MARK: - Offline city packs
+
+    /// Everything `pinCityPack` learned while pinning, for the image pass.
+    struct CityPinResult {
+        var places: [Place] = []
+        /// Distinct `media.wikipedia_title`s across the city's dives.
+        var wikipediaTitles: [String] = []
+        /// Every request URL pinned, recorded so a pack can be removed.
+        var pinnedURLs: [String] = []
+    }
+
+    /// Fetch + durably pin every anonymous read a city needs to work offline:
+    /// the city list, this city's places/stories/culture/facts/tours, the
+    /// achievement catalog, and every place's dive + provenance facts. Requests
+    /// are built by the same builder as live reads, so the pinned bytes answer
+    /// the exact URLs the app asks for later. `onUnit` ticks once per finished
+    /// request (drive a progress bar with it).
+    func pinCityPack(
+        city: String,
+        onUnit: @escaping @MainActor () -> Void
+    ) async throws -> CityPinResult {
+        var result = CityPinResult()
+
+        // City-scoped + global endpoints, in the exact live-read shapes.
+        let endpoints: [(table: String, query: [URLQueryItem])] = [
+            ("city", [
+                URLQueryItem(name: "status", value: "eq.live"),
+                URLQueryItem(name: "order", value: "sort.asc"),
+            ]),
+            ("place_explore", [
+                URLQueryItem(name: "city", value: "eq.\(city)"),
+                URLQueryItem(name: "order", value: "name.asc"),
+            ]),
+            ("story", [
+                URLQueryItem(name: "city", value: "eq.\(city)"),
+                URLQueryItem(name: "order", value: "year.asc"),
+            ]),
+            ("city_culture", [
+                URLQueryItem(name: "city", value: "eq.\(city)"),
+                URLQueryItem(name: "order", value: "sort.asc"),
+            ]),
+            ("city_fact", [
+                URLQueryItem(name: "city", value: "eq.\(city)"),
+                URLQueryItem(name: "order", value: "sort.asc"),
+            ]),
+            ("tour", [
+                URLQueryItem(name: "city", value: "eq.\(city)"),
+                URLQueryItem(name: "select", value: "*,tour_stop(*)"),
+                URLQueryItem(name: "order", value: "title.asc"),
+            ]),
+            ("achievement", [
+                URLQueryItem(name: "order", value: "sort.asc"),
+            ]),
+        ]
+
+        for endpoint in endpoints {
+            let request = try atlasRequest(endpoint.table, query: endpoint.query)
+            let data = try await AtlasCache.shared.pinData(for: request, session: session)
+            result.pinnedURLs.append(request.url?.absoluteString ?? "")
+            if endpoint.table == "place_explore" {
+                result.places = try decodeBody(data)
+            }
+            await onUnit()
+        }
+
+        // Per-place dive + facts, four at a time. A single failed place skips
+        // (its live read still works online); the pack keeps going.
+        var titles: Set<String> = []
+        try await withThrowingTaskGroup(of: (urls: [String], title: String?).self) { group in
+            var iterator = result.places.makeIterator()
+            var inFlight = 0
+
+            func addNext() {
+                guard let place = iterator.next() else { return }
+                inFlight += 1
+                group.addTask {
+                    var urls: [String] = []
+                    var title: String?
+                    if let diveRequest = try? self.atlasRequest("dive", query: [
+                        URLQueryItem(name: "place_id", value: "eq.\(place.id)"),
+                        URLQueryItem(name: "limit", value: "1"),
+                    ]) {
+                        if let data = try? await AtlasCache.shared.pinData(for: diveRequest, session: self.session) {
+                            urls.append(diveRequest.url?.absoluteString ?? "")
+                            let dives: [Dive]? = try? self.decodeBody(data)
+                            title = dives?.first?.media.wikipediaTitle
+                        }
+                    }
+                    if let factsRequest = try? self.atlasRequest("fact", query: [
+                        URLQueryItem(name: "place_id", value: "eq.\(place.id)"),
+                        URLQueryItem(name: "order", value: "key.asc"),
+                    ]) {
+                        if (try? await AtlasCache.shared.pinData(for: factsRequest, session: self.session)) != nil {
+                            urls.append(factsRequest.url?.absoluteString ?? "")
+                        }
+                    }
+                    return (urls, title)
+                }
+            }
+
+            for _ in 0..<4 { addNext() }
+            while inFlight > 0 {
+                guard let outcome = try await group.next() else { break }
+                inFlight -= 1
+                result.pinnedURLs.append(contentsOf: outcome.urls)
+                if let title = outcome.title, !title.isEmpty { titles.insert(title) }
+                await onUnit()
+                addNext()
+            }
+        }
+
+        result.wikipediaTitles = titles.sorted()
+        return result
+    }
+
     // MARK: - Authenticated reads
 
     /// The signed-in user's own `user_profile` row (RLS: `auth.uid() = id`).
@@ -265,6 +405,20 @@ struct LoreAPI {
         query: [URLQueryItem],
         accessToken: String? = nil
     ) async throws -> T {
+        let request = try atlasRequest(table, query: query, accessToken: accessToken)
+        guard accessToken == nil else { return try await send(request) }
+        let data = try await AtlasCache.shared.data(for: request, session: session)
+        return try decodeBody(data)
+    }
+
+    /// The one place atlas GET requests are built. Live reads, cache keys, and
+    /// pack pins all flow through here, so a pinned entry always answers the
+    /// exact URL the app requests later.
+    private func atlasRequest(
+        _ table: String,
+        query: [URLQueryItem],
+        accessToken: String? = nil
+    ) throws -> URLRequest {
         var components = URLComponents(
             url: Config.restURL.appending(path: table),
             resolvingAgainstBaseURL: false
@@ -276,10 +430,7 @@ struct LoreAPI {
         request.httpMethod = "GET"
         applyAuth(&request, accessToken: accessToken)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-
-        guard accessToken == nil else { return try await send(request) }
-        let data = try await AtlasCache.shared.data(for: request, session: session)
-        return try decodeBody(data)
+        return request
     }
 
     /// A POST to `/rpc/{name}` with a JSON object body, decoding the result.

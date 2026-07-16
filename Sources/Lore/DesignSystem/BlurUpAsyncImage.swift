@@ -29,8 +29,15 @@ struct BlurUpAsyncImage: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    /// Offline-pack support: when the bytes for `url` were packed by
+    /// "Download this city", serve the local file instead of the network.
+    /// Resolved off the render path; until then the remote URL is used.
+    @State private var localOverride: URL?
+
+    private var effectiveURL: URL? { localOverride ?? url }
+
     var body: some View {
-        AsyncImage(url: url, transaction: Transaction(animation: loadAnimation)) { phase in
+        AsyncImage(url: effectiveURL, transaction: Transaction(animation: loadAnimation)) { phase in
             switch phase {
             case .success(let image):
                 image
@@ -48,6 +55,10 @@ struct BlurUpAsyncImage: View {
             }
         }
         .clipped()
+        .task(id: url) {
+            guard let url else { localOverride = nil; return }
+            localOverride = PackImageStore.localURL(for: url)
+        }
     }
 
     /// The pre-arrival state: a blurred low-res thumb if supplied, otherwise a

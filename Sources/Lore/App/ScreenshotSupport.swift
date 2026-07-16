@@ -33,6 +33,16 @@ enum ScreenshotSupport {
     /// and a Wikipedia hero photo. Matched by slug in the live Chicago set.
     static let diveSlug = "willis-tower"
 
+    /// The `"card"` stage's target, overridable so any city/place can be staged
+    /// (verification + future screenshots of the community layer). Defaults to
+    /// the pilot-city dive landmark.
+    static var cardCity: String {
+        ProcessInfo.processInfo.environment["LORE_CARD_CITY"] ?? "chicago"
+    }
+    static var cardSlug: String {
+        ProcessInfo.processInfo.environment["LORE_CARD_SLUG"] ?? diveSlug
+    }
+
     /// Idempotent. Prepares a clean, first-run-skipped state for the capturer.
     static func applyIfNeeded() {
         guard isActive else { return }

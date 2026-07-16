@@ -97,6 +97,9 @@ struct PlaceCardView: View {
             visitedAt: "",
             note: nil,
             photos: nil,
+            visitID: nil,
+            isPublic: nil,
+            status: nil,
             place: .init(name: place.name, emoji: place.displayEmoji, city: place.city, kind: place.kind)
         )
     }
@@ -189,6 +192,10 @@ struct PlaceCardView: View {
                     }
 
                     yourLore
+
+                    // Other travelers' opt-in shared lore (moderated view;
+                    // report/block per row). Self-hides when nobody has shared.
+                    TravelerLoreSection(placeID: place.id, onNeedsSignIn: { showSignIn = true })
 
                     Button {
                         Haptics.play(.dossierOpen)

@@ -157,6 +157,20 @@ final class VisitStore {
         return try? await TravelReads.signedJournalPhotoURL(path: path, accessToken: creds.accessToken)
     }
 
+    /// Opt this place's lore in or out of the public traveler layer, then
+    /// refresh so `is_public`/`status` reflect the server's truth.
+    func setShared(placeID: String, isPublic: Bool) async {
+        guard let creds = credentials() else { return }
+        do {
+            try await TravelReads.setVisitPublic(
+                placeID: placeID, isPublic: isPublic, accessToken: creds.accessToken
+            )
+            await loadHistory()
+        } catch {
+            lastError = "Couldn't change sharing for that place."
+        }
+    }
+
     // MARK: - Writes
 
     /// Outcome of a visit-log attempt, so the toggle can react (haptic, copy).

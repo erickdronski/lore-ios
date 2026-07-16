@@ -468,8 +468,8 @@ struct FeatureComparison: Identifiable {
     }
 
     /// The honest table: only features that actually ship and are actually
-    /// gated. Offline city packs and early-access cities were removed because
-    /// they don't exist yet, selling them would be an App Review 3.1.2 lie.
+    /// gated. Offline city packs returned 2026-07-16, the day they shipped for
+    /// real (CityPackStore); early-access cities stay out until they exist.
     static let all: [FeatureComparison] = [
         .init(label: "Unlimited scanning", free: .yes, plus: .yes),
         .init(label: "Layer-1 story cards", free: .yes, plus: .yes),
@@ -479,6 +479,8 @@ struct FeatureComparison: Identifiable {
         // "free: no" here undersold the free tier — keep it honest.
         .init(label: "Curated walking tours", free: .text("Free"), plus: .text("All")),
         .init(label: "Audio narration", free: .no, plus: .yes),
+        .init(label: "Auto-play walking guide", free: .no, plus: .yes),
+        .init(label: "Offline city packs", free: .no, plus: .yes),
         .init(label: "Visit journal & badges", free: .yes, plus: .yes),
     ]
 }
