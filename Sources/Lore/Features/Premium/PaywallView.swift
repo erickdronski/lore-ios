@@ -481,6 +481,9 @@ struct FeatureComparison: Identifiable {
         .init(label: "Audio narration", free: .no, plus: .yes),
         .init(label: "Auto-play walking guide", free: .no, plus: .yes),
         .init(label: "Offline city packs", free: .no, plus: .yes),
+        // Live 2026-07-16 (DealSection): real marketplace offers matched to
+        // places. The row that makes the membership pay for itself.
+        .init(label: "Deals on the places you visit", free: .no, plus: .yes),
         .init(label: "Visit journal & badges", free: .yes, plus: .yes),
     ]
 }
