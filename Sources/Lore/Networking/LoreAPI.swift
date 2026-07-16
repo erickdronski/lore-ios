@@ -187,6 +187,23 @@ struct LoreAPI {
         return try await send(request)
     }
 
+    // MARK: - Deals & discounts
+
+    /// Live offers matched to one place, via `place_deal_feed` (real, curated
+    /// deals only; `match_kind` says how the deal relates to the place). Never
+    /// cached or pinned: a price snapshot must not outlive the marketplace.
+    /// `GET /rest/v1/place_deal_feed?place_id=eq.{id}`
+    func deals(placeID: String) async throws -> [Deal] {
+        let request = try atlasRequest(
+            "place_deal_feed",
+            query: [
+                URLQueryItem(name: "place_id", value: "eq.\(placeID)"),
+                URLQueryItem(name: "order", value: "match_kind.asc"),
+            ]
+        )
+        return try await send(request)
+    }
+
     // MARK: - Offline city packs
 
     /// Everything `pinCityPack` learned while pinning, for the image pass.

@@ -197,6 +197,10 @@ struct PlaceCardView: View {
                     // report/block per row). Self-hides when nobody has shared.
                     TravelerLoreSection(placeID: place.id, onNeedsSignIn: { showSignIn = true })
 
+                    // Real curated marketplace deals on this place (Lore+).
+                    // Self-hides when there is nothing genuinely matched.
+                    DealSection(placeID: place.id)
+
                     Button {
                         Haptics.play(.dossierOpen)
                         showDive = true
