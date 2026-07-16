@@ -100,6 +100,10 @@ struct RootTabView: View {
     @Environment(AuthService.self) private var auth
     @Environment(AppRouter.self) private var router
     @Environment(EntitlementStore.self) private var entitlements
+    #if DEBUG
+    // Read only by the DEBUG-only paywall screenshot stage (LORE_SHOW=paywall).
+    @Environment(StoreKitService.self) private var store
+    #endif
     @Environment(PrefsCoordinator.self) private var prefs
     @Environment(TravelSession.self) private var travel
     @Environment(\.scenePhase) private var scenePhase
@@ -127,6 +131,10 @@ struct RootTabView: View {
     @State private var meetCity: String?
     /// Whether the sign-in nudge is up (raised by a signed-out visit toggle).
     @State private var showSignIn = false
+    #if DEBUG
+    /// Presents the paywall for the App Store IAP review screenshot (LORE_SHOW=paywall).
+    @State private var showScreenshotPaywall = false
+    #endif
 
     var body: some View {
         TabView(selection: $selection) {
@@ -214,6 +222,13 @@ struct RootTabView: View {
             SignInView()
                 .presentationDetents([.large])
         }
+        #if DEBUG
+        // App Store IAP review-screenshot capture only (LORE_SHOW=paywall).
+        .sheet(isPresented: $showScreenshotPaywall) {
+            PaywallView(entitlements: entitlements, store: store, auth: auth)
+                .presentationDetents([.large])
+        }
+        #endif
         .alert("Couldn't open that result", isPresented: routeErrorBinding) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -369,6 +384,8 @@ struct RootTabView: View {
         case "culture":
             selection = .map
             meetCity = "chicago"
+        case "paywall":
+            showScreenshotPaywall = true
         default:
             break
         }
