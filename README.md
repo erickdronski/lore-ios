@@ -111,12 +111,6 @@ plutil -lint Sources/Lore/PrivacyInfo.xcprivacy \
 The final authority is a clean simulator test run plus a signed Release archive
 on the same commit that is uploaded.
 
-## Release Sources Of Truth
+## Related repositories
 
-- App Store copy and reviewer path:
-  `/Users/dron/Projects/lore/legal/APP-STORE-LISTING.md`
-- Privacy and Terms: `/Users/dron/Projects/lore/legal/`
-- Backend migrations and functions: `/Users/dron/Projects/lore/supabase/`
-- Web, legal hosting, support, and share routes: `/Users/dron/Projects/lore-web`
-
-Never mix Lore release work with another product repository.
+App Store copy, legal pages, backend migrations, and the web/support routes live in the private `lore` and `lore-web` repositories.
