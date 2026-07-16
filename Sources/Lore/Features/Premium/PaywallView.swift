@@ -474,7 +474,10 @@ struct FeatureComparison: Identifiable {
         .init(label: "Unlimited scanning", free: .yes, plus: .yes),
         .init(label: "Layer-1 story cards", free: .yes, plus: .yes),
         .init(label: "Deep dives", free: .text("3/day"), plus: .yes),
-        .init(label: "Curated walking tours", free: .no, plus: .yes),
+        // Free users DO get the free curated tours (roughly half the catalogue
+        // is is_premium=false); Plus unlocks the premium walks + audio. Saying
+        // "free: no" here undersold the free tier — keep it honest.
+        .init(label: "Curated walking tours", free: .text("Free"), plus: .text("All")),
         .init(label: "Audio narration", free: .no, plus: .yes),
         .init(label: "Visit journal & badges", free: .yes, plus: .yes),
     ]

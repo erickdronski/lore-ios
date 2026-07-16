@@ -1,7 +1,11 @@
 import SwiftUI
 
-/// Release authentication uses email and password. Debug builds retain the
-/// dormant social-provider harness for future provisioning tests.
+/// Authentication: email/password plus Sign in with Apple, Google, and
+/// Facebook (Supabase OAuth). Apple is presented first and given equal-or-
+/// greater prominence, which satisfies Guideline 4.8 for the other social
+/// options. All three social providers ship in Release as of 2026-07-16, once
+/// the App ID gained the Sign-in-with-Apple capability and the Supabase Apple
+/// provider went live with the bundle id in its Client IDs.
 struct SignInView: View {
     @Environment(AuthService.self) private var auth
     @Environment(\.dismiss) private var dismiss
@@ -93,14 +97,13 @@ struct SignInView: View {
                         || (mode == .signUp && !confirmedMinimumAge)
                     )
 
-                    // Release builds intentionally offer email/password only
-                    // until Sign in with Apple is provisioned end to end. Apple
-                    // Guideline 4.8 requires Apple sign-in when third-party
-                    // social login is offered.
-                    #if DEBUG
+                    // Third-party sign-in ships in Release as of 2026-07-16:
+                    // Sign in with Apple is provisioned end to end (App ID
+                    // capability + entitlement + live Supabase Apple provider),
+                    // which satisfies Guideline 4.8 for the Google/Facebook
+                    // options offered alongside it.
                     socialDivider
                     socialButtons
-                    #endif
 
                     // Switch between sign in and account creation; reset link
                     // only in sign-in mode.
@@ -143,6 +146,10 @@ struct SignInView: View {
                 }
             }
         }
+        // The sheet is painted with fixed light brand colors (bone/ink); pin the
+        // scheme so the nav chrome + sheet grabber don't render dark on a
+        // dark-mode device (matches ProfileScreen/SettingsView).
+        .preferredColorScheme(.light)
     }
 
     // MARK: - Social sign-in
@@ -156,13 +163,13 @@ struct SignInView: View {
         .padding(.vertical, 2)
     }
 
-    /// The OAuth providers currently enabled in Supabase (Google + Facebook).
-    /// Apple (native id_token) and X are wired in AuthService/AppleSignInCoordinator
-    /// and re-appear here the moment their Supabase providers + (for Apple) the
-    /// App ID capability are provisioned, see the commented block below.
+    /// The third-party sign-in options. Apple is FIRST and given equal-or-greater
+    /// prominence (Guideline 4.8 + HIG): where Google/Facebook are offered, a
+    /// working Sign in with Apple must be too. Live in Supabase as of 2026-07-16.
+    /// X stays commented until its Supabase provider is configured.
     @ViewBuilder private var socialButtons: some View {
         VStack(spacing: 10) {
-            // appleButton   // enable once the App ID + Supabase Apple provider are set
+            appleButton
             oauthButton("Continue with Google", provider: "google",
                         background: LoreColor.bone, foreground: LoreColor.ink, bordered: true)
             oauthButton("Continue with Facebook", provider: "facebook",
@@ -171,10 +178,9 @@ struct SignInView: View {
         }
     }
 
-    /// Native Sign in with Apple (system sheet -> id_token grant). Ready; enable
-    /// in `socialButtons` once the App ID Sign-in-with-Apple capability + the
-    /// Supabase Apple provider exist (and re-add the entitlement in project.yml).
-    @available(*, unavailable, message: "Enable when Apple provider + App ID capability are provisioned")
+    /// Native Sign in with Apple (system sheet -> id_token grant). Live: the App
+    /// ID has the Sign-in-with-Apple capability, the entitlement is on in
+    /// project.yml, and the Supabase Apple provider carries the bundle id.
     private var appleButton: some View {
         Button {
             Task {

@@ -98,12 +98,18 @@ platform :ios do
 
     # Cert + App Store profiles for both bundle ids. readonly:false so the first
     # run creates and stores them; later runs just fetch and install.
+    # force:true REGENERATES the profiles each run so a capability newly added to
+    # the App ID (Sign in with Apple, 2026-07-16) is always reflected — a stale
+    # stored profile would fail codesign with "provisioning profile doesn't
+    # include the com.apple.developer.applesignin entitlement". The cert is
+    # reused, not revoked.
     match(
       type: "appstore",
       api_key: api_key,
       app_identifier: [BUNDLE_ID, WIDGET_ID],
       git_url: CERTS_REPO,
       readonly: false,
+      force: true,
     )
 
     # Force MANUAL app-store signing on the freshly generated project so the

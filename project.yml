@@ -64,13 +64,13 @@ targets:
         INFOPLIST_KEY_UIUserInterfaceStyle: Automatic
         SUPPORTS_MACCATALYST: false
 
-        # Sign in with Apple entitlement is READY at Sources/Lore/Lore.entitlements
-        # but stays OFF until the App ID com.erickdronski.lore has the
-        # "Sign in with Apple" capability enabled in the Apple Developer portal
-        # AND the Supabase Apple provider is configured (Services ID + .p8 key).
-        # Enabling it before the portal capability exists breaks cloud-managed
-        # signing. Uncomment once both are provisioned:
-        #   CODE_SIGN_ENTITLEMENTS: Sources/Lore/Lore.entitlements
+        # Sign in with Apple (Guideline 4.8). ENABLED 2026-07-16: the App ID
+        # com.erickdronski.lore has the "Sign in with Apple" capability in the
+        # Apple Developer portal, and the Supabase Apple provider is live with
+        # the bundle id in its Client IDs list (native id_token flow). The
+        # Fastfile runs match with force:true so the App Store profile is
+        # regenerated to carry the com.apple.developer.applesignin entitlement.
+        CODE_SIGN_ENTITLEMENTS: Sources/Lore/Lore.entitlements
 
         # ── Capabilities that REQUIRE the Apple Developer portal ───────────
         # These are entitlement-backed and can NOT be assumed from a spec file —
