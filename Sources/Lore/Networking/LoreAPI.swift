@@ -213,6 +213,9 @@ struct LoreAPI {
         var wikipediaTitles: [String] = []
         /// Every request URL pinned, recorded so a pack can be removed.
         var pinnedURLs: [String] = []
+        /// Studio narration files referenced by this city's dives; the pack
+        /// downloads them like hero images so audio survives offline.
+        var audioURLs: [URL] = []
     }
 
     /// Fetch + durably pin every anonymous read a city needs to work offline:
@@ -272,7 +275,8 @@ struct LoreAPI {
         // Per-place dive + facts, four at a time. A single failed place skips
         // (its live read still works online); the pack keeps going.
         var titles: Set<String> = []
-        try await withThrowingTaskGroup(of: (urls: [String], title: String?).self) { group in
+        var audioURLs: Set<URL> = []
+        try await withThrowingTaskGroup(of: (urls: [String], title: String?, audio: URL?).self) { group in
             var iterator = result.places.makeIterator()
             var inFlight = 0
 
@@ -282,6 +286,7 @@ struct LoreAPI {
                 group.addTask {
                     var urls: [String] = []
                     var title: String?
+                    var audio: URL?
                     if let diveRequest = try? self.atlasRequest("dive", query: [
                         URLQueryItem(name: "place_id", value: "eq.\(place.id)"),
                         URLQueryItem(name: "limit", value: "1"),
@@ -290,6 +295,7 @@ struct LoreAPI {
                             urls.append(diveRequest.url?.absoluteString ?? "")
                             let dives: [Dive]? = try? self.decodeBody(data)
                             title = dives?.first?.media.wikipediaTitle
+                            audio = dives?.first?.audioURL
                         }
                     }
                     if let factsRequest = try? self.atlasRequest("fact", query: [
@@ -300,7 +306,7 @@ struct LoreAPI {
                             urls.append(factsRequest.url?.absoluteString ?? "")
                         }
                     }
-                    return (urls, title)
+                    return (urls, title, audio)
                 }
             }
 
@@ -310,12 +316,14 @@ struct LoreAPI {
                 inFlight -= 1
                 result.pinnedURLs.append(contentsOf: outcome.urls)
                 if let title = outcome.title, !title.isEmpty { titles.insert(title) }
+                if let audio = outcome.audio { audioURLs.insert(audio) }
                 await onUnit()
                 addNext()
             }
         }
 
         result.wikipediaTitles = titles.sorted()
+        result.audioURLs = audioURLs.sorted { $0.absoluteString < $1.absoluteString }
         return result
     }
 

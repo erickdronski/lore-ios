@@ -117,12 +117,16 @@ final class CityPackStore {
             }
             jsonTotal = Double(7 + pin.places.count)
 
-            // Phase 2: resolve + pack hero images (skips titles with no image).
+            // Phase 2: resolve + pack hero images (skips titles with no
+            // image), then the dives' studio narration files — same store,
+            // same removal lifecycle, so a deleted pack cleans up its audio.
             var imageKeys: [String] = []
             var imageBytes: Int64 = 0
             var titleMap: [String: URL] = [:]
             let titles = pin.wikipediaTitles
-            for (index, title) in titles.enumerated() {
+            let mediaTotal = titles.count + pin.audioURLs.count
+            var mediaDone = 0
+            for title in titles {
                 if let url = await WikipediaService.shared.portraitURL(for: title) {
                     titleMap[title] = url
                     if PackImageStore.localURL(for: url) == nil,
@@ -135,9 +139,25 @@ final class CityPackStore {
                         imageKeys.append(key)
                     }
                 }
-                downloading[city] = 0.6 + (Double(index + 1) / Double(max(titles.count, 1))) * 0.4
+                mediaDone += 1
+                downloading[city] = 0.6 + (Double(mediaDone) / Double(max(mediaTotal, 1))) * 0.4
             }
             await WikipediaService.shared.persistTitles(titleMap)
+
+            for url in pin.audioURLs {
+                if PackImageStore.localURL(for: url) == nil {
+                    if let (data, response) = try? await URLSession.shared.data(from: url),
+                       (response as? HTTPURLResponse).map({ (200..<300).contains($0.statusCode) }) ?? false,
+                       let key = try? PackImageStore.store(data, for: url) {
+                        imageKeys.append(key)
+                        imageBytes += Int64(data.count)
+                    }
+                } else {
+                    imageKeys.append(PackImageStore.key(for: url))
+                }
+                mediaDone += 1
+                downloading[city] = 0.6 + (Double(mediaDone) / Double(max(mediaTotal, 1))) * 0.4
+            }
 
             packs[city] = CityPack(
                 downloadedAt: Date(),

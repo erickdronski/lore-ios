@@ -164,7 +164,7 @@ struct DiveView: View {
             }
             .diveEntrance(index: 0)
 
-            listenControl(narrative)
+            listenControl(narrative, dive: dive)
                 .diveEntrance(index: 0)
         }
 
@@ -184,15 +184,20 @@ struct DiveView: View {
         }
     }
 
-    /// The Lore+ "Listen to the full story" control: on-device narration of the
-    /// whole dossier (the real audio pillar, not just the scanner hook). Free
-    /// users get a locked affordance that opens the paywall; members hear it.
+    /// The Lore+ "Listen to the full story" control: studio narration when this
+    /// dive has a pre-rendered track (tools/narration), on-device TTS otherwise
+    /// (the real audio pillar, not just the scanner hook). Free users get a
+    /// locked affordance that opens the paywall; members hear it.
     @ViewBuilder
-    private func listenControl(_ narrative: String) -> some View {
+    private func listenControl(_ narrative: String, dive: Dive) -> some View {
         Button {
             if entitlements.isPlus {
                 Haptics.play(.chipTap)
-                if narration.isSpeaking { narration.stop() } else { narration.speakDossier(narrative) }
+                if narration.isSpeaking {
+                    narration.stop()
+                } else {
+                    narration.narrateDossier(text: narrative, audioURL: dive.audioURL)
+                }
             } else {
                 showPaywall = true
             }

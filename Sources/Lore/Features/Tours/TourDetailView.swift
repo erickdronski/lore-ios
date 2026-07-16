@@ -21,6 +21,9 @@ struct TourDetailView: View {
     /// follow-up. One narrator, stopped on stop-change + disappear.
     @State private var narration = NarrationService()
     @State private var currentNarrative: String?
+    /// Pre-rendered studio narration for the current stop, when its dive has
+    /// one (tools/narration). Preferred over TTS by every play path.
+    @State private var currentAudioURL: URL?
     /// Hands-free geofenced guiding (Lore+): auto-advance + auto-play as the
     /// walker reaches each stop. Foreground-only v1 (When-In-Use permission).
     @State private var walkGuide = TourWalkGuide()
@@ -524,7 +527,9 @@ struct TourDetailView: View {
             if entitlements.isPlus {
                 Haptics.play(.chipTap)
                 if narration.isSpeaking { narration.stop() }
-                else if let text = currentNarrative { narration.speakDossier(text) }
+                else if currentNarrative != nil || currentAudioURL != nil {
+                    narration.narrateDossier(text: currentNarrative, audioURL: currentAudioURL)
+                }
             } else {
                 showPaywall = true
             }
@@ -676,14 +681,16 @@ struct TourDetailView: View {
     private func loadNarrative() async {
         narration.stop()
         currentNarrative = nil
+        currentAudioURL = nil
         guard let placeID = currentStop?.placeID else { return }
         let dive = (try? await LoreAPI.shared.dive(placeID: placeID)) ?? nil
         guard currentStop?.placeID == placeID else { return }
         currentNarrative = dive?.narrative
+        currentAudioURL = dive?.audioURL
         if pendingAutoPlay {
             pendingAutoPlay = false
-            if entitlements.isPlus, let text = currentNarrative {
-                narration.speakDossier(text)
+            if entitlements.isPlus, currentNarrative != nil || currentAudioURL != nil {
+                narration.narrateDossier(text: currentNarrative, audioURL: currentAudioURL)
             }
         }
     }

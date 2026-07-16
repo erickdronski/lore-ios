@@ -15,3 +15,9 @@ fastlane/test_output/
 fastlane/AuthKey.p8
 fastlane/*.p8
 **/*.p8
+
+# Narration pipeline: local venv, model weights, rendered audio (uploads go to
+# Supabase Storage, never the repo)
+tools/narration/.venv/
+tools/narration/models/
+tools/narration/out/

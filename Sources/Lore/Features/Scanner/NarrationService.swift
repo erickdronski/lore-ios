@@ -28,6 +28,12 @@ final class NarrationService {
     private let synthesizer = AVSpeechSynthesizer()
     private let delegate = SpeechDelegate()
 
+    /// Player for pre-rendered studio narration (the `narration` bucket).
+    private var player: AVPlayer?
+    private var playerObservers: [NSObjectProtocol] = []
+    /// Fallback text if the audio file fails mid-flight (offline, moved).
+    private var fallbackText: String?
+
     init() {
         delegate.owner = self
         synthesizer.delegate = delegate
@@ -81,6 +87,7 @@ final class NarrationService {
     func speakDossier(_ text: String) {
         offered = nil
         guard !text.isEmpty else { return }
+        stopPlayback()
         if synthesizer.isSpeaking { synthesizer.stopSpeaking(at: .immediate) }
         configureSession()
         let utterance = AVSpeechUtterance(string: text)
@@ -90,6 +97,75 @@ final class NarrationService {
         synthesizer.speak(utterance)
     }
 
+    /// Narrate a dossier the best way available: the pre-rendered studio audio
+    /// when the dive has one, else on-device TTS. One entry point so every
+    /// Listen button upgrades automatically as cities gain generated audio.
+    func narrateDossier(text: String?, audioURL: URL?) {
+        if let audioURL {
+            playDossierAudio(audioURL, fallbackText: text)
+        } else if let text {
+            speakDossier(text)
+        }
+    }
+
+    /// Play a pre-rendered narration file, driving the same `isSpeaking` state
+    /// as TTS so toggle buttons work unchanged. On a playback failure (offline
+    /// and unpinned, file moved) it falls back to speaking `fallbackText` so
+    /// the Listen button never silently does nothing.
+    func playDossierAudio(_ url: URL, fallbackText: String? = nil) {
+        offered = nil
+        if synthesizer.isSpeaking { synthesizer.stopSpeaking(at: .immediate) }
+        stopPlayback()
+        configureSession()
+        self.fallbackText = fallbackText
+
+        // A downloaded city pack keeps narration files on disk; play the local
+        // copy when one exists so audio tours work in the subway.
+        let resolved = PackImageStore.localURL(for: url) ?? url
+        let item = AVPlayerItem(url: resolved)
+        let player = AVPlayer(playerItem: item)
+        self.player = player
+
+        playerObservers.append(NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.stopPlayback()
+                self?.markStopped()
+            }
+        })
+        playerObservers.append(NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemFailedToPlayToEndTime, object: item, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.handlePlaybackFailure() }
+        })
+
+        isSpeaking = true
+        player.play()
+    }
+
+    /// Audio file died mid-flight: degrade to TTS of the same narrative rather
+    /// than ending in silence (the fallback is the old baseline, never worse).
+    private func handlePlaybackFailure() {
+        stopPlayback()
+        if let text = fallbackText, !text.isEmpty {
+            fallbackText = nil
+            speakDossier(text)
+        } else {
+            markStopped()
+        }
+    }
+
+    /// Tear down the player + its observers (idempotent).
+    private func stopPlayback() {
+        for observer in playerObservers {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        playerObservers.removeAll()
+        player?.pause()
+        player = nil
+    }
+
     /// Dismiss the offer without speaking (the quiet-street / museum case).
     func dismissOffer() {
         offered = nil
@@ -97,6 +173,7 @@ final class NarrationService {
 
     /// Stop any in-flight narration (phone lowered, sheet opened, disappear).
     func stop() {
+        stopPlayback()
         if synthesizer.isSpeaking {
             synthesizer.stopSpeaking(at: .immediate)
         }
