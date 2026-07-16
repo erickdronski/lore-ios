@@ -17,6 +17,13 @@ struct PlaceCardView: View {
     @State private var showDive = false
     @State private var showShare = false
 
+    /// The reader's own layer: log the visit and write their lore right here,
+    /// where the place's story lives (owner ask: "their lore is an extension
+    /// of the place"). History loads on appear; the editor is the Journal's.
+    @Environment(VisitStore.self) private var visits
+    @State private var showLoreEditor = false
+    @State private var showSignIn = false
+
     /// The place's lead photo (TestFlight feedback: "photo of the place should
     /// be in the first tile"). Resolved from the dive's `media.wikipedia_title`
     /// through the same Wikipedia summary API the culture portraits use; the
@@ -60,6 +67,95 @@ struct PlaceCardView: View {
         .sheet(isPresented: $showShare) {
             PlaceShareSheet(place: place)
         }
+        // The user's journal entries, so `yourLore` can render this place's note
+        // + photos the moment the card opens (cheap: one RLS-scoped GET).
+        .task(id: place.id) { await visits.loadHistory() }
+        .sheet(isPresented: $showLoreEditor) {
+            NoteEditorSheet(entry: loreEntry) { note in
+                Task { await visits.saveNote(placeID: place.id, note: note) }
+            }
+        }
+        .sheet(isPresented: $showSignIn) {
+            SignInView()
+                .presentationDetents([.large])
+        }
+    }
+
+    // MARK: Your lore (the reader's own layer on this place)
+
+    /// This place's entry in the user's visit history, once loaded.
+    private var myEntry: VisitLogEntry? {
+        visits.visitHistory.first { $0.placeID == place.id }
+    }
+
+    /// The entry the editor opens with: the real history row when it exists,
+    /// otherwise a local stub for a just-logged visit whose history row hasn't
+    /// landed yet (the save PATCHes by place_id either way).
+    private var loreEntry: VisitLogEntry {
+        myEntry ?? VisitLogEntry(
+            placeID: place.id,
+            visitedAt: "",
+            note: nil,
+            photos: nil,
+            place: .init(name: place.name, emoji: place.displayEmoji, city: place.city, kind: place.kind)
+        )
+    }
+
+    /// The user's own note + photos, rendered as part of the place. Shows only
+    /// once they've logged the visit; empty-state copy invites the first note.
+    @ViewBuilder
+    private var yourLore: some View {
+        if visits.hasVisited(place.id) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text("YOUR LORE")
+                        .loreLabelStyle()
+                        .foregroundStyle(LoreColor.brass700)
+                    Spacer()
+                    Button {
+                        Haptics.play(.chipTap)
+                        showLoreEditor = true
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: (myEntry?.note?.isEmpty == false) ? "square.and.pencil" : "plus.circle")
+                                .font(.system(size: 13, weight: .semibold))
+                            Text((myEntry?.note?.isEmpty == false) ? "Edit" : "Add")
+                                .font(LoreType.button)
+                        }
+                        .foregroundStyle(LoreColor.brass700)
+                    }
+                    .buttonStyle(.pressable)
+                    .accessibilityLabel(Text("Write your own lore for \(place.name)"))
+                }
+                if let note = myEntry?.note, !note.isEmpty {
+                    Text(note)
+                        .font(LoreType.body)
+                        .foregroundStyle(LoreColor.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    Text("You were here. Add what you saw, who you were with, what it meant — it becomes part of this place's story.")
+                        .font(LoreType.caption)
+                        .foregroundStyle(LoreColor.ink600)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if let paths = myEntry?.photoPaths, !paths.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(paths, id: \.self) { path in
+                                JournalPhotoThumb(path: path, size: 84)
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(LoreColor.bone200, in: RoundedRectangle(cornerRadius: 14))
+            .overlay(
+                RoundedRectangle(cornerRadius: 14)
+                    .strokeBorder(LoreColor.brass700.opacity(0.25), lineWidth: 1)
+            )
+        }
     }
 
     // MARK: Layer-1 card
@@ -82,6 +178,17 @@ struct PlaceCardView: View {
                     factChips
 
                     storyTeaser
+
+                    // Log-the-visit + the reader's own lore, together: the
+                    // toggle records "I was here", and once logged the note +
+                    // photos render as part of the place itself.
+                    HStack {
+                        Spacer(minLength: 0)
+                        VisitToggle(place: place, source: .map, onNeedsSignIn: { showSignIn = true })
+                        Spacer(minLength: 0)
+                    }
+
+                    yourLore
 
                     Button {
                         Haptics.play(.dossierOpen)

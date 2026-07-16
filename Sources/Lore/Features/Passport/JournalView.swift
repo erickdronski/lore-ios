@@ -156,7 +156,9 @@ struct JournalView: View {
 
 /// The note + photo editor: write "your lore" for a place and attach photos,
 /// saved back to the visit (note via the closure, photos straight to Storage).
-private struct NoteEditorSheet: View {
+/// Internal (not private): the PlaceCard raises the same editor so a reader can
+/// add their lore right where the place's story lives, not only from Passport.
+struct NoteEditorSheet: View {
     let entry: VisitLogEntry
     let onSave: (String) -> Void
 
