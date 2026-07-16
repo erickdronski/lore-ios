@@ -35,7 +35,8 @@ on:
 
 concurrency:
   group: ios-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: false
+  # Cancel superseded push/PR validation runs; NEVER cancel a dispatch (TestFlight upload mid-flight)
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
 
 jobs:
   validate-and-release:
