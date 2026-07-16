@@ -21,6 +21,15 @@ struct TourDetailView: View {
     /// follow-up. One narrator, stopped on stop-change + disappear.
     @State private var narration = NarrationService()
     @State private var currentNarrative: String?
+    /// Hands-free geofenced guiding (Lore+): auto-advance + auto-play as the
+    /// walker reaches each stop. Foreground-only v1 (When-In-Use permission).
+    @State private var walkGuide = TourWalkGuide()
+    /// Stops the walker has physically arrived at this session. Drives the
+    /// guide's target: the current stop until you reach it, then the next one.
+    @State private var arrivedStops: Set<Int> = []
+    /// Set on arrival; `loadNarrative()` speaks once the narrative is in, so
+    /// auto-play can never race the per-stop load (which stops the narrator).
+    @State private var pendingAutoPlay = false
     /// Camera for the route overview map. Framed to fit every stop once the
     /// city's places resolve (an explicit region, never `.automatic`, which
     /// mis-frames a sparse set of pins).
@@ -58,8 +67,10 @@ struct TourDetailView: View {
                         .transition(stopTransition)
                         .animation(LoreSpring.smooth(reduceMotion: reduceMotion), value: stopIndex)
                     // A walker's per-stop actions, top to bottom in the order they
-                    // are used: listen hands-free, then walk there, then advance.
+                    // are used: listen hands-free, let the walk drive itself,
+                    // then walk there, then advance.
                     audioControl
+                    guideControl
                     directionsControl
                     stepperControls
                     // The Live Activity is a companion, not the "start" button, so
@@ -79,10 +90,15 @@ struct TourDetailView: View {
         // Dynamic Island track the walk (docs/16 §8). No-op when not running.
         .onChange(of: stopIndex) { _, _ in
             syncLiveActivity()
+            retargetGuide()
             Task { await loadNarrative() }
         }
+        // A moving walker updates the Lock-Screen distance live while guiding.
+        .onChange(of: walkGuide.distanceToTarget) { _, _ in
+            syncLiveActivity()
+        }
         // End the activity if the user leaves the tour screen without finishing.
-        .onDisappear { liveActivity.end(); narration.stop() }
+        .onDisappear { liveActivity.end(); narration.stop(); walkGuide.stop() }
         .sheet(isPresented: $showPaywall) {
             PaywallView(entitlements: entitlements, store: store, auth: auth, context: .tours)
         }
@@ -292,6 +308,19 @@ struct TourDetailView: View {
         mapCamera = .region(MKCoordinateRegion(center: center, span: span))
     }
 
+    /// A REAL live distance to the NEXT stop, and only that (docs/16 §8 TODO,
+    /// now closed): available exactly when the walk guide is running with a
+    /// trustworthy fix AND its target is the next stop (i.e. the walker has
+    /// reached the current one). Anything else stays nil — never a stale or
+    /// mislabelled number on the Lock Screen.
+    private var liveNextStopMeters: Double? {
+        guard walkGuide.isGuiding,
+              arrivedStops.contains(stopIndex),
+              guideTargetIndex == stopIndex + 1
+        else { return nil }
+        return walkGuide.distanceToTarget
+    }
+
     /// Kick off the Live Activity from the current stop.
     private func startLiveActivity() {
         liveActivity.start(
@@ -299,10 +328,7 @@ struct TourDetailView: View {
             initialStopIndex: stopIndex + 1,
             currentStopName: liveStopName(at: stopIndex),
             nextStopName: liveStopName(at: stopIndex + 1),
-            // Omit the distance number: a real live user->stop distance needs a
-            // continuous Core Location fix. Showing a static stop-to-stop leg as
-            // if it were live would be dishonest (docs/16 §8 TODO).
-            distanceToNextMeters: nil
+            distanceToNextMeters: liveNextStopMeters
         )
     }
 
@@ -313,7 +339,7 @@ struct TourDetailView: View {
             currentStopIndex: stopIndex + 1,
             currentStopName: liveStopName(at: stopIndex),
             nextStopName: liveStopName(at: stopIndex + 1),
-            distanceToNextMeters: nil
+            distanceToNextMeters: liveNextStopMeters
         )
     }
 
@@ -526,8 +552,127 @@ struct TourDetailView: View {
             : "Play this stop's audio, a Lore Plus feature")
     }
 
+    // MARK: Geofenced auto-play (Lore+)
+
+    /// The stop the guide should steer the walker toward: the current stop
+    /// until they've physically arrived at it, then the next one — so the
+    /// distance line and the arrival trigger always mean "your next waypoint".
+    private var guideTargetIndex: Int? {
+        guard !tour.stops.isEmpty else { return nil }
+        if !arrivedStops.contains(stopIndex) { return stopIndex }
+        let next = stopIndex + 1
+        return tour.stops.indices.contains(next) ? next : nil
+    }
+
+    private var guideTargetName: String? {
+        guard let guideTargetIndex else { return nil }
+        return model.place(id: tour.stops[guideTargetIndex].placeID)?.name
+    }
+
+    /// "Auto-play as you walk": the toggle that turns the tour into a
+    /// self-driving audio walk. Free users get the locked affordance.
+    @ViewBuilder
+    private var guideControl: some View {
+        Button {
+            if entitlements.isPlus {
+                Haptics.play(.chipTap)
+                toggleGuide()
+            } else {
+                showPaywall = true
+            }
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: walkGuide.isGuiding ? "location.fill" : "location")
+                    .font(.system(size: 18))
+                    .foregroundStyle(walkGuide.isGuiding ? LoreColor.brass700 : LoreColor.ink)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(walkGuide.isGuiding ? "Guiding — auto-play is on" : "Auto-play as you walk")
+                        .font(LoreType.button)
+                        .foregroundStyle(LoreColor.ink)
+                    if walkGuide.isGuiding {
+                        // One honest status line: denied, locating, or a live
+                        // "next waypoint · distance" once a good fix exists.
+                        if walkGuide.isDenied {
+                            Text("Location is off — enable it in Settings to auto-play.")
+                                .font(LoreType.caption).foregroundStyle(LoreColor.error)
+                        } else if let meters = walkGuide.distanceToTarget, let name = guideTargetName {
+                            Text("\(name) · \(BearingProjector.distanceLabel(meters: meters))")
+                                .font(LoreType.caption).foregroundStyle(LoreColor.ink600)
+                        } else if guideTargetIndex == nil {
+                            Text("Final stop reached — that's the walk.")
+                                .font(LoreType.caption).foregroundStyle(LoreColor.ink600)
+                        } else {
+                            Text("Finding you…")
+                                .font(LoreType.caption).foregroundStyle(LoreColor.ink600)
+                        }
+                    } else {
+                        Text("Each stop plays itself as you walk up to it.")
+                            .font(LoreType.caption).foregroundStyle(LoreColor.ink600)
+                    }
+                }
+                Spacer()
+                if !entitlements.isPlus {
+                    Image(systemName: "lock.fill").font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(LoreColor.ink)
+                }
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(LoreColor.bone200, in: RoundedRectangle(cornerRadius: 14))
+            .overlay(
+                RoundedRectangle(cornerRadius: 14)
+                    .strokeBorder(
+                        walkGuide.isGuiding ? LoreColor.brass700.opacity(0.8) : LoreColor.brass700.opacity(0.4),
+                        lineWidth: walkGuide.isGuiding ? 1.5 : 1
+                    )
+            )
+        }
+        .buttonStyle(.pressable)
+        .accessibilityLabel(entitlements.isPlus
+            ? (walkGuide.isGuiding ? "Stop auto-play guiding" : "Auto-play each stop as you walk up to it")
+            : "Auto-play as you walk, a Lore Plus feature")
+    }
+
+    private func toggleGuide() {
+        if walkGuide.isGuiding {
+            walkGuide.stop()
+            return
+        }
+        walkGuide.onArrive = { index in handleArrival(at: index) }
+        walkGuide.start()
+        retargetGuide()
+    }
+
+    /// Point the guide at the walker's next waypoint. Idempotent; called on
+    /// guide start, stop changes, and after each arrival.
+    private func retargetGuide() {
+        guard walkGuide.isGuiding else { return }
+        guard let index = guideTargetIndex else { return }
+        let coordinate = model.place(id: tour.stops[index].placeID)?.coordinate
+        walkGuide.setTarget(index: index, coordinate: coordinate)
+    }
+
+    /// The arrival moment: haptic, advance the stepper to the reached stop,
+    /// queue auto-play (spoken by `loadNarrative`'s tail once the text is in),
+    /// and steer the guide onward to the following stop.
+    private func handleArrival(at index: Int) {
+        Haptics.play(.scannerLock)
+        arrivedStops.insert(index)
+        pendingAutoPlay = true
+        if stopIndex != index {
+            // onChange(stopIndex) syncs the Live Activity, retargets the guide,
+            // and reloads the narrative, whose tail speaks this arrival.
+            withAnimation(LoreSpring.smooth(reduceMotion: reduceMotion)) { stopIndex = index }
+        } else {
+            retargetGuide()
+            Task { await loadNarrative() }
+        }
+    }
+
     /// Load the current stop's dossier narrative for audio playback, stopping any
-    /// in-flight narration so switching stops never overlaps two voices.
+    /// in-flight narration so switching stops never overlaps two voices. When an
+    /// arrival queued auto-play, speak as soon as the narrative lands (never
+    /// before, so the load's `stop()` can't cut our own speech off).
     private func loadNarrative() async {
         narration.stop()
         currentNarrative = nil
@@ -535,6 +680,12 @@ struct TourDetailView: View {
         let dive = (try? await LoreAPI.shared.dive(placeID: placeID)) ?? nil
         guard currentStop?.placeID == placeID else { return }
         currentNarrative = dive?.narrative
+        if pendingAutoPlay {
+            pendingAutoPlay = false
+            if entitlements.isPlus, let text = currentNarrative {
+                narration.speakDossier(text)
+            }
+        }
     }
 
     private var stepperControls: some View {
