@@ -141,10 +141,13 @@ struct DealSection: View {
                     .font(.system(size: 16))
                 VStack(alignment: .leading, spacing: 2) {
                     Text(deals.count == 1
-                         ? "1 deal on this place"
+                         ? "A deal on this place"
                          : "\(deals.count) deals on this place")
                         .font(LoreType.button)
-                    Text("Real offers from Groupon, matched by our curators — a Lore+ perk.")
+                    // Value-forward + source-agnostic: the deals come from many
+                    // real marketplaces (named per-offer once unlocked), and the
+                    // whole point is that they can outweigh the membership.
+                    Text("Real, checked savings on the places you explore — the kind that pay Lore+ back. Unlock with a membership.")
                         .font(LoreType.caption)
                         .foregroundStyle(LoreColor.ink600)
                 }

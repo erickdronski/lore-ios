@@ -198,7 +198,10 @@ struct LoreAPI {
             "place_deal_feed",
             query: [
                 URLQueryItem(name: "place_id", value: "eq.\(placeID)"),
-                URLQueryItem(name: "order", value: "match_kind.asc"),
+                // Best first: the server's `rank` folds match tier, source
+                // priority (relevance × trust × payout), discount, and rating.
+                URLQueryItem(name: "order", value: "rank.asc"),
+                URLQueryItem(name: "limit", value: "12"),
             ]
         )
         return try await send(request)
