@@ -32,6 +32,26 @@ struct Deal: Decodable, Identifiable {
         case fetchedAt = "fetched_at"
     }
 
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        source = try c.decode(String.self, forKey: .source)
+        city = try c.decode(String.self, forKey: .city)
+        title = try c.decode(String.self, forKey: .title)
+        merchant = try c.decode(String.self, forKey: .merchant)
+        url = try c.decode(String.self, forKey: .url)
+        priceOriginal = try c.decodeIfPresent(String.self, forKey: .priceOriginal)
+        priceDeal = try c.decodeIfPresent(String.self, forKey: .priceDeal)
+        discountLabel = try c.decodeIfPresent(String.self, forKey: .discountLabel)
+        rating = try c.decodeIfPresent(Double.self, forKey: .rating)
+        ratingCount = try c.decodeIfPresent(Int.self, forKey: .ratingCount)
+        // `city_deal_feed` rows carry no match_kind (they are all city-wide);
+        // default accordingly so one Deal type serves both feeds.
+        matchKind = (try c.decodeIfPresent(String.self, forKey: .matchKind)) ?? "city"
+        matchNote = try c.decodeIfPresent(String.self, forKey: .matchNote)
+        fetchedAt = try c.decodeIfPresent(String.self, forKey: .fetchedAt)
+    }
+
     var dealURL: URL? { URL(string: url) }
 
     /// "via Groupon" etc. — the marketplace always gets named.

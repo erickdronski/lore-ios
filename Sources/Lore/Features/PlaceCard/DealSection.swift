@@ -62,7 +62,7 @@ struct DealSection: View {
                 }
             }
             ForEach(deals.prefix(Self.inlineCount)) { deal in
-                row(deal)
+                DealRow(deal: deal)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -70,7 +70,55 @@ struct DealSection: View {
         .background(LoreColor.bone200, in: RoundedRectangle(cornerRadius: 14))
     }
 
-    private func row(_ deal: Deal) -> some View {
+    // MARK: Free
+
+    /// The honest teaser: the true count, the true source, and the lock.
+    // (Rows shared with the city rail live below as `DealRow`.)
+    private var lockedTeaser: some View {
+        Button {
+            showPaywall = true
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "tag")
+                    .font(.system(size: 16))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(deals.count == 1
+                         ? "A deal on this place"
+                         : "\(deals.count) deals on this place")
+                        .font(LoreType.button)
+                    // Value-forward + source-agnostic: the deals come from many
+                    // real marketplaces (named per-offer once unlocked), and the
+                    // whole point is that they can outweigh the membership.
+                    Text("Real, checked savings on the places you explore — the kind that pay Lore+ back. Unlock with a membership.")
+                        .font(LoreType.caption)
+                        .foregroundStyle(LoreColor.ink600)
+                }
+                Spacer()
+                Image(systemName: "lock.fill")
+                    .font(.system(size: 12, weight: .semibold))
+            }
+            .foregroundStyle(LoreColor.ink)
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(LoreColor.bone200, in: RoundedRectangle(cornerRadius: 14))
+            .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(LoreColor.brass700.opacity(0.4), lineWidth: 1))
+        }
+        .buttonStyle(.pressable)
+        .accessibilityLabel(Text("Deals on this place, a Lore Plus feature"))
+    }
+}
+
+// MARK: - Shared row
+
+/// One offer row, shared by the place card's deal section and the city rail.
+/// Taps out to the marketplace page; the marketplace is always named and the
+/// price snapshot carries its checked date via the section header.
+struct DealRow: View {
+    let deal: Deal
+
+    @Environment(\.openURL) private var openURL
+
+    var body: some View {
         Button {
             Haptics.play(.chipTap)
             if let url = deal.dealURL { openURL(url) }
@@ -127,41 +175,5 @@ struct DealSection: View {
         }
         .buttonStyle(.pressable)
         .accessibilityLabel(Text("\(deal.merchant): \(deal.title), opens \(deal.sourceLabel)"))
-    }
-
-    // MARK: Free
-
-    /// The honest teaser: the true count, the true source, and the lock.
-    private var lockedTeaser: some View {
-        Button {
-            showPaywall = true
-        } label: {
-            HStack(spacing: 10) {
-                Image(systemName: "tag")
-                    .font(.system(size: 16))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(deals.count == 1
-                         ? "A deal on this place"
-                         : "\(deals.count) deals on this place")
-                        .font(LoreType.button)
-                    // Value-forward + source-agnostic: the deals come from many
-                    // real marketplaces (named per-offer once unlocked), and the
-                    // whole point is that they can outweigh the membership.
-                    Text("Real, checked savings on the places you explore — the kind that pay Lore+ back. Unlock with a membership.")
-                        .font(LoreType.caption)
-                        .foregroundStyle(LoreColor.ink600)
-                }
-                Spacer()
-                Image(systemName: "lock.fill")
-                    .font(.system(size: 12, weight: .semibold))
-            }
-            .foregroundStyle(LoreColor.ink)
-            .padding(14)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(LoreColor.bone200, in: RoundedRectangle(cornerRadius: 14))
-            .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(LoreColor.brass700.opacity(0.4), lineWidth: 1))
-        }
-        .buttonStyle(.pressable)
-        .accessibilityLabel(Text("Deals on this place, a Lore Plus feature"))
     }
 }

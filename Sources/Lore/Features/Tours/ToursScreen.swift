@@ -39,6 +39,14 @@ struct ToursScreen: View {
                     .listRowInsets(EdgeInsets())
                 }
 
+                // City passes & standing deals (Lore+): the day-planner's
+                // money section. Self-hides for cities with nothing real.
+                Section {
+                    CityDealsSection(city: router.selectedCity)
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets())
+                }
+
                 switch model.state {
                 case .loading:
                     ForEach(0..<4, id: \.self) { _ in SkeletonRow() }

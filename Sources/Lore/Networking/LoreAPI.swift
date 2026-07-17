@@ -207,6 +207,22 @@ struct LoreAPI {
         return try await send(request)
     }
 
+    /// City-wide offers (passes, always-on bundles) for the city rail, best
+    /// first. Same freshness rule as place deals: never served from cache, so
+    /// a deactivated deal disappears on next open.
+    /// `GET /rest/v1/city_deal_feed?city=eq.{city}&order=rank.asc`
+    func cityDeals(city: String) async throws -> [Deal] {
+        let request = try atlasRequest(
+            "city_deal_feed",
+            query: [
+                URLQueryItem(name: "city", value: "eq.\(city)"),
+                URLQueryItem(name: "order", value: "rank.asc"),
+                URLQueryItem(name: "limit", value: "6"),
+            ]
+        )
+        return try await send(request)
+    }
+
     // MARK: - Offline city packs
 
     /// Everything `pinCityPack` learned while pinning, for the image pass.
