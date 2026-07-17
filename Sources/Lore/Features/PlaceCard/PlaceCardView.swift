@@ -187,7 +187,14 @@ struct PlaceCardView: View {
                     // photos render as part of the place itself.
                     HStack {
                         Spacer(minLength: 0)
-                        VisitToggle(place: place, source: .map, onNeedsSignIn: { showSignIn = true })
+                        VisitToggle(
+                            place: place,
+                            source: .map,
+                            onNeedsSignIn: { showSignIn = true },
+                            // Mark visited → the lore editor opens, ready to
+                            // write. The fluid "you were here, tell us" moment.
+                            onLogged: { showLoreEditor = true }
+                        )
                         Spacer(minLength: 0)
                     }
 

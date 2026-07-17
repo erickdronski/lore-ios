@@ -22,6 +22,9 @@ struct VisitToggle: View {
     var source: Visit.Source = .map
     /// Called when a tap can't proceed because there's no signed-in user.
     var onNeedsSignIn: () -> Void = {}
+    /// Called right after a visit is FRESHLY logged (not on re-taps), so a
+    /// host can flow straight into "add your lore" — the fluid moment.
+    var onLogged: () -> Void = {}
 
     @Environment(VisitStore.self) private var store
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -117,13 +120,17 @@ struct VisitToggle: View {
                 // The verified moment: success haptic + one pulse (§6).
                 Haptics.play(.badgeEarned)
                 firePulse()
+                // Flow straight into "add your lore" (the fluid moment).
+                onLogged()
             case .alreadyVisited:
                 break
             case .signedOut:
                 Haptics.play(.meterGate)
                 onNeedsSignIn()
             case .failed:
-                break // store.lastError carries the message if the caller shows it
+                // Never silent: a warning tap so a failed write is felt, not
+                // invisible (the schema-drift bug hid behind a bare `break`).
+                Haptics.play(.meterGate)
             }
         }
     }

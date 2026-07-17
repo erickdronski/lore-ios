@@ -199,7 +199,10 @@ struct NearMeCard: View {
 
             Spacer(minLength: 0)
 
-            VisitToggle(place: place, source: .map, onNeedsSignIn: onNeedsSignIn)
+            // Marking visited here flows straight into the place, where the
+            // "your lore" editor lives — so adding a lore is one gesture from
+            // the shelf, not a scavenger hunt.
+            VisitToggle(place: place, source: .map, onNeedsSignIn: onNeedsSignIn, onLogged: onSelect)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(14)
