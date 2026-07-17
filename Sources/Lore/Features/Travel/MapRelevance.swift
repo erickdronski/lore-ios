@@ -24,9 +24,31 @@ struct MapRelevance {
     /// fresh user never sees a half-faded map they didn't ask for.
     let hasActiveFilter: Bool
 
-    init(prefs: UserPrefs?, hasActiveFilter: Bool) {
+    /// After sundown (DayNightStore) the night layer re-weights the map:
+    /// nightlife/haunted pins hold full glow, daytime institutions rest.
+    /// Same doctrine as personas — weighting, never a wall.
+    let night: Bool
+
+    init(prefs: UserPrefs?, hasActiveFilter: Bool, night: Bool = false) {
         self.prefs = prefs
         self.hasActiveFilter = hasActiveFilter
+        self.night = night
+    }
+
+    // MARK: - Night layer
+
+    /// Tags that mark a place as part of the city's night face.
+    static let nightTags: Set<String> = [
+        "nightlife", "dive-bar", "jazz", "speakeasy", "comedy", "live-music",
+        "bar", "night-market", "haunted", "ghost", "theater", "music-venue",
+    ]
+
+    /// Place kinds that are asleep after dark (visual rest only, still there).
+    static let daytimeKinds: Set<String> = ["museum", "gallery", "library"]
+
+    /// Whether a place belongs to the night layer.
+    func isNightPlace(_ place: Place) -> Bool {
+        place.tags.contains(where: Self.nightTags.contains)
     }
 
     // MARK: - Tunables
@@ -68,24 +90,32 @@ struct MapRelevance {
     }
 
     /// Opacity to render a pin at. No prefs or no active filtering ⇒ full
-    /// strength; otherwise matched pins stay bright and the rest dim to a floor.
+    /// strength; otherwise matched pins stay bright and the rest dim to a
+    /// floor. At night, the night layer applies on top: night pins never dim,
+    /// and daytime institutions rest at a gentle fade even with no filter.
     func opacity(for place: Place) -> Double {
+        if night {
+            if isNightPlace(place) { return Self.brightOpacity }
+            if Self.daytimeKinds.contains(place.kind) { return 0.55 }
+        }
         guard prefs != nil, hasActiveFilter else { return Self.brightOpacity }
         return isRelevant(place) ? Self.brightOpacity : Self.dimmedOpacity
     }
 
     /// Scale factor for a pin, a gentle emphasis for matched pins under an
-    /// active filter, identity otherwise.
+    /// active filter (and for night-layer pins after dark), identity otherwise.
     func scale(for place: Place) -> CGFloat {
+        if night && isNightPlace(place) { return 1.08 }
         guard prefs != nil, hasActiveFilter else { return Self.matchedScale }
         return isRelevant(place) ? Self.matchedScale : Self.dimmedScale
     }
 
     /// Draw priority: matched pins sit above dimmed ones so they win overlaps
-    /// and cluster last (§3 "unmatched ones dim and cluster first"). Feed into
-    /// `.zIndex` / annotation ordering.
+    /// and cluster last (§3 "unmatched ones dim and cluster first"). Night
+    /// pins take the top band after dark. Feed into `.zIndex` / ordering.
     func zPriority(for place: Place) -> Double {
-        isRelevant(place) ? 1 : 0
+        if night && isNightPlace(place) { return 2 }
+        return isRelevant(place) ? 1 : 0
     }
 
     /// A ready-made bundle for a pin, so a map cell can read one value.

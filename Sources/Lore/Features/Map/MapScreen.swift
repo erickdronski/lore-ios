@@ -39,8 +39,13 @@ struct MapScreen: View {
     /// map is a signed-in feature (founder steer: gate it so we can track and
     /// store the user's location).
     @Environment(AuthService.self) private var auth
+    /// The city's two faces: after sundown (or a manual moon-pin) the map goes
+    /// dark, night pins glow, and the ghost-story layer wakes.
+    @Environment(DayNightStore.self) private var dayNight
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var model = MapScreenModel()
+    /// A haunted story opened from its night marker.
+    @State private var nightStory: Story?
     @State private var position: MapCameraPosition = .automatic
     @State private var selectedPlaceID: String?
     /// Apple Maps registers (founder steer: Apple Maps base, 3D is critical).
@@ -55,9 +60,21 @@ struct MapScreen: View {
     @State private var mapMode: LoreMapLibreView.Mode = .night
     @State private var mapViewMode: LoreMapLibreView.ViewMode = .tilted
 
-    /// The relevance lens for the current prefs + whether a hard filter is on.
+    /// The relevance lens for the current prefs + whether a hard filter is on
+    /// + the night layer's re-weighting after dark.
     private var relevance: MapRelevance {
-        MapRelevance(prefs: prefs, hasActiveFilter: filters.hasActiveFilter)
+        MapRelevance(
+            prefs: prefs,
+            hasActiveFilter: filters.hasActiveFilter,
+            night: dayNight.isNight
+        )
+    }
+
+    /// The haunted stories that surface as map markers after dark. Empty by
+    /// day — the ghosts keep office hours.
+    private var nightStories: [Story] {
+        guard dayNight.isNight else { return [] }
+        return model.stories.filter(\.isHaunted)
     }
 
     /// Pins after the hard filter, arranged for-you-first so blooms cascade and
@@ -134,6 +151,11 @@ struct MapScreen: View {
                     .presentationBackground(.regularMaterial)
                     .presentationCornerRadius(24)
             }
+            // A ghost story opened from its wisp on the night map.
+            .sheet(item: $nightStory) { story in
+                StorySheet(story: story)
+                    .presentationDetents([.medium, .large])
+            }
             .navigationTitle("Lore")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar(.hidden, for: .navigationBar)
@@ -179,6 +201,14 @@ struct MapScreen: View {
                     }
                     .tag(place.id)
                 }
+                // The night layer: after dark, the city's ghost stories rise
+                // onto the map as wisp markers. Day hides them — the ghosts
+                // keep office hours (also the layer stays opt-out by daylight).
+                ForEach(nightStories) { story in
+                    Annotation(story.title, coordinate: story.coordinate) {
+                        NightStoryMarker(story: story) { nightStory = story }
+                    }
+                }
             }
             .mapStyle(mapKitStyle)
         }
@@ -205,8 +235,9 @@ struct MapScreen: View {
             : .standard(elevation: elevation, pointsOfInterest: .excludingAll)
     }
 
-    /// The floating register controls: a 3D/flat toggle and an Ink/Satellite
-    /// toggle. Quiet and top-trailing; 3D is the moment people screen-record.
+    /// The floating register controls: a 3D/flat toggle, an Ink/Satellite
+    /// toggle, and the day/night cycle. Quiet and top-trailing; 3D is the
+    /// moment people screen-record, night is the one they show a friend.
     private var mapControls: some View {
         VStack(spacing: 10) {
             mapControlButton(
@@ -223,8 +254,27 @@ struct MapScreen: View {
                 Haptics.play(.chipTap)
                 satellite.toggle()
             }
+
+            // auto → day → night → auto. The badge dot marks a manual pin so
+            // "why is it dark at noon" always has a visible answer.
+            mapControlButton(
+                system: dayNight.isNight ? "moon.stars.fill" : "sun.max.fill",
+                on: dayNight.override != .auto,
+                label: dayNightLabel
+            ) {
+                Haptics.play(.chipTap)
+                dayNight.cycle()
+            }
         }
         .padding(.trailing, 14)
+    }
+
+    private var dayNightLabel: String {
+        switch dayNight.override {
+        case .auto: return dayNight.isNight ? "Night (following the sun) — tap to pin day" : "Day (following the sun) — tap to pin day"
+        case .day: return "Day (pinned) — tap to pin night"
+        case .night: return "Night (pinned) — tap to follow the sun"
+        }
     }
 
     private func mapControlButton(
@@ -297,6 +347,9 @@ struct MapScreen: View {
 @MainActor
 final class MapScreenModel {
     var places: [Place] = []
+    /// The city's stories; the map surfaces the haunted ones after dark.
+    /// Best-effort — an empty list just means no wisps tonight.
+    var stories: [Story] = []
     var errorMessage: String?
     /// The camera region to fly to when a (new) city loads. The view observes
     /// this and eases to it (§7 "flyTo eases").
@@ -334,12 +387,14 @@ final class MapScreenModel {
         loadedCity = nil
         cameraTarget = nil
         do {
-            // Best-effort roster (for the display name + fly-to center); a
-            // failure here never blocks pins.
+            // Best-effort roster (for the display name + fly-to center) and
+            // stories (the night layer); a failure in either never blocks pins.
             async let citiesTask = try? LoreAPI.shared.cities()
+            async let storiesTask = try? LoreAPI.shared.stories(city: city)
             let loaded = try await LoreAPI.shared.places(city: city)
             places = loaded
             loadedCity = city
+            stories = (await storiesTask) ?? []
 
             if let cities = await citiesTask {
                 cityNames = Dictionary(

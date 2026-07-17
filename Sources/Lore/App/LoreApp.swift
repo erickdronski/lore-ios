@@ -108,6 +108,9 @@ struct RootTabView: View {
     @Environment(StoreKitService.self) private var store
     #endif
     @Environment(PrefsCoordinator.self) private var prefs
+    /// Day/night state (solar auto + manual pin) — owned here so the color
+    /// scheme, the map, and any future night surface read one truth.
+    @State private var dayNight = DayNightStore()
     @Environment(TravelSession.self) private var travel
     @Environment(\.scenePhase) private var scenePhase
 
@@ -182,12 +185,23 @@ struct RootTabView: View {
             }
         }
         .animation(LoreMotion.unfurl, value: travel.pendingUnlocks.count)
+        // The day/night truth, readable by every tab below this point.
+        .environment(dayNight)
         // Lore's palette is fixed rather than a device-driven adaptive theme.
         // Keep Bone tabs in light system chrome, while the full-screen Scanner
-        // and Passport need light status-bar glyphs over camera/Ink surfaces.
+        // and Passport need light status-bar glyphs over camera/Ink surfaces —
+        // and the Map goes dark after sundown (or a pinned night), the night
+        // layer's visual register.
         .preferredColorScheme(
-            selection == .scanner || selection == .passport ? .dark : .light
+            selection == .scanner || selection == .passport
+                || (selection == .map && dayNight.isNight)
+                ? .dark : .light
         )
+        // Feed location fixes into the solar calculation so "night" means the
+        // sun is actually down where the user is standing.
+        .onChange(of: locator.location) { _, newValue in
+            dayNight.updateLocation(newValue)
+        }
         // Global search, resolves a `LoreRoute` and hands it to the router.
         .sheet(isPresented: $showSearch) {
             SearchView(router: router)
