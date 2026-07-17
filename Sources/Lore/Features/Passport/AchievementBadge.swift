@@ -18,20 +18,28 @@ import SwiftUI
 /// carries the colors/label each tier renders with. Resolved from a raw tier
 /// string so new tiers are additive and never a decode break.
 enum BadgeTier: String, CaseIterable {
-    case bronze, silver, gold, legend
+    case bronze, silver, gold, legend, platinum
 
-    /// Resolve from any raw tier string (case-insensitive). `platinum` from the
-    /// model maps to `legend` (the wall's top finish); unknowns fall to bronze.
+    /// Resolve from any raw tier string (case-insensitive). Platinum is the
+    /// icy-diamond apex above legend (world-spanning capstones); unknowns fall
+    /// to bronze.
     init(raw: String?) {
         switch raw?.lowercased() {
         case "silver": self = .silver
         case "gold": self = .gold
-        case "legend", "platinum": self = .legend
+        case "legend": self = .legend
+        case "platinum": self = .platinum
         default: self = .bronze
         }
     }
 
     var label: String { rawValue.capitalized }
+
+    /// The apex tier's icy tones — a cool diamond-white to set it visibly apart
+    /// from legend's warm Amber.
+    private static let platinumBright = Color(red: 0.93, green: 0.97, blue: 1.0)
+    private static let platinumCool = Color(red: 0.70, green: 0.82, blue: 0.94)
+    private static let platinumDeep = Color(red: 0.55, green: 0.66, blue: 0.82)
 
     /// The medallion's inner fill color when unlocked.
     var accent: Color {
@@ -40,6 +48,7 @@ enum BadgeTier: String, CaseIterable {
         case .silver: return LoreColor.ink600
         case .gold: return LoreColor.brass
         case .legend: return LoreColor.amber
+        case .platinum: return Self.platinumBright
         }
     }
 
@@ -50,6 +59,7 @@ enum BadgeTier: String, CaseIterable {
         case .silver: return LoreColor.ink700
         case .gold: return LoreColor.brass
         case .legend: return LoreColor.amber600
+        case .platinum: return Self.platinumCool
         }
     }
 
@@ -60,12 +70,13 @@ enum BadgeTier: String, CaseIterable {
         case .silver: return LoreColor.ink600.opacity(0.12)
         case .gold: return LoreColor.brass.opacity(0.20)
         case .legend: return LoreColor.amber.opacity(0.22)
+        case .platinum: return Self.platinumBright.opacity(0.24)
         }
     }
 
-    /// Only gold + legend earn the Brass/Amber prestige treatment (a subtle
-    /// glow ring). Bronze/silver stay quiet, Brass is earned, not default.
-    var isPrestige: Bool { self == .gold || self == .legend }
+    /// Gold, legend, and platinum earn the prestige glow treatment. Bronze/
+    /// silver stay quiet — the finish is earned, not default.
+    var isPrestige: Bool { self == .gold || self == .legend || self == .platinum }
 
     /// The metal color stops for this tier, brightest → base, used to build a
     /// brushed-metal angular sheen on the medallion ring.
@@ -75,6 +86,7 @@ enum BadgeTier: String, CaseIterable {
         case .silver: return [LoreColor.bone, LoreColor.ink600, LoreColor.ink700]
         case .gold:   return [LoreColor.amber, LoreColor.brass, LoreColor.brass700]
         case .legend: return [LoreColor.amber, LoreColor.amber600, LoreColor.brass]
+        case .platinum: return [Self.platinumBright, Self.platinumCool, Self.platinumDeep]
         }
     }
 
@@ -97,6 +109,7 @@ enum BadgeTier: String, CaseIterable {
         case .silver: return LoreColor.bone
         case .gold:   return LoreColor.amber
         case .legend: return LoreColor.amber
+        case .platinum: return Self.platinumBright
         }
     }
 }
