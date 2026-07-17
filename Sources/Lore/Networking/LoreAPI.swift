@@ -430,6 +430,12 @@ struct LoreAPI {
     /// unlocked badges. RLS-scoped RPC; pass the user's own id as `p_user`.
     /// `POST /rest/v1/rpc/recompute_achievements { "p_user": userID }`
     @discardableResult
+    /// The signed-in user's world-exploration stats (`user_stats` RPC, a single
+    /// jsonb object). RLS-guarded to the caller; the dashboard reads it.
+    func userStats(userID: String, accessToken: String) async throws -> UserStats {
+        try await rpc("user_stats", body: ["p_user": userID], accessToken: accessToken)
+    }
+
     func recomputeAchievements(userID: String, accessToken: String) async throws -> [Achievement] {
         try await rpc(
             "recompute_achievements",

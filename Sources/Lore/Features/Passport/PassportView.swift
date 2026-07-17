@@ -92,6 +92,11 @@ struct PassportView: View {
                 if !auth.isSignedIn {
                     signedOutNote
                         .padding(.horizontal, 16)
+                } else {
+                    // The world-exploration dashboard: continents lit as you
+                    // cross them, headline tallies, streak, and personal ledger.
+                    ExplorerStatsView(stats: model.stats)
+                        .padding(.horizontal, 16)
                 }
 
                 NavigationLink { JournalView() } label: { journalCard }
@@ -410,6 +415,8 @@ final class PassportModel {
 
     /// Insight = sum of the points on every unlocked badge.
     private(set) var insightPoints: Int = 0
+    /// The signed-in explorer's world-tracking stats for the dashboard.
+    private(set) var stats: UserStats = .zero
 
     /// The category display order (task spec order); anything unknown lands
     /// after, alphabetically, so a new DB category is never dropped.
@@ -438,6 +445,14 @@ final class PassportModel {
             }
             let catalog = try await catalogTask
             guard auth.session?.user.id == expectedUserID else { return }
+
+            // The world-exploration dashboard: the user's own stats (RLS-guarded).
+            // A failure just leaves the zero state, never blocks the wall.
+            if let token = await auth.validAccessToken(), let uid = expectedUserID {
+                stats = (try? await LoreAPI.shared.userStats(userID: uid, accessToken: token)) ?? .zero
+            } else {
+                stats = .zero
+            }
 
             self.catalog = catalog
             rebuild(catalog: catalog, userRows: userRows)
