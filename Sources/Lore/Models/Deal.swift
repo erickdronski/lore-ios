@@ -20,9 +20,12 @@ struct Deal: Decodable, Identifiable {
     let matchKind: String
     let matchNote: String?
     let fetchedAt: String?
+    /// The offer's family — tours / stay / dine / drive / connect / local —
+    /// carried from the source's `category`. Drives the grouped UI.
+    let category: String
 
     enum CodingKeys: String, CodingKey {
-        case id, source, city, title, merchant, url, rating
+        case id, source, city, title, merchant, url, rating, category
         case priceOriginal = "price_original"
         case priceDeal = "price_deal"
         case discountLabel = "discount_label"
@@ -50,9 +53,13 @@ struct Deal: Decodable, Identifiable {
         matchKind = (try c.decodeIfPresent(String.self, forKey: .matchKind)) ?? "city"
         matchNote = try c.decodeIfPresent(String.self, forKey: .matchNote)
         fetchedAt = try c.decodeIfPresent(String.self, forKey: .fetchedAt)
+        category = (try c.decodeIfPresent(String.self, forKey: .category)) ?? "local"
     }
 
     var dealURL: URL? { URL(string: url) }
+
+    /// The tasteful family this offer belongs to, for grouped display.
+    var offerCategory: OfferCategory { OfferCategory(category) }
 
     /// "via Groupon" etc. — the marketplace always gets named.
     var sourceLabel: String { "via \(source.capitalized)" }

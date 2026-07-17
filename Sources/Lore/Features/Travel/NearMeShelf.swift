@@ -35,6 +35,10 @@ struct NearMeShelf: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Flips once per shelf population so the cards cascade in (LUXURY-MOTION §6).
     @State private var appeared = false
+    /// Which of the shelf's places have a live offer — one bulk query per
+    /// ranking, so a tile can wear a quiet "offers here" mark. Shown to
+    /// everyone (the honest hook); the detail unlocks with Lore+.
+    @State private var offerPlaceIDs: Set<String> = []
 
     private var ranked: [RankedPlace] {
         NearMe.nearest(
@@ -75,6 +79,16 @@ struct NearMeShelf: View {
         .onChange(of: places) { _, _ in
             WidgetPublisher.publishNearby(ranked, city: city)
         }
+        // One bulk "which of these have an offer" query per ranking. Keyed to
+        // the ranked IDs so it re-runs when the shelf's places change, not on
+        // every distance re-sort. Failure keeps the last known set.
+        .task(id: ranked.map(\.id)) {
+            let ids = ranked.map(\.id)
+            guard !ids.isEmpty else { offerPlaceIDs = []; return }
+            if let found = try? await LoreAPI.shared.placesWithOffers(placeIDs: ids) {
+                offerPlaceIDs = found
+            }
+        }
     }
 
     // MARK: Header
@@ -103,6 +117,7 @@ struct NearMeShelf: View {
                 ForEach(Array(ranked.enumerated()), id: \.element.id) { index, ranked in
                     NearMeCard(
                         ranked: ranked,
+                        hasOffer: offerPlaceIDs.contains(ranked.place.id),
                         onSelect: { onSelect(ranked.place) },
                         onNeedsSignIn: onNeedsSignIn
                     )
@@ -159,6 +174,9 @@ struct NearMeShelf: View {
 /// not a wall; the full dossier is one tap via `onSelect`.
 struct NearMeCard: View {
     let ranked: RankedPlace
+    /// True when this place has a live offer — draws a quiet brass mark on the
+    /// medallion. The hook is honest: it only shows when an offer truly exists.
+    var hasOffer: Bool = false
     let onSelect: () -> Void
     var onNeedsSignIn: () -> Void = {}
 
@@ -223,6 +241,23 @@ struct NearMeCard: View {
             .frame(width: 44, height: 44)
             .background(Circle().fill(LoreColor.ink900))
             .overlay(Circle().strokeBorder(LoreColor.brass300.opacity(0.4), lineWidth: 1))
+            // A quiet brass "offers here" mark, only when one truly exists.
+            .overlay(alignment: .bottomTrailing) {
+                if hasOffer { offerMark }
+            }
+    }
+
+    /// The offer hook: a small brass sparkles disc tucked on the medallion.
+    /// Deliberately understated — a whisper, not a banner.
+    private var offerMark: some View {
+        Image(systemName: "sparkles")
+            .font(.system(size: 9, weight: .bold))
+            .foregroundStyle(LoreColor.ink900)
+            .frame(width: 18, height: 18)
+            .background(Circle().fill(LoreColor.brass300))
+            .overlay(Circle().strokeBorder(LoreColor.ink800, lineWidth: 1.5))
+            .offset(x: 3, y: 3)
+            .accessibilityLabel(Text("Offers available here"))
     }
 }
 

@@ -223,6 +223,24 @@ struct LoreAPI {
         return try await send(request)
     }
 
+    /// Which of the given places have at least one live offer. One lightweight
+    /// query (`select=place_id`) so shelves and lists can render a quiet
+    /// "offers here" mark without an N-per-tile fan-out. Empty in → empty out.
+    /// `GET /rest/v1/place_deal_feed?select=place_id&place_id=in.(a,b,c)`
+    func placesWithOffers(placeIDs: [String]) async throws -> Set<String> {
+        guard !placeIDs.isEmpty else { return [] }
+        struct Row: Decodable { let place_id: String }
+        let request = try atlasRequest(
+            "place_deal_feed",
+            query: [
+                URLQueryItem(name: "select", value: "place_id"),
+                URLQueryItem(name: "place_id", value: "in.(\(placeIDs.joined(separator: ",")))"),
+            ]
+        )
+        let rows: [Row] = try await send(request)
+        return Set(rows.map(\.place_id))
+    }
+
     // MARK: - Offline city packs
 
     /// Everything `pinCityPack` learned while pinning, for the image pass.
