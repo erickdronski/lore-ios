@@ -69,11 +69,14 @@ struct BrassSheenSurface<S: Shape>: View {
                                 endPoint: .trailing
                             )
                         )
-                        .mask(shape)
                         .offset(x: sweep * 260)
                         .blendMode(.screen)
                 }
             }
+            // Clip the whole surface (fill + travelling sheen) to its own shape.
+            // Without this the offset sheen band parks past the shape's edge and
+            // renders a hard-cornered gold sliver "coming off" the tile.
+            .clipShape(shape)
             .onAppear {
                 guard sweepOnAppear, !reduceMotion else { return }
                 sweep = -1
