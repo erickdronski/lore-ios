@@ -29,6 +29,17 @@ struct Place: Codable, Identifiable, Hashable {
         case heightM = "height_m"
     }
 
+    /// Explicit memberwise init — restored because adding a custom `init(from:)`
+    /// below suppresses the compiler-synthesized one (used by tests / any direct
+    /// construction). Declaration order, with the optionals defaulted.
+    init(id: String, slug: String, name: String, kind: String, lat: Double, lng: Double,
+         heightM: Double? = nil, city: String, layer1: Layer1? = nil,
+         tags: [String] = [], emoji: String? = nil) {
+        self.id = id; self.slug = slug; self.name = name; self.kind = kind
+        self.lat = lat; self.lng = lng; self.heightM = heightM; self.city = city
+        self.layer1 = layer1; self.tags = tags; self.emoji = emoji
+    }
+
     /// Resilient decode: a single row with a null `slug` (or null `tags`) must
     /// never throw and empty the whole `[Place]` — that once wiped the scanner in
     /// four live cities. `slug` falls back to a name-derived slug, then the id.
