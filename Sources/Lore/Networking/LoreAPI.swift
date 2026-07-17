@@ -462,6 +462,16 @@ struct LoreAPI {
         )
     }
 
+    /// Record that the signed-in user opened this place's deep dive today, so the
+    /// "Deep dives" stat counts it and the dive-read badges can unlock. Idempotent
+    /// per day (the RPC's `on conflict do nothing`), and it recomputes achievements
+    /// server-side. Returns the user's all-time distinct dive-read count.
+    /// `POST /rest/v1/rpc/record_dive_read { "p_place": "…" }`
+    @discardableResult
+    func recordDiveRead(placeID: String, accessToken: String) async throws -> Int {
+        try await rpc("record_dive_read", body: ["p_place": placeID], accessToken: accessToken)
+    }
+
     // MARK: - Plumbing
 
     /// A GET against a table/view, decoding the JSON array into `T`.

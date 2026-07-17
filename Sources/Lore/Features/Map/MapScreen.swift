@@ -295,19 +295,15 @@ struct MapScreen: View {
         .accessibilityLabel(Text(label))
     }
 
-    /// The header "locate me" tap. Finding yourself on the map is a signed-in
-    /// feature (founder steer: gate it so we can track + store where users are);
-    /// signed out, it nudges sign-in instead of silently doing nothing.
+    /// The header "locate me" tap. Recentering the map on your own GPS fix is a
+    /// device capability, not an account feature, so it must work signed-out
+    /// (App Review 5.1.1(i)). The MapKit path (`centerOnUser`) already recenters
+    /// with no session.
     private func locateMe() {
-        guard auth.isSignedIn else {
-            Haptics.play(.chipTap)
-            onNeedsSignIn()
-            return
-        }
         centerOnUser()
-        // TODO(backend): persist a location ping here once the `user_location`
-        // table + authenticated write land, so the signed-in locate feature is
-        // tracked (founder steer). The gate + recenter ship now.
+        // TODO(backend): once the `user_location` table + an authenticated write
+        // land, a signed-in tap can also persist a location ping. Recentering
+        // itself needs no session and ships unconditionally.
     }
 
     /// Follow the user's live location. MapKit resolves + tracks the fix; if

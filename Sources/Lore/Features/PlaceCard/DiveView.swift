@@ -74,6 +74,13 @@ struct DiveView: View {
             if diveMeter.canOpenDive(isPlus: entitlements.isPlus) {
                 if await model.load(placeID: place.id) {
                     diveMeter.recordDiveOpened(isPlus: entitlements.isPlus)
+                    // Persist the read so the "Deep dives" stat counts it and the
+                    // dive-read badges can unlock (local counter alone left both
+                    // stuck at zero). Fire-and-forget; the server insert commits
+                    // regardless of how the client handles the response.
+                    if let token = auth.session?.accessToken {
+                        Task { try? await LoreAPI.shared.recordDiveRead(placeID: place.id, accessToken: token) }
+                    }
                 }
             } else {
                 gated = true
@@ -393,7 +400,10 @@ struct TimelineStrip: View {
 
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(alignment: .top, spacing: 12) {
-                    ForEach(events) { event in
+                    // Contract is oldest-first (Dive.swift), but ~33 stored
+                    // dossiers have out-of-order year arrays — sort at render so
+                    // the timeline always reads chronologically.
+                    ForEach(events.sorted { $0.year < $1.year }) { event in
                         TimelineNode(event: event, isSnapped: snappedEventID == event.id)
                             .containerRelativeFrame(
                                 .horizontal,

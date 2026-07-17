@@ -29,6 +29,29 @@ struct Place: Codable, Identifiable, Hashable {
         case heightM = "height_m"
     }
 
+    /// Resilient decode: a single row with a null `slug` (or null `tags`) must
+    /// never throw and empty the whole `[Place]` — that once wiped the scanner in
+    /// four live cities. `slug` falls back to a name-derived slug, then the id.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        if let s = try c.decodeIfPresent(String.self, forKey: .slug), !s.isEmpty {
+            slug = s
+        } else {
+            let derived = name.lowercased().replacingOccurrences(of: " ", with: "-")
+            slug = derived.isEmpty ? id : derived
+        }
+        kind = try c.decode(String.self, forKey: .kind)
+        lat = try c.decode(Double.self, forKey: .lat)
+        lng = try c.decode(Double.self, forKey: .lng)
+        heightM = try c.decodeIfPresent(Double.self, forKey: .heightM)
+        city = try c.decode(String.self, forKey: .city)
+        layer1 = try c.decodeIfPresent(Layer1.self, forKey: .layer1)
+        tags = (try c.decodeIfPresent([String].self, forKey: .tags)) ?? []
+        emoji = try c.decodeIfPresent(String.self, forKey: .emoji)
+    }
+
     var coordinate: CLLocationCoordinate2D {
         CLLocationCoordinate2D(latitude: lat, longitude: lng)
     }

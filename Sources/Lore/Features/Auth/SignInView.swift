@@ -191,9 +191,13 @@ struct SignInView: View {
                         fullName: cred.fullName, email: cred.email
                     )
                     if auth.isSignedIn { dismiss() }
+                } catch AppleSignInCoordinator.AppleSignInError.cancelled {
+                    // User backed out of the Apple sheet — nothing to show.
                 } catch {
-                    // .cancelled carries a nil message; real errors surface via
-                    // auth.lastError from the exchange.
+                    // Everything else (missing token, network, keychain) must
+                    // surface — an empty catch here left the button feeling dead.
+                    // Shown via auth.lastError (SignInView renders it).
+                    auth.lastError = error.localizedDescription
                 }
             }
         } label: {

@@ -115,9 +115,20 @@ struct PaywallView: View {
 
     // MARK: Plan picker (monthly / annual)
 
+    /// The subscriptions (monthly/annual) always render — they degrade to honest
+    /// hardcoded prices if StoreKit is slow. Lifetime is a separate non-consumable:
+    /// show it only when its product actually loaded, so a reviewer never taps a
+    /// visible plan that dead-ends at purchase (App Review 2.1 / 3.1.1). Mirrors
+    /// the trip-pass section's guard.
+    private var visiblePlans: [PaywallModel.Plan] {
+        PaywallModel.Plan.allCases.filter { plan in
+            plan != .lifetime || store.product(for: plan.productID) != nil
+        }
+    }
+
     private var planPicker: some View {
         VStack(spacing: 10) {
-            ForEach(PaywallModel.Plan.allCases) { plan in
+            ForEach(visiblePlans) { plan in
                 PlanRow(
                     plan: plan,
                     priceLine: model.displayPriceLine(for: plan),

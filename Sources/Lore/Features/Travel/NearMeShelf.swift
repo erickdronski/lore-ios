@@ -285,12 +285,17 @@ enum NearMe {
         to location: CLLocation?,
         among places: [Place],
         relevance: MapRelevance,
-        limit: Int
+        limit: Int,
+        // "Around you right now" must mean it. If the user switched to a far city
+        // while physically elsewhere, its places are thousands of km away — a
+        // walking distance on those is a lie, so cap the shelf to a metro radius.
+        maxMeters: Double = 50_000
     ) -> [RankedPlace] {
         guard let location else { return [] }
         let allowed = places.filter { !relevance.isHidden($0) }
         let ranked = allowed
             .map { RankedPlace(place: $0, meters: location.distance(from: $0.location)) }
+            .filter { $0.meters <= maxMeters }
             .sorted { $0.meters < $1.meters }
         return Array(ranked.prefix(limit))
     }
