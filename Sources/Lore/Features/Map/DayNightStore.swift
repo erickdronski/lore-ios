@@ -38,6 +38,14 @@ final class DayNightStore {
     init() {
         let raw = UserDefaults.standard.string(forKey: Self.defaultsKey)
         override = raw.flatMap(Override.init(rawValue:)) ?? .auto
+        #if DEBUG
+        // Screenshot/verification hook: force night on launch so the dark map
+        // + ghost wisps can be captured deterministically via Simulator
+        // (LORE_FORCE_NIGHT=1), no location or UI tap needed. DEBUG-only.
+        if ProcessInfo.processInfo.environment["LORE_FORCE_NIGHT"] == "1" {
+            override = .night
+        }
+        #endif
         refresh()
         // Minute-scale drift is plenty: sunset doesn't sneak up in seconds.
         timer = Timer.scheduledTimer(withTimeInterval: 120, repeats: true) { [weak self] _ in

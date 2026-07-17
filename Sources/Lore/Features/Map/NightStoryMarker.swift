@@ -14,21 +14,25 @@ struct NightStoryMarker: View {
     var body: some View {
         Button(action: { Haptics.play(.chipTap); onTap() }) {
             ZStack {
-                // The wisp: a faint halo that breathes. Static under Reduce
-                // Motion — the glow stays, the pulse goes.
+                // The wisp GLOW: a broad amber bloom that breathes, so the
+                // ghost reads clearly against the dark night map (it used to be
+                // a dark disc on a dark map — invisible). Static under Reduce
+                // Motion: the glow stays, the pulse goes.
                 Circle()
-                    .fill(LoreColor.amber.opacity(0.28))
-                    .frame(width: 40, height: 40)
-                    .blur(radius: 6)
-                    .scaleEffect(breathing && !reduceMotion ? 1.25 : 1.0)
+                    .fill(LoreColor.amber.opacity(0.55))
+                    .frame(width: 44, height: 44)
+                    .blur(radius: 10)
+                    .scaleEffect(breathing && !reduceMotion ? 1.3 : 1.0)
                     .animation(
                         reduceMotion ? nil : .easeInOut(duration: 2.4).repeatForever(autoreverses: true),
                         value: breathing
                     )
+                // The orb: amber-lit so it pops on dark, ringed brighter still.
                 Circle()
-                    .fill(LoreColor.ink900.opacity(0.85))
+                    .fill(LoreColor.amber)
                     .frame(width: 30, height: 30)
-                    .overlay(Circle().strokeBorder(LoreColor.amber.opacity(0.7), lineWidth: 1))
+                    .overlay(Circle().strokeBorder(LoreColor.bone.opacity(0.9), lineWidth: 1.5))
+                    .shadow(color: LoreColor.amber.opacity(0.8), radius: 5)
                 Text(story.displayEmoji)
                     .font(.system(size: 15))
             }
