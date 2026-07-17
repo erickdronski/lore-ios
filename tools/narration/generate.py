@@ -150,32 +150,53 @@ def synthesize(model, text: str, out: Path, voice: str | None,
     return audio.shape[1] / model.sr
 
 
+def _curl_retry(args: list[str], attempts: int = 4) -> None:
+    """Run curl with retries: the work-laptop TLS proxy intermittently drops
+    POST bodies (curl exit 56, the same trap that kills big git pushes), so a
+    transient failure must never kill a multi-hour batch. --http1.1 avoids the
+    proxy's flaky HTTP/2 handling."""
+    import time
+
+    last = None
+    for attempt in range(attempts):
+        result = subprocess.run(
+            ["curl", "-sS", "--http1.1", "--fail-with-body", *args],
+            capture_output=True, text=True,
+        )
+        if result.returncode == 0:
+            return
+        last = result
+        time.sleep(2 * (attempt + 1))
+    raise RuntimeError(
+        f"curl failed after {attempts} attempts "
+        f"(exit {last.returncode}): {last.stderr.strip()[:200]}"
+    )
+
+
 def upload(key: str, local: Path, storage_path: str, place_id: str, seconds: float) -> None:
     """Push the file to the public narration bucket + stamp the dive row."""
-    subprocess.run(
-        ["curl", "-sS", "--fail-with-body", "-X", "POST",
-         f"{SUPABASE_URL}/storage/v1/object/narration/{storage_path}",
-         "-H", f"Authorization: Bearer {key}",
-         "-H", "Content-Type: audio/mp4",
-         "-H", "x-upsert: true",
-         "--data-binary", f"@{local}"],
-        capture_output=True, text=True, check=True,
-    )
+    _curl_retry([
+        "-X", "POST",
+        f"{SUPABASE_URL}/storage/v1/object/narration/{storage_path}",
+        "-H", f"Authorization: Bearer {key}",
+        "-H", "Content-Type: audio/mp4",
+        "-H", "x-upsert: true",
+        "--data-binary", f"@{local}",
+    ])
     patch = json.dumps({
         "audio_path": storage_path,
         "audio_seconds": round(seconds),
         "audio_voice": VOICE_TAG,
         "audio_generated_at": datetime.now(timezone.utc).isoformat(),
     })
-    subprocess.run(
-        ["curl", "-sS", "--fail-with-body", "-X", "PATCH",
-         f"{SUPABASE_URL}/rest/v1/dive?place_id=eq.{place_id}",
-         "-H", f"apikey: {key}", "-H", f"Authorization: Bearer {key}",
-         "-H", "Content-Type: application/json",
-         "-H", "Prefer: return=minimal",
-         "-d", patch],
-        capture_output=True, text=True, check=True,
-    )
+    _curl_retry([
+        "-X", "PATCH",
+        f"{SUPABASE_URL}/rest/v1/dive?place_id=eq.{place_id}",
+        "-H", f"apikey: {key}", "-H", f"Authorization: Bearer {key}",
+        "-H", "Content-Type: application/json",
+        "-H", "Prefer: return=minimal",
+        "-d", patch,
+    ])
 
 
 def load_model(model_dir: str | None):
@@ -231,6 +252,7 @@ def main() -> None:
     key = service_key() if args.upload else None
     model = load_model(args.model_dir)
 
+    failures: list[str] = []
     for n, row in enumerate(rows, 1):
         place = row["place"]
         slug, city = place["slug"], place["city"]
@@ -239,13 +261,24 @@ def main() -> None:
             out = Path(args.out).expanduser()
         else:
             out = Path("out") / city / f"{slug}.m4a"
-        seconds = synthesize(model, row["narrative"].strip(), out,
-                             args.voice, args.exaggeration, args.cfg_weight)
-        print(f"  ✓ {out} ({seconds:.0f}s, {out.stat().st_size // 1024} KB)", flush=True)
-        if key:
-            storage_path = f"{city}/{slug}.m4a"
-            upload(key, out, storage_path, row["place_id"], seconds)
-            print(f"  ↑ narration/{storage_path} + dive row stamped", flush=True)
+        # One dive must never kill a multi-hour batch: synthesis or upload
+        # failures are logged + skipped, and the resumable batch (missing-only)
+        # picks them up on the next run.
+        try:
+            seconds = synthesize(model, row["narrative"].strip(), out,
+                                 args.voice, args.exaggeration, args.cfg_weight)
+            print(f"  ✓ {out} ({seconds:.0f}s, {out.stat().st_size // 1024} KB)", flush=True)
+            if key:
+                storage_path = f"{city}/{slug}.m4a"
+                upload(key, out, storage_path, row["place_id"], seconds)
+                print(f"  ↑ narration/{storage_path} + dive row stamped", flush=True)
+        except Exception as error:  # noqa: BLE001 — batch resilience by design
+            failures.append(f"{city}/{slug}")
+            print(f"  ✗ SKIPPED {city}/{slug}: {error}", flush=True)
+
+    if failures:
+        print(f"\n{len(failures)} dive(s) failed and were skipped — rerun the "
+              f"batch to retry them:\n  " + "\n  ".join(failures), flush=True)
 
 
 if __name__ == "__main__":
