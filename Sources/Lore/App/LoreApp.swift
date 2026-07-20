@@ -399,8 +399,10 @@ struct RootTabView: View {
                 }
             }
         case "culture":
+            // City comes from LORE_CARD_CITY so captures can stage any city's
+            // themed Meet-the-City surface (default: the Chicago pilot).
             selection = .map
-            meetCity = "chicago"
+            meetCity = ScreenshotSupport.cardCity
         case "paywall":
             showScreenshotPaywall = true
         case "card":
