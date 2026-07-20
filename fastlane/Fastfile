@@ -103,17 +103,38 @@ platform :ios do
     end
     say.call("INFO", "App", "#{app.name} (#{BUNDLE_ID}) id=#{app.id} locale=#{app.primary_locale}")
 
-    # --- Editable version + attached build ---
+    # --- Every version and its state (an app with no EDITABLE version may still
+    # have one parked in a non-editable state, e.g. Waiting for Review) ---
+    begin
+      all = app.get_app_store_versions
+      if all.nil? || all.empty?
+        say.call("FAIL", "Versions", "The app has NO App Store version records at all")
+      else
+        all.each do |v|
+          say.call("INFO", "Version record", "#{v.version_string} state=#{v.app_store_state} platform=#{v.platform}")
+        end
+      end
+    rescue => e
+      say.call("WARN", "Versions", "lookup failed: #{e.message}")
+    end
+
+    # --- Editable version + attached build (fall back to newest for the audit) ---
     version = nil
     begin
       version = app.get_edit_app_store_version
       if version
-        say.call("INFO", "Version", "#{version.version_string} state=#{version.app_store_state} release=#{version.release_type}")
+        say.call("INFO", "Editable version", "#{version.version_string} state=#{version.app_store_state} release=#{version.release_type}")
       else
-        say.call("WARN", "Version", "No editable version — nothing staged to submit")
+        say.call("WARN", "Editable version", "None — nothing staged to submit")
+        version = begin
+                    app.get_app_store_versions&.first
+                  rescue
+                    nil
+                  end
+        say.call("INFO", "Auditing instead", "newest version #{version&.version_string} state=#{version&.app_store_state}") if version
       end
     rescue => e
-      say.call("WARN", "Version", "lookup failed: #{e.message}")
+      say.call("WARN", "Editable version", "lookup failed: #{e.message}")
     end
 
     begin
@@ -128,8 +149,7 @@ platform :ios do
     end
 
     begin
-      builds = app.get_builds(limit: 5)
-      builds.each do |bd|
+      app.get_builds.sort_by { |bd| -bd.version.to_i }.first(3).each do |bd|
         say.call("INFO", "TestFlight build", "#{bd.version} processing=#{bd.processing_state} expired=#{bd.expired}")
       end
     rescue => e

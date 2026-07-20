@@ -1,12 +1,18 @@
 import SwiftUI
 
-/// The city-wide deals rail (Lore+): passes and always-on bundles for the
-/// selected city, from the ranked `city_deal_feed`. Lives on the Tours tab —
-/// the "things to do here" home — right where someone planning a day wants it.
+/// The city-wide rail (Lore+): city passes and trip essentials for the selected
+/// city, from the ranked `city_deal_feed`. Lives on the Tours tab — the "things
+/// to do here" home — right where someone planning a day wants it.
 ///
-/// Same honesty contract as the place card's `DealSection`: self-hides when
-/// the city has nothing real; free users see a locked teaser with the true
-/// count; every offer names its marketplace and carries its checked date.
+/// Same honesty contract as the place card's `DealSection`: self-hides when the
+/// city has nothing real; free users see a locked teaser with the true count;
+/// every offer names its marketplace and carries its checked date.
+///
+/// Copy deliberately does NOT promise savings. Most city-wide rows are travel
+/// essentials (eSIM, car hire) with no discount attached — only a small share
+/// carry a real price or discount — so claiming "checked savings" here would
+/// oversell paywalled value. Genuine per-place pass inclusions live on the
+/// place card instead.
 struct CityDealsSection: View {
     let city: String
 
@@ -51,7 +57,7 @@ struct CityDealsSection: View {
     private var section: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text("PASSES & DEALS · \(cityLabel.uppercased())")
+                Text("PLAN YOUR VISIT · \(cityLabel.uppercased())")
                     .loreLabelStyle()
                     .foregroundStyle(LoreColor.brass700)
                 Spacer()
@@ -81,10 +87,10 @@ struct CityDealsSection: View {
                     .font(.system(size: 16))
                 VStack(alignment: .leading, spacing: 2) {
                     Text(deals.count == 1
-                         ? "A city pass deal in \(cityLabel)"
-                         : "\(deals.count) passes & deals in \(cityLabel)")
+                         ? "One way to plan \(cityLabel)"
+                         : "\(deals.count) ways to plan \(cityLabel)")
                         .font(LoreType.button)
-                    Text("Real, checked savings on this city's passes and attractions — the kind that pay Lore+ back.")
+                    Text("City passes, tours and the practical stuff — real links, checked. Included with Lore+.")
                         .font(LoreType.caption)
                         .foregroundStyle(LoreColor.ink600)
                 }
