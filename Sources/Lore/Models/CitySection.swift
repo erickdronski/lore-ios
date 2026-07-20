@@ -32,12 +32,15 @@ enum SectionKindMeta {
     /// eyebrow/title voice.
     static func header(for kind: String) -> (eyebrow: String, title: String) {
         switch kind {
+        case "name_origin": return ("First, the Name", "Why It's Called That")
         case "dish": return ("Eat Like a Local", "Taste of the City")
+        case "ritual": return ("Live Like a Local", "Rituals")
+        case "soundmark": return ("Eyes Closed", "The City's Sound")
+        case "material": return ("Look Closer", "What It's Made Of")
         case "sound": return ("Turn It Up", "The City's Sound")
         case "screen": return ("As Seen On", "Screen & Page")
         case "etiquette": return ("Blend In", "Local Code")
         case "number": return ("The Big Figures", "City in Numbers")
-        case "ritual": return ("Live Like a Local", "Rituals")
         case "market": return ("Go Where They Go", "Markets & Streets")
         default:
             let pretty = kind.replacingOccurrences(of: "_", with: " ").capitalized
@@ -48,13 +51,16 @@ enum SectionKindMeta {
     /// Stable ordering for known kinds; unknown kinds sort after, alphabetically.
     static func order(for kind: String) -> Int {
         switch kind {
-        case "dish": return 0
-        case "sound": return 1
-        case "screen": return 2
-        case "etiquette": return 3
-        case "ritual": return 4
-        case "market": return 5
-        case "number": return 6
+        case "name_origin": return 0   // identity first
+        case "dish": return 1
+        case "ritual": return 2
+        case "soundmark": return 3
+        case "material": return 4
+        case "sound": return 5
+        case "screen": return 6
+        case "etiquette": return 7
+        case "market": return 8
+        case "number": return 9
         default: return 50
         }
     }
