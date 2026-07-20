@@ -117,6 +117,31 @@ struct LoreAPI {
         )
     }
 
+    /// The city's signature hue system, if curated. One row or none.
+    /// `GET /rest/v1/city_theme?city=eq.{city}&limit=1`
+    func cityTheme(city: String = Config.defaultCity) async throws -> CityTheme? {
+        let rows: [CityTheme] = try await get(
+            "city_theme",
+            query: [
+                URLQueryItem(name: "city", value: "eq.\(city)"),
+                URLQueryItem(name: "limit", value: "1"),
+            ]
+        )
+        return rows.first
+    }
+
+    /// The city's flavor sections (dish, sound, etiquette, …), any kind.
+    /// `GET /rest/v1/city_section?city=eq.{city}&order=sort`
+    func citySections(city: String = Config.defaultCity) async throws -> [CitySection] {
+        try await get(
+            "city_section",
+            query: [
+                URLQueryItem(name: "city", value: "eq.\(city)"),
+                URLQueryItem(name: "order", value: "sort.asc"),
+            ]
+        )
+    }
+
     /// Published tours for a city, stops embedded and ordered by `seq`.
     /// `GET /rest/v1/tour?city=eq.{city}&select=*,tour_stop(*)&order=title.asc`
     func tours(city: String = Config.defaultCity) async throws -> [Tour] {

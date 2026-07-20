@@ -138,7 +138,7 @@ struct CultureView: View {
 
                 if !model.facts.isEmpty {
                     VStack(alignment: .leading, spacing: 14) {
-                        CultureSectionHeader(eyebrow: "Wait, Really?", title: "Did You Know")
+                        CultureSectionHeader(eyebrow: "Wait, Really?", title: "Did You Know", accent: accent)
                             .padding(.horizontal, 16)
                         DidYouKnowDeck(facts: model.facts)
                     }
@@ -147,7 +147,7 @@ struct CultureView: View {
 
                 if !model.stats.isEmpty {
                     VStack(alignment: .leading, spacing: 14) {
-                        CultureSectionHeader(eyebrow: "The Big Figures", title: "By the Numbers")
+                        CultureSectionHeader(eyebrow: "The Big Figures", title: "By the Numbers", accent: accent)
                             .padding(.horizontal, 16)
                         ByTheNumbersStrip(stats: model.stats)
                     }
@@ -156,7 +156,7 @@ struct CultureView: View {
 
                 if !model.people.isEmpty {
                     VStack(alignment: .leading, spacing: 14) {
-                        CultureSectionHeader(eyebrow: "The Locals", title: "Famous Faces")
+                        CultureSectionHeader(eyebrow: "The Locals", title: "Famous Faces", accent: accent)
                             .padding(.horizontal, 16)
                         FamousFacesRow(people: model.people) { person in
                             model.selectedPerson = person
@@ -167,7 +167,7 @@ struct CultureView: View {
 
                 if !model.lingo.isEmpty {
                     VStack(alignment: .leading, spacing: 14) {
-                        CultureSectionHeader(eyebrow: "Talk Like a Local", title: "Local Lingo")
+                        CultureSectionHeader(eyebrow: "Talk Like a Local", title: "Local Lingo", accent: accent)
                             .padding(.horizontal, 16)
                         lingoGrid
                     }
@@ -176,18 +176,42 @@ struct CultureView: View {
 
                 if !model.sayings.isEmpty {
                     VStack(alignment: .leading, spacing: 14) {
-                        CultureSectionHeader(eyebrow: "How We Say It", title: "Sayings")
+                        CultureSectionHeader(eyebrow: "How We Say It", title: "Sayings", accent: accent)
                             .padding(.horizontal, 16)
                         sayingsRow
                     }
                     .staggerChild(index: 6)
                 }
 
+                if !model.flavor.isEmpty {
+                    // The flavor layer: dish/sound/etiquette/… shelves, any kind
+                    // the server sends. One block in the cascade so indices of
+                    // the culture sections above stay stable.
+                    VStack(alignment: .leading, spacing: 32) {
+                        ForEach(model.flavor, id: \.kind) { group in
+                            let meta = SectionKindMeta.header(for: group.kind)
+                            VStack(alignment: .leading, spacing: 14) {
+                                CultureSectionHeader(eyebrow: meta.eyebrow, title: meta.title, accent: accent)
+                                    .padding(.horizontal, 16)
+                                CityFlavorShelf(entries: group.entries, accent: accent ?? LoreColor.brass300)
+                            }
+                        }
+                    }
+                    .staggerChild(index: 7)
+                }
+
                 Color.clear.frame(height: 24)
             }
             .padding(.top, 8)
+            .background(alignment: .top) {
+                // The city's signature wash, scrolling away with the header.
+                CityThemeWash(theme: model.theme)
+            }
         }
     }
+
+    /// The city accent for section eyebrows and card rules; nil = house brass.
+    private var accent: Color? { model.theme?.accentColor }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -374,6 +398,12 @@ final class CultureModel {
     /// The person whose bio sheet is presented, if any.
     var selectedPerson: CityCulture?
 
+    /// The city's signature hue system, if curated (nil = house palette).
+    private(set) var theme: CityTheme?
+    /// Flavor sections grouped by kind, in `SectionKindMeta` order. Any kind
+    /// the server sends renders; old kinds never break.
+    private(set) var flavor: [(kind: String, entries: [CitySection])] = []
+
     /// Human-friendly city name. Falls back to a title-cased slug when the
     /// `city` table hasn't been consulted (this surface only needs the slug).
     func cityDisplayName(for slug: String) -> String {
@@ -385,9 +415,12 @@ final class CultureModel {
     func load(city: String) async {
         guard case .loading = state else { return }
         do {
-            // Best-effort proper city name + facts (non-fatal if either fails).
+            // Best-effort proper city name + facts + theme + flavor sections
+            // (all non-fatal if they fail).
             async let citiesTask = try? LoreAPI.shared.cities()
             async let factsTask = try? LoreAPI.shared.cityFacts(city: city)
+            async let themeTask = try? LoreAPI.shared.cityTheme(city: city)
+            async let sectionsTask = try? LoreAPI.shared.citySections(city: city)
             let rows = try await LoreAPI.shared.culture(city: city)
             if let cities = await citiesTask {
                 cityNames = Dictionary(
@@ -403,6 +436,15 @@ final class CultureModel {
 
             facts = await factsTask ?? []
             stats = facts.filter(\.hasStat)
+
+            theme = (await themeTask) ?? nil
+            let sections = (await sectionsTask) ?? []
+            flavor = Dictionary(grouping: sections, by: \.kind)
+                .map { (kind: $0.key, entries: $0.value.sorted { ($0.sort ?? 100) < ($1.sort ?? 100) }) }
+                .sorted {
+                    let (a, b) = (SectionKindMeta.order(for: $0.kind), SectionKindMeta.order(for: $1.kind))
+                    return a == b ? $0.kind < $1.kind : a < b
+                }
 
             state = (rows.isEmpty && facts.isEmpty) ? .empty : .loaded
         } catch {

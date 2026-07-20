@@ -377,12 +377,14 @@ struct LingoDetailSheet: View {
 struct CultureSectionHeader: View {
     let eyebrow: String
     let title: String
+    /// City-theme accent for the eyebrow; nil keeps the house brass.
+    var accent: Color? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(eyebrow.uppercased())
                 .loreLabelStyle()
-                .foregroundStyle(LoreColor.brass300)
+                .foregroundStyle(accent ?? LoreColor.brass300)
             Text(title)
                 .font(LoreType.displayM)
                 .foregroundStyle(LoreColor.bone)
