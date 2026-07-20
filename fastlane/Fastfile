@@ -75,6 +75,161 @@ platform :ios do
     )
   end
 
+  # Authenticate Spaceship (the ASC API client) from the same secrets the other
+  # lanes use. ASC_KEY_CONTENT is stored base64-encoded.
+  def self.asc_token!
+    require "spaceship"
+    require "base64"
+    Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.create(
+      key_id: ENV.fetch("ASC_KEY_ID"),
+      issuer_id: ENV.fetch("ASC_ISSUER_ID"),
+      key: Base64.decode64(ENV.fetch("ASC_KEY_CONTENT")),
+    )
+  end
+
+  desc "READ-ONLY App Store submission preflight — reports the real ASC state"
+  lane :preflight do
+    # Pure GET calls. Changes nothing. Every section is individually rescued so
+    # one unsupported endpoint cannot blind the rest of the audit. Findings are
+    # prefixed PF| so they can be grepped straight out of the CI log.
+    self.class.asc_token!
+    say = ->(status, label, detail) { UI.message("PF|#{status}|#{label}|#{detail}") }
+
+    app = Spaceship::ConnectAPI::App.find(BUNDLE_ID)
+    if app.nil?
+      say.call("FAIL", "App", "No app found for #{BUNDLE_ID}")
+      next
+    end
+    say.call("INFO", "App", "#{app.name} (#{BUNDLE_ID}) id=#{app.id} locale=#{app.primary_locale}")
+
+    # --- Editable version + attached build ---
+    version = nil
+    begin
+      version = app.get_edit_app_store_version
+      if version
+        say.call("INFO", "Version", "#{version.version_string} state=#{version.app_store_state} release=#{version.release_type}")
+      else
+        say.call("WARN", "Version", "No editable version — nothing staged to submit")
+      end
+    rescue => e
+      say.call("WARN", "Version", "lookup failed: #{e.message}")
+    end
+
+    begin
+      b = version&.get_build
+      if b
+        say.call("PASS", "Build attached", "build #{b.version} state=#{b.processing_state}")
+      else
+        say.call("FAIL", "Build attached", "No build attached to the editable version")
+      end
+    rescue => e
+      say.call("WARN", "Build attached", "lookup failed: #{e.message}")
+    end
+
+    begin
+      builds = app.get_builds(limit: 5)
+      builds.each do |bd|
+        say.call("INFO", "TestFlight build", "#{bd.version} processing=#{bd.processing_state} expired=#{bd.expired}")
+      end
+    rescue => e
+      say.call("WARN", "TestFlight builds", "lookup failed: #{e.message}")
+    end
+
+    # --- Store listing text ---
+    begin
+      version&.get_app_store_version_localizations&.each do |loc|
+        desc_len = loc.description.to_s.length
+        say.call(desc_len > 10 ? "PASS" : "FAIL", "Description (#{loc.locale})", "#{desc_len} chars")
+        say.call(loc.keywords.to_s.empty? ? "FAIL" : "PASS", "Keywords (#{loc.locale})", loc.keywords.to_s)
+        say.call(loc.support_url.to_s.empty? ? "FAIL" : "PASS", "Support URL", loc.support_url.to_s)
+        say.call(loc.marketing_url.to_s.empty? ? "WARN" : "PASS", "Marketing URL", loc.marketing_url.to_s)
+        say.call(loc.whats_new.to_s.empty? ? "WARN" : "PASS", "What's New", "#{loc.whats_new.to_s.length} chars")
+        say.call(loc.promotional_text.to_s.empty? ? "WARN" : "PASS", "Promo text", "#{loc.promotional_text.to_s.length} chars")
+
+        # Screenshots per device slot
+        begin
+          loc.get_app_screenshot_sets.each do |set|
+            n = set.app_screenshots&.count.to_i
+            say.call(n.zero? ? "FAIL" : "PASS", "Screenshots #{set.screenshot_display_type}", "#{n} image(s)")
+          end
+        rescue => e
+          say.call("WARN", "Screenshots", "lookup failed: #{e.message}")
+        end
+      end
+    rescue => e
+      say.call("WARN", "Listing text", "lookup failed: #{e.message}")
+    end
+
+    # --- Privacy policy + age rating (live on AppInfo, not the version) ---
+    begin
+      app.get_app_infos.each do |info|
+        begin
+          info.get_app_info_localizations.each do |il|
+            next if il.privacy_policy_url.to_s.empty? && il.locale != app.primary_locale
+            say.call(il.privacy_policy_url.to_s.empty? ? "FAIL" : "PASS",
+                     "Privacy policy URL (#{il.locale})", il.privacy_policy_url.to_s)
+          end
+        rescue => e
+          say.call("WARN", "Privacy policy URL", "lookup failed: #{e.message}")
+        end
+        begin
+          ard = info.get_age_rating_declaration
+          say.call(ard.nil? ? "FAIL" : "PASS", "Age rating declaration", ard.nil? ? "missing" : "present")
+        rescue => e
+          say.call("WARN", "Age rating", "lookup failed: #{e.message}")
+        end
+      end
+    rescue => e
+      say.call("WARN", "AppInfo", "lookup failed: #{e.message}")
+    end
+
+    # --- Subscriptions (Lore+): each needs a review screenshot to be submittable ---
+    begin
+      groups = app.get_subscription_groups
+      if groups.nil? || groups.empty?
+        say.call("WARN", "Subscriptions", "No subscription groups returned")
+      end
+      groups&.each do |g|
+        subs = begin
+                 g.get_subscriptions
+               rescue
+                 nil
+               end
+        subs&.each do |s|
+          say.call("INFO", "Subscription", "#{s.name} product=#{s.product_id} state=#{s.state}")
+        end
+      end
+    rescue => e
+      say.call("WARN", "Subscriptions", "lookup failed (may need UI check): #{e.message}")
+    end
+
+    # --- Already submitted? ---
+    begin
+      sub = version&.fetch_app_store_version_submission
+      say.call(sub.nil? ? "INFO" : "WARN", "Existing submission",
+               sub.nil? ? "none — version is not yet submitted" : "a submission already exists")
+    rescue => e
+      say.call("INFO", "Existing submission", "none detected (#{e.class})")
+    end
+
+    UI.important("PF|NOTE|Manual-only checks|EU trader status, Paid Applications Agreement and subscription REVIEW SCREENSHOTS are not reliably exposed by the ASC API — confirm in the App Store Connect UI.")
+  end
+
+  desc "Submit the editable App Store version for review (guarded)"
+  lane :submit_for_review do
+    self.class.asc_token!
+    app = Spaceship::ConnectAPI::App.find(BUNDLE_ID)
+    UI.user_error!("No app for #{BUNDLE_ID}") if app.nil?
+    version = app.get_edit_app_store_version
+    UI.user_error!("No editable version to submit") if version.nil?
+    build = version.get_build
+    UI.user_error!("Refusing to submit: no build attached to #{version.version_string}") if build.nil?
+
+    UI.important("Submitting #{app.name} #{version.version_string} (build #{build.version}) for review…")
+    version.create_app_store_version_submission
+    UI.success("Submitted #{version.version_string} build #{build.version} for App Store review.")
+  end
+
   desc "Build Lore and upload the build to TestFlight"
   lane :beta do
     # Local/manual invocations cannot bypass tests. CI sets LORE_TESTED=1 only

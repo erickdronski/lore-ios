@@ -1,0 +1,48 @@
+name: App Store · Preflight / Submit
+
+# Two manual, API-only operations against App Store Connect:
+#   preflight — READ-ONLY audit of the real submission state (changes nothing)
+#   submit    — submits the editable version for App Store review
+# Runs on Linux: pure ASC API calls, no Xcode, no Simulator, 1x runner cost.
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "preflight (read-only audit) or submit (sends for review)"
+        required: true
+        default: preflight
+        type: choice
+        options:
+          - preflight
+          - submit
+
+concurrency:
+  group: app-store-preflight
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Ruby + Fastlane (cached)
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.2"
+          bundler-cache: true
+
+      - name: Run ${{ inputs.action }}
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_CONTENT: ${{ secrets.ASC_KEY_CONTENT }}
+        run: |
+          if [ "${{ inputs.action }}" = "submit" ]; then
+            bundle exec fastlane submit_for_review
+          else
+            bundle exec fastlane preflight
+          fi
