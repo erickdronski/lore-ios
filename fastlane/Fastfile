@@ -16,6 +16,19 @@ WIDGET_ID = "com.erickdronski.lore.LoreWidget"
 TEAM_ID = "J9DMDH4S58"
 CERTS_REPO = "https://github.com/erickdronski/lore-certs.git"
 
+# Authenticate Spaceship (the ASC API client) from the same secrets the other
+# lanes use. ASC_KEY_CONTENT is stored base64-encoded. Defined at the top level
+# of the Fastfile so every lane can call it directly.
+def asc_token!
+  require "spaceship"
+  require "base64"
+  Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.create(
+    key_id: ENV.fetch("ASC_KEY_ID"),
+    issuer_id: ENV.fetch("ASC_ISSUER_ID"),
+    key: Base64.decode64(ENV.fetch("ASC_KEY_CONTENT")),
+  )
+end
+
 platform :ios do
   desc "Run the release unit-test gate on an iPhone simulator"
   lane :tests do
@@ -75,24 +88,12 @@ platform :ios do
     )
   end
 
-  # Authenticate Spaceship (the ASC API client) from the same secrets the other
-  # lanes use. ASC_KEY_CONTENT is stored base64-encoded.
-  def self.asc_token!
-    require "spaceship"
-    require "base64"
-    Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.create(
-      key_id: ENV.fetch("ASC_KEY_ID"),
-      issuer_id: ENV.fetch("ASC_ISSUER_ID"),
-      key: Base64.decode64(ENV.fetch("ASC_KEY_CONTENT")),
-    )
-  end
-
   desc "READ-ONLY App Store submission preflight — reports the real ASC state"
   lane :preflight do
     # Pure GET calls. Changes nothing. Every section is individually rescued so
     # one unsupported endpoint cannot blind the rest of the audit. Findings are
     # prefixed PF| so they can be grepped straight out of the CI log.
-    self.class.asc_token!
+    asc_token!
     say = ->(status, label, detail) { UI.message("PF|#{status}|#{label}|#{detail}") }
 
     app = Spaceship::ConnectAPI::App.find(BUNDLE_ID)
@@ -217,7 +218,7 @@ platform :ios do
 
   desc "Submit the editable App Store version for review (guarded)"
   lane :submit_for_review do
-    self.class.asc_token!
+    asc_token!
     app = Spaceship::ConnectAPI::App.find(BUNDLE_ID)
     UI.user_error!("No app for #{BUNDLE_ID}") if app.nil?
     version = app.get_edit_app_store_version
