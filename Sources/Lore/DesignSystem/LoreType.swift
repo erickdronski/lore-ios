@@ -19,24 +19,64 @@ enum LoreType {
         UIFont(name: frauncesFamily, size: 17) != nil
     }
 
-    /// A display (serif) font: Fraunces when bundled, New York otherwise.
-    static func display(size: CGFloat, weight: Font.Weight = .semibold) -> Font {
-        if frauncesAvailable {
-            return .custom(frauncesFamily, size: size).weight(weight)
+    /// A Dynamic Type-aware display font: Fraunces when bundled, New York
+    /// otherwise. `UIFontMetrics` preserves the token's intended default size
+    /// while allowing every display use to follow the user's text-size choice.
+    static func display(
+        size: CGFloat,
+        weight: Font.Weight = .semibold,
+        relativeTo textStyle: UIFont.TextStyle? = nil
+    ) -> Font {
+        let style = textStyle ?? displayTextStyle(for: size)
+        let baseFont: UIFont
+
+        if let fraunces = UIFont(name: frauncesFamily, size: size) {
+            baseFont = fraunces
+        } else {
+            let system = UIFont.systemFont(ofSize: size)
+            let descriptor = system.fontDescriptor.withDesign(.serif) ?? system.fontDescriptor
+            baseFont = UIFont(descriptor: descriptor, size: size)
         }
-        return .system(size: size, weight: weight, design: .serif)
+
+        let scaled = UIFontMetrics(forTextStyle: style).scaledFont(for: baseFont)
+        return Font(scaled).weight(weight)
+    }
+
+    /// Semantic scaling bucket for an arbitrary display token.
+    static func displayTextStyle(for size: CGFloat) -> UIFont.TextStyle {
+        switch size {
+        case 34...: return .largeTitle
+        case 28..<34: return .title1
+        case 22..<28: return .title2
+        case 20..<22: return .title3
+        case 17..<20: return .body
+        case 14..<17: return .callout
+        case 13..<14: return .footnote
+        default: return .caption2
+        }
+    }
+
+    /// Deterministic scaling hook used by focused accessibility tests.
+    static func scaledDisplayPointSize(
+        _ size: CGFloat,
+        relativeTo textStyle: UIFont.TextStyle? = nil,
+        category: UIContentSizeCategory
+    ) -> CGFloat {
+        let style = textStyle ?? displayTextStyle(for: size)
+        let traits = UITraitCollection(preferredContentSizeCategory: category)
+        return UIFontMetrics(forTextStyle: style).scaledValue(for: size, compatibleWith: traits)
     }
 
     // MARK: Scale
 
     /// 40/44 semibold, deep-dive place name.
-    static var displayXL: Font { display(size: 40, weight: .semibold) }
+    static var displayXL: Font { display(size: 40, weight: .semibold, relativeTo: .largeTitle) }
     /// 28/34 semibold, Layer-1 card place name.
-    static var displayL: Font { display(size: 28, weight: .semibold) }
+    static var displayL: Font { display(size: 28, weight: .semibold, relativeTo: .title1) }
     /// 22/28 medium, section heads, tour titles.
-    static var displayM: Font { display(size: 22, weight: .medium) }
+    static var displayM: Font { display(size: 22, weight: .medium, relativeTo: .title2) }
     /// 17/24 medium italic, the Layer-1 hook line.
-    static var hook: Font { display(size: 17, weight: .medium).italic() }
+    static var hook: Font { display(size: 17, weight: .medium, relativeTo: .body).italic() }
     /// 17/24 regular SF Pro, UI copy, forms, settings.
     static var body: Font { .body }
     /// 13/18 regular SF Pro, provenance, timestamps, distances, meters.

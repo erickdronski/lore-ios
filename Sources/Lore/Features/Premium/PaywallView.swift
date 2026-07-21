@@ -31,6 +31,7 @@ struct PaywallView: View {
     var context: PaywallContext = .general
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var model = PaywallModel()
     /// Content cross-fades in (reveal.bloom feel, no bounce/shimmer per §6).
     @State private var appeared = false
@@ -145,7 +146,31 @@ struct PaywallView: View {
 
     private var featureTable: some View {
         VStack(spacing: 0) {
-            // Header row
+            featureTableHeader
+
+            ForEach(FeatureComparison.all) { row in
+                Divider().overlay(LoreColor.ink700)
+                FeatureRow(row: row)
+            }
+        }
+        .background(LoreColor.ink800, in: RoundedRectangle(cornerRadius: 20))
+        .overlay(
+            RoundedRectangle(cornerRadius: 20)
+                .strokeBorder(LoreColor.ink700, lineWidth: 1)
+        )
+    }
+
+    @ViewBuilder
+    private var featureTableHeader: some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            Text("What you get")
+                .font(LoreType.label)
+                .tracking(0.6)
+                .foregroundStyle(LoreColor.bone.opacity(0.72))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+        } else {
             HStack {
                 Text("What you get")
                     .font(LoreType.label)
@@ -163,17 +188,7 @@ struct PaywallView: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
-
-            ForEach(FeatureComparison.all) { row in
-                Divider().overlay(LoreColor.ink700)
-                FeatureRow(row: row)
-            }
         }
-        .background(LoreColor.ink800, in: RoundedRectangle(cornerRadius: 20))
-        .overlay(
-            RoundedRectangle(cornerRadius: 20)
-                .strokeBorder(LoreColor.ink700, lineWidth: 1)
-        )
     }
 
     // MARK: Purchase CTA
@@ -472,10 +487,34 @@ struct FeatureComparison: Identifiable {
     /// unlocks fully), but modeled for flexibility.
     let plus: Cell
 
+    enum Tier: Equatable {
+        case free
+        case lorePlus
+
+        var label: String {
+            switch self {
+            case .free: return "Free"
+            case .lorePlus: return "Lore Plus"
+            }
+        }
+    }
+
     enum Cell {
         case yes
         case no
         case text(String)
+
+        var accessibilityValue: String {
+            switch self {
+            case .yes: return "Included"
+            case .no: return "Not included"
+            case .text(let value): return value == "3/day" ? "3 per day" : value
+            }
+        }
+
+        func accessibilityLabel(for tier: Tier) -> String {
+            "\(tier.label): \(accessibilityValue)"
+        }
     }
 
     /// The honest table: only features that actually ship and are actually
@@ -501,36 +540,78 @@ struct FeatureComparison: Identifiable {
 
 private struct FeatureRow: View {
     let row: FeatureComparison
-
-    var body: some View {
-        HStack {
-            Text(row.label)
-                .font(LoreType.body)
-                .foregroundStyle(LoreColor.bone)
-            Spacer()
-            cell(row.free).frame(width: 52)
-            cell(row.plus, plus: true).frame(width: 52)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-    }
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     @ViewBuilder
-    private func cell(_ value: FeatureComparison.Cell, plus: Bool = false) -> some View {
-        switch value {
-        case .yes:
-            Image(systemName: "checkmark")
-                .font(.system(size: 14, weight: .bold))
-                .foregroundStyle(plus ? LoreColor.brass300 : LoreColor.successDark)
-        case .no:
-            Image(systemName: "minus")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(LoreColor.bone.opacity(0.72))
-        case .text(let string):
-            Text(string)
-                .font(LoreType.caption)
-                .foregroundStyle(LoreColor.bone.opacity(0.72))
+    var body: some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 10) {
+                featureLabel
+                HStack(alignment: .top, spacing: 16) {
+                    expandedCell(row.free, tier: .free)
+                    expandedCell(row.plus, tier: .lorePlus)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+        } else {
+            HStack {
+                featureLabel
+                Spacer()
+                cell(row.free, tier: .free)
+                    .frame(width: 52)
+                cell(row.plus, tier: .lorePlus)
+                    .frame(width: 52)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
         }
+    }
+
+    private var featureLabel: some View {
+        Text(row.label)
+            .font(LoreType.body)
+            .foregroundStyle(LoreColor.bone)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func expandedCell(
+        _ value: FeatureComparison.Cell,
+        tier: FeatureComparison.Tier
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(tier.label)
+                .font(LoreType.label)
+                .foregroundStyle(tier == .lorePlus ? LoreColor.brass300 : LoreColor.bone.opacity(0.72))
+                .accessibilityHidden(true)
+            cell(value, tier: tier)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func cell(
+        _ value: FeatureComparison.Cell,
+        tier: FeatureComparison.Tier
+    ) -> some View {
+        Group {
+            switch value {
+            case .yes:
+                Image(systemName: "checkmark")
+                    .font(.system(.callout, design: .default, weight: .bold))
+                    .foregroundStyle(tier == .lorePlus ? LoreColor.brass300 : LoreColor.successDark)
+            case .no:
+                Image(systemName: "minus")
+                    .font(.system(.callout, design: .default, weight: .semibold))
+                    .foregroundStyle(LoreColor.bone.opacity(0.72))
+            case .text(let string):
+                Text(string)
+                    .font(LoreType.caption)
+                    .foregroundStyle(LoreColor.bone.opacity(0.72))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(value.accessibilityLabel(for: tier))
     }
 }
 

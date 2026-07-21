@@ -9,10 +9,12 @@ import UIKit
 ///
 /// This is the emotional top of the "Meet {City}" surface: one arresting line
 /// in the world's words, its author in the app's words beneath. Under Reduce
-/// Motion the auto-rotation still advances (information isn't removed), the
-/// transition just becomes the standard 160 ms crossfade via `LoreMotion`.
+/// Motion, automatic paging pauses so the interface does not move without a
+/// gesture; every quote remains available through the standard page swipe.
 struct CultureQuoteCard: View {
     let quotes: [CityCulture]
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var index = 0
     @State private var autoAdvance = true
 
@@ -33,16 +35,20 @@ struct CultureQuoteCard: View {
                 }
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
-            .frame(height: 210)
+            .frame(height: quoteCardHeight)
 
             if quotes.count > 1 {
                 quoteDots
             }
         }
         .onReceive(rotation) { _ in
-            guard autoAdvance, quotes.count > 1 else { return }
+            guard autoAdvance, !reduceMotion, quotes.count > 1 else { return }
             advance()
         }
+    }
+
+    private var quoteCardHeight: CGFloat {
+        dynamicTypeSize.isAccessibilitySize ? 420 : 210
     }
 
     /// One quote card face inside the pager.
@@ -51,21 +57,21 @@ struct CultureQuoteCard: View {
             Text("\u{201C}")
                 .font(LoreType.display(size: 52, weight: .semibold))
                 .foregroundStyle(LoreColor.brass300)
-                .frame(height: 28, alignment: .top)
+                .frame(minHeight: dynamicTypeSize.isAccessibilitySize ? 56 : 28, alignment: .top)
                 .accessibilityHidden(true)
 
             Text(quote.headline)
                 .font(LoreType.display(size: 24, weight: .medium))
                 .foregroundStyle(LoreColor.bone)
-                .minimumScaleFactor(0.6)
-                .lineLimit(5)
+                .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 1 : 0.6)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 5)
                 .fixedSize(horizontal: false, vertical: true)
 
             if let attribution = quote.attribution ?? quote.body {
                 Text(attribution)
                     .font(LoreType.caption)
                     .foregroundStyle(LoreColor.brass300)
-                    .lineLimit(2)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
             }
             Spacer(minLength: 0)
         }
@@ -104,7 +110,7 @@ struct CultureQuoteCard: View {
     /// user's swipe on the pager.
     private func advance() {
         guard quotes.count > 1 else { return }
-        withAnimation(LoreSpring.smooth(reduceMotion: false)) {
+        withAnimation(LoreSpring.smooth(reduceMotion: reduceMotion)) {
             index = (index + 1) % quotes.count
         }
     }
@@ -144,6 +150,7 @@ struct FamousFacesRow: View {
 /// person's name beneath.
 struct FamousFaceView: View {
     let person: CityCulture
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var portraitURL: URL?
     @State private var didResolve = false
 
@@ -155,9 +162,9 @@ struct FamousFaceView: View {
             Text(person.headline)
                 .font(LoreType.caption)
                 .foregroundStyle(LoreColor.bone)
-                .lineLimit(1)
-                .frame(width: diameter + 12)
-                .minimumScaleFactor(0.85)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
+                .frame(width: dynamicTypeSize.isAccessibilitySize ? 120 : diameter + 12)
+                .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 1 : 0.85)
         }
         .task { await resolvePortrait() }
         .accessibilityElement(children: .combine)
@@ -229,6 +236,10 @@ struct LingoFlipCard: View {
     /// here I can't click into or read further"). The compact card caps the
     /// back at a few lines; this reads the whole entry.
     @State private var showExpanded = false
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    private var cardWidth: CGFloat { dynamicTypeSize.isAccessibilitySize ? 260 : 180 }
+    private var cardHeight: CGFloat { dynamicTypeSize.isAccessibilitySize ? 250 : 150 }
 
     var body: some View {
         StatefulFlipCard {
@@ -240,8 +251,8 @@ struct LingoFlipCard: View {
                         .font(LoreType.display(size: 22, weight: .semibold))
                         .foregroundStyle(LoreColor.bone)
                         .multilineTextAlignment(.center)
-                        .minimumScaleFactor(0.7)
-                        .lineLimit(2)
+                        .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 1 : 0.7)
+                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 2)
                     Text("tap to flip")
                         .font(LoreType.micro)
                         .foregroundStyle(LoreColor.ink600)
@@ -260,12 +271,12 @@ struct LingoFlipCard: View {
                             .font(LoreType.caption)
                             .foregroundStyle(LoreColor.bone)
                             .fixedSize(horizontal: false, vertical: true)
-                            .lineLimit(4)
+                            .lineLimit(dynamicTypeSize.isAccessibilitySize ? 6 : 4)
                     }
                 }
             }
         }
-        .frame(width: 180, height: 150)
+        .frame(width: cardWidth, height: cardHeight)
         // An unmistakable "More" chip (long-press also works) so it's obvious
         // the full entry is a tap away, the old expand glyph read as decoration
         // (owner: "when I flip these I can't read all the text"). It sits above
@@ -282,7 +293,8 @@ struct LingoFlipCard: View {
                 .font(LoreType.micro)
                 .foregroundStyle(LoreColor.ink900)
                 .padding(.horizontal, 9)
-                .frame(height: 22)
+                .padding(.vertical, 3)
+                .frame(minHeight: 22)
                 .background(LoreColor.amber, in: Capsule())
             }
             .buttonStyle(.plain)
@@ -308,7 +320,7 @@ struct LingoFlipCard: View {
     ) -> some View {
         content()
             .padding(16)
-            .frame(width: 180, height: 150, alignment: alignment)
+            .frame(width: cardWidth, height: cardHeight, alignment: alignment)
             .background(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .fill(LoreColor.ink800)

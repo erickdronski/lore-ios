@@ -19,8 +19,10 @@ struct CityDealsSection: View {
     @Environment(EntitlementStore.self) private var entitlements
     @Environment(StoreKitService.self) private var store
     @Environment(AuthService.self) private var auth
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     @State private var deals: [Deal] = []
+    @State private var loadedCity: String?
     @State private var showPaywall = false
 
     /// "austin" → "Austin", "washington-dc" → "Washington Dc" is wrong, so
@@ -32,7 +34,7 @@ struct CityDealsSection: View {
 
     var body: some View {
         Group {
-            if deals.isEmpty {
+            if deals.isEmpty || loadedCity != city {
                 // Zero-size anchor: `.task` must fire while empty or the rail
                 // could never learn the city has offers (the empty-Group trap).
                 Color.clear.frame(width: 0, height: 0)
@@ -49,13 +51,54 @@ struct CityDealsSection: View {
     }
 
     private func load() async {
-        deals = (try? await LoreAPI.shared.cityDeals(city: city)) ?? []
+        // Remove the previous city's offers before the heading changes. The
+        // task is cancelled when `city` changes, so a late response cannot put
+        // stale rows back under the new city.
+        deals = []
+        loadedCity = nil
+        do {
+            let loaded = try await LoreAPI.shared.cityDeals(city: city)
+            guard !Task.isCancelled else { return }
+            deals = loaded
+            loadedCity = city
+        } catch is CancellationError {
+            return
+        } catch {
+            guard !Task.isCancelled else { return }
+            deals = []
+        }
     }
 
     // MARK: Plus
 
     private var section: some View {
         VStack(alignment: .leading, spacing: 10) {
+            sectionHeader
+            DealCommissionDisclosure()
+            ForEach(deals) { deal in
+                DealRow(deal: deal)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(LoreColor.bone200, in: RoundedRectangle(cornerRadius: 14))
+    }
+
+    @ViewBuilder
+    private var sectionHeader: some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("PLAN YOUR VISIT · \(cityLabel.uppercased())")
+                    .loreLabelStyle()
+                    .foregroundStyle(LoreColor.brass700)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let checked = deals.first?.checkedLabel {
+                    Text(checked)
+                        .font(LoreType.micro)
+                        .foregroundStyle(LoreColor.ink600)
+                }
+            }
+        } else {
             HStack {
                 Text("PLAN YOUR VISIT · \(cityLabel.uppercased())")
                     .loreLabelStyle()
@@ -67,13 +110,7 @@ struct CityDealsSection: View {
                         .foregroundStyle(LoreColor.ink600)
                 }
             }
-            ForEach(deals) { deal in
-                DealRow(deal: deal)
-            }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
-        .background(LoreColor.bone200, in: RoundedRectangle(cornerRadius: 14))
     }
 
     // MARK: Free
@@ -93,6 +130,7 @@ struct CityDealsSection: View {
                     Text("City passes, tours and the practical stuff — real links, checked. Included with Lore+.")
                         .font(LoreType.caption)
                         .foregroundStyle(LoreColor.ink600)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer()
                 Image(systemName: "lock.fill")

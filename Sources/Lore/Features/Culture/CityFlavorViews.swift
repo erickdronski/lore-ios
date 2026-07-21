@@ -51,6 +51,18 @@ struct CityFlavorShelf: View {
 private struct FlavorCard: View {
     let entry: CitySection
     let accent: Color
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    private var titleLayout: AnyLayout {
+        if dynamicTypeSize.isAccessibilitySize {
+            return AnyLayout(VStackLayout(alignment: .leading, spacing: 6))
+        }
+        return AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 8))
+    }
+
+    private var cardWidth: CGFloat {
+        dynamicTypeSize.isAccessibilitySize ? 320 : 280
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -58,7 +70,7 @@ private struct FlavorCard: View {
                 .fill(accent.opacity(0.85))
                 .frame(width: 28, height: 2)
                 .accessibilityHidden(true)
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
+            titleLayout {
                 if let emoji = entry.emoji, !emoji.isEmpty {
                     Text(emoji).font(.system(size: 20))
                 }
@@ -80,7 +92,7 @@ private struct FlavorCard: View {
             Spacer(minLength: 0)
         }
         .padding(14)
-        .frame(width: 280, alignment: .topLeading)
+        .frame(width: cardWidth, alignment: .topLeading)
         .frame(minHeight: 132)
         .background(LoreColor.ink900, in: RoundedRectangle(cornerRadius: 16))
         .overlay(

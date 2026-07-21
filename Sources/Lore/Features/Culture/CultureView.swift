@@ -17,6 +17,7 @@ struct CultureView: View {
     let city: String
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var model = CultureModel()
     /// Rises once on load so the Amber horizon glow swells, the meet-the-city
     /// cinematic beat (LUXURY-MOTION §6, §7).
@@ -216,7 +217,7 @@ struct CultureView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Meet \(model.cityDisplayName(for: city))")
-                .font(.system(size: 34, weight: .bold))
+                .font(LoreType.display(size: 34, weight: .bold, relativeTo: .largeTitle))
                 .foregroundStyle(LoreColor.bone)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
@@ -233,13 +234,23 @@ struct CultureView: View {
     /// sideways without a vertical wall.
     private var lingoGrid: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            LazyHGrid(rows: [GridItem(.fixed(150), spacing: 12), GridItem(.fixed(150), spacing: 12)], spacing: 12) {
+            LazyHGrid(
+                rows: [
+                    GridItem(.fixed(lingoCardHeight), spacing: 12),
+                    GridItem(.fixed(lingoCardHeight), spacing: 12),
+                ],
+                spacing: 12
+            ) {
                 ForEach(model.lingo) { entry in
                     LingoFlipCard(entry: entry)
                 }
             }
             .padding(.horizontal, 16)
         }
+    }
+
+    private var lingoCardHeight: CGFloat {
+        dynamicTypeSize.isAccessibilitySize ? 250 : 150
     }
 
     private var sayingsRow: some View {
@@ -412,6 +423,14 @@ final class CultureModel {
 
     private var cityNames: [String: String] = [:]
 
+    nonisolated static func hasContent(
+        cultureCount: Int,
+        factCount: Int,
+        flavorCount: Int
+    ) -> Bool {
+        cultureCount > 0 || factCount > 0 || flavorCount > 0
+    }
+
     func load(city: String) async {
         guard case .loading = state else { return }
         do {
@@ -446,7 +465,11 @@ final class CultureModel {
                     return a == b ? $0.kind < $1.kind : a < b
                 }
 
-            state = (rows.isEmpty && facts.isEmpty) ? .empty : .loaded
+            state = Self.hasContent(
+                cultureCount: rows.count,
+                factCount: facts.count,
+                flavorCount: sections.count
+            ) ? .loaded : .empty
         } catch {
             state = .failed("Check your connection and try again.")
         }
