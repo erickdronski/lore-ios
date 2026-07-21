@@ -143,6 +143,36 @@ final class JournalStoreTests: XCTestCase {
         XCTAssertEqual(store.visitHistory.first?.photoPaths, patchedPaths.last)
     }
 
+    func testDifferentPhotoAfterFailureGetsItsOwnUploadPath() async {
+        var uploadCount = 0
+        var patchCount = 0
+        var patchedPaths: [[String]] = []
+        let original = entry(index: 1, photos: ["user/place/existing.jpg"])
+        let client = makeClient(
+            historyPage: { _, _, _ in [original] },
+            uploadPhoto: { _, _, _, _ in
+                uploadCount += 1
+                return "user/place/new-\(uploadCount).jpg"
+            },
+            updatePhotos: { _, paths, _ in
+                patchCount += 1
+                patchedPaths.append(paths)
+                if patchCount == 1 { throw JournalTestError.expected }
+            }
+        )
+        let store = makeStore(client: client)
+        await store.loadHistory()
+
+        guard case .failed = await store.addPhoto(placeID: original.placeID, imageData: Data([1])) else {
+            return XCTFail("Expected the first metadata write to fail")
+        }
+        let result = await store.addPhoto(placeID: original.placeID, imageData: Data([2]))
+
+        XCTAssertEqual(result, .saved)
+        XCTAssertEqual(uploadCount, 2)
+        XCTAssertEqual(patchedPaths.last, ["user/place/existing.jpg", "user/place/new-2.jpg"])
+    }
+
     func testSignedPhotoRequestsAreCoalescedAndCapped() async {
         let probe = JournalPhotoProbe()
         let client = makeClient(
