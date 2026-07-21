@@ -134,9 +134,9 @@ final class VisitStore {
     private let api: LoreAPI
     private let journal: JournalClient
     private let photoRequestGate = JournalRequestGate(limit: 4)
-    private var signedPhotoURLCache: [String: URL] = [:]
+    private var signedPhotoURLCache: [String: (url: URL, expiresAt: Date)] = [:]
     private var signedPhotoURLTasks: [String: Task<URL?, Never>] = [:]
-    private var pendingPhotoPaths: [String: String] = [:]
+    private var pendingPhotoUploads: [String: (data: Data, path: String)] = [:]
     private var shareWriteTasks: [String: Task<JournalWriteResult, Never>] = [:]
     private var shareWriteGenerations: [String: Int] = [:]
 
@@ -322,8 +322,8 @@ final class VisitStore {
         }
         do {
             let path: String
-            if let pending = pendingPhotoPaths[placeID] {
-                path = pending
+            if let pending = pendingPhotoUploads[placeID], pending.data == imageData {
+                path = pending.path
             } else {
                 path = try await journal.uploadPhoto(
                     imageData,
@@ -331,7 +331,7 @@ final class VisitStore {
                     placeID,
                     creds.accessToken
                 )
-                pendingPhotoPaths[placeID] = path
+                pendingPhotoUploads[placeID] = (imageData, path)
             }
 
             let loadedEntry = visitHistory.first { $0.placeID == placeID }
@@ -349,7 +349,7 @@ final class VisitStore {
             guard credentials()?.userID == creds.userID else {
                 return .failed("The account changed before the photo finished saving.")
             }
-            pendingPhotoPaths[placeID] = nil
+            pendingPhotoUploads[placeID] = nil
             updateHistoryEntry(placeID: placeID) { $0.withPhotos(paths) }
             lastError = nil
             return .saved
@@ -362,7 +362,10 @@ final class VisitStore {
     func signedPhotoURL(path: String) async -> URL? {
         guard let creds = credentials() else { return nil }
         let cacheKey = "\(creds.userID)|\(path)"
-        if let cached = signedPhotoURLCache[cacheKey] { return cached }
+        if let cached = signedPhotoURLCache[cacheKey], cached.expiresAt > Date() {
+            return cached.url
+        }
+        signedPhotoURLCache[cacheKey] = nil
         if let inFlight = signedPhotoURLTasks[cacheKey] {
             let url = await inFlight.value
             guard credentials()?.userID == creds.userID else { return nil }
@@ -380,7 +383,9 @@ final class VisitStore {
         let url = await task.value
         signedPhotoURLTasks[cacheKey] = nil
         guard credentials()?.userID == creds.userID else { return nil }
-        if let url { signedPhotoURLCache[cacheKey] = url }
+        if let url {
+            signedPhotoURLCache[cacheKey] = (url, Date().addingTimeInterval(55 * 60))
+        }
         return url
     }
 
@@ -523,7 +528,7 @@ final class VisitStore {
         signedPhotoURLTasks.values.forEach { $0.cancel() }
         signedPhotoURLTasks = [:]
         signedPhotoURLCache = [:]
-        pendingPhotoPaths = [:]
+        pendingPhotoUploads = [:]
         lastError = nil
     }
 }
