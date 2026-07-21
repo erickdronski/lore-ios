@@ -79,6 +79,7 @@ struct DealSection: View {
                     .font(.system(size: 12))
                     .foregroundStyle(LoreColor.brass700)
             }
+            DealCommissionDisclosure()
             ForEach(grouped, id: \.category.id) { group in
                 VStack(alignment: .leading, spacing: 8) {
                     categoryHeader(group.category, count: group.offers.count)
@@ -165,7 +166,60 @@ struct DealSection: View {
     }
 }
 
-// MARK: - Shared row
+// MARK: - Shared disclosure and row
+
+enum DealAccessibility {
+    static let commissionDisclosure =
+        "Lore may earn a commission if you book through this link, at no extra cost to you."
+
+    static func label(
+        title: String,
+        sourceLabel: String,
+        originalPrice: String?,
+        currentPrice: String?,
+        discount: String?,
+        matchNote: String?,
+        checkedLabel: String?
+    ) -> String {
+        var parts = [title]
+        if let originalPrice { parts.append("Original price \(originalPrice)") }
+        if let currentPrice { parts.append("Current price \(currentPrice)") }
+        if let discount { parts.append("Discount \(discount)") }
+        if let matchNote { parts.append("Why it matches: \(matchNote)") }
+        parts.append(sourceLabel)
+        if let checkedLabel { parts.append(checkedLabel) }
+        parts.append("Opens in browser")
+        return parts.joined(separator: ". ")
+    }
+
+    static func label(for deal: Deal) -> String {
+        label(
+            title: deal.title,
+            sourceLabel: deal.sourceLabel,
+            originalPrice: deal.priceOriginal,
+            currentPrice: deal.priceDeal,
+            discount: deal.discountLabel,
+            matchNote: deal.matchNote,
+            checkedLabel: deal.checkedLabel
+        )
+    }
+}
+
+struct DealCommissionDisclosure: View {
+    var body: some View {
+        Label {
+            Text(DealAccessibility.commissionDisclosure)
+                .fixedSize(horizontal: false, vertical: true)
+        } icon: {
+            Image(systemName: "info.circle")
+                .accessibilityHidden(true)
+        }
+        .font(LoreType.caption)
+        .foregroundStyle(LoreColor.ink600)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(DealAccessibility.commissionDisclosure)
+    }
+}
 
 /// One offer, shared by the place card's grouped panel and the city rail.
 /// Taps out to the real marketplace page; the merchant is always named and a
@@ -175,8 +229,21 @@ struct DealRow: View {
     let deal: Deal
 
     @Environment(\.openURL) private var openURL
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private var hasPrice: Bool { deal.priceOriginal != nil || deal.priceDeal != nil }
+    private var priceLayout: AnyLayout {
+        if dynamicTypeSize.isAccessibilitySize {
+            return AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
+        }
+        return AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 8))
+    }
+    private var sourceLayout: AnyLayout {
+        if dynamicTypeSize.isAccessibilitySize {
+            return AnyLayout(VStackLayout(alignment: .leading, spacing: 2))
+        }
+        return AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 6))
+    }
 
     var body: some View {
         Button {
@@ -190,6 +257,7 @@ struct DealRow: View {
                     .frame(width: 22, height: 22)
                     .background(LoreColor.bone50, in: Circle())
                     .overlay(Circle().strokeBorder(LoreColor.brass700.opacity(0.2), lineWidth: 1))
+                    .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Text(deal.title)
@@ -200,9 +268,10 @@ struct DealRow: View {
                         Image(systemName: "arrow.up.right")
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(LoreColor.brass700)
+                            .accessibilityHidden(true)
                     }
                     if hasPrice {
-                        HStack(spacing: 8) {
+                        priceLayout {
                             if let was = deal.priceOriginal {
                                 Text(was)
                                     .font(LoreType.caption)
@@ -219,7 +288,7 @@ struct DealRow: View {
                                     .font(LoreType.micro)
                                     .foregroundStyle(LoreColor.ink900)
                                     .padding(.horizontal, 7)
-                                    .frame(height: 18)
+                                    .padding(.vertical, 2)
                                     .background(LoreColor.amber, in: Capsule())
                             }
                         }
@@ -230,7 +299,7 @@ struct DealRow: View {
                             .foregroundStyle(LoreColor.ink600)
                             .fixedSize(horizontal: false, vertical: true)
                     }
-                    HStack(spacing: 6) {
+                    sourceLayout {
                         Text(deal.sourceLabel)
                             .font(LoreType.micro)
                             .foregroundStyle(LoreColor.ink600)
@@ -247,6 +316,7 @@ struct DealRow: View {
             .background(LoreColor.bone50, in: RoundedRectangle(cornerRadius: 12))
         }
         .buttonStyle(.pressable)
-        .accessibilityLabel(Text("\(deal.title), \(deal.sourceLabel), opens in browser"))
+        .accessibilityLabel(Text(DealAccessibility.label(for: deal)))
+        .accessibilityHint(Text(DealAccessibility.commissionDisclosure))
     }
 }
