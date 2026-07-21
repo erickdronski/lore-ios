@@ -45,6 +45,45 @@ struct VisitLogEntry: Decodable, Identifiable {
     var displayEmoji: String { (place?.emoji?.isEmpty == false ? place?.emoji : nil) ?? "📍" }
     var displayCity: String? { place?.city?.replacingOccurrences(of: "-", with: " ").capitalized }
 
+    func withNote(_ note: String) -> VisitLogEntry {
+        VisitLogEntry(
+            placeID: placeID,
+            visitedAt: visitedAt,
+            note: note,
+            photos: photos,
+            visitID: visitID,
+            isPublic: isPublic,
+            status: status,
+            place: place
+        )
+    }
+
+    func withPhotos(_ photos: [String]) -> VisitLogEntry {
+        VisitLogEntry(
+            placeID: placeID,
+            visitedAt: visitedAt,
+            note: note,
+            photos: photos,
+            visitID: visitID,
+            isPublic: isPublic,
+            status: status,
+            place: place
+        )
+    }
+
+    func withSharing(_ isPublic: Bool) -> VisitLogEntry {
+        VisitLogEntry(
+            placeID: placeID,
+            visitedAt: visitedAt,
+            note: note,
+            photos: photos,
+            visitID: visitID,
+            isPublic: isPublic,
+            status: status,
+            place: place
+        )
+    }
+
     /// A friendly date from the ISO timestamp.
     var dateLabel: String {
         let iso = ISO8601DateFormatter()
@@ -69,7 +108,7 @@ struct JournalView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
+            LazyVStack(alignment: .leading, spacing: 14) {
                 Text("Journal")
                     .font(LoreType.display(size: 32, weight: .bold))
                     .foregroundStyle(LoreColor.bone)
@@ -79,15 +118,22 @@ struct JournalView: View {
                     hint("Sign in to keep a journal of everywhere you've been and the notes you write.")
                 } else if !visits.historyLoaded {
                     ProgressView().tint(LoreColor.brass).frame(maxWidth: .infinity).padding(.top, 40)
+                } else if let error = visits.historyError, visits.visitHistory.isEmpty {
+                    journalLoadError(error)
                 } else if visits.visitHistory.isEmpty {
                     hint("Mark places \"I've been here\" and they land here. Add your own notes and memories to each one.")
                 } else {
-                    Text("\(visits.visitHistory.count) place\(visits.visitHistory.count == 1 ? "" : "s") logged")
+                    Text("\(visits.visitHistory.count)\(visits.historyHasMore ? "+" : "") place\(visits.visitHistory.count == 1 ? "" : "s") logged")
                         .font(LoreType.caption)
                         .foregroundStyle(LoreColor.ink600)
                     ForEach(visits.visitHistory) { entry in
                         row(entry)
+                            .task(id: entry.id) {
+                                guard entry.id == visits.visitHistory.last?.id else { return }
+                                await visits.loadMoreHistory()
+                            }
                     }
+                    historyFooter
                 }
             }
             .padding(16)
@@ -99,6 +145,46 @@ struct JournalView: View {
                 Task { await visits.saveNote(placeID: entry.placeID, note: note) }
             }
         }
+    }
+
+    @ViewBuilder
+    private var historyFooter: some View {
+        if visits.historyLoadingMore {
+            ProgressView()
+                .tint(LoreColor.brass)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+        } else if visits.historyHasMore {
+            Button {
+                Task { await visits.loadMoreHistory() }
+            } label: {
+                Text("Load more")
+                    .font(LoreType.button)
+                    .foregroundStyle(LoreColor.amber)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+            }
+            .buttonStyle(.plain)
+        }
+
+        if let error = visits.historyError, !visits.visitHistory.isEmpty {
+            journalLoadError(error)
+        }
+    }
+
+    private func journalLoadError(_ message: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(message, systemImage: "wifi.exclamationmark")
+                .font(LoreType.caption)
+                .foregroundStyle(LoreColor.error)
+            Button("Try again") {
+                Task { await visits.loadHistory(force: true) }
+            }
+            .font(LoreType.button)
+            .foregroundStyle(LoreColor.amber)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 8)
     }
 
     private func hint(_ text: String) -> some View {
@@ -151,7 +237,7 @@ struct JournalView: View {
                 }
                 if !entry.photoPaths.isEmpty {
                     ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
+                        LazyHStack(spacing: 8) {
                             ForEach(entry.photoPaths, id: \.self) { path in
                                 JournalPhotoThumb(path: path, size: 72)
                             }
@@ -173,18 +259,29 @@ struct JournalView: View {
 /// add their lore right where the place's story lives, not only from Passport.
 struct NoteEditorSheet: View {
     let entry: VisitLogEntry
-    let onSave: (String) -> Void
+    let onSave: (String) -> Task<VisitStore.JournalWriteResult, Never>
 
     @Environment(\.dismiss) private var dismiss
     @Environment(VisitStore.self) private var visits
     @State private var text: String
     @State private var picked: PhotosPickerItem?
+    @State private var saving = false
     @State private var uploading = false
+    @State private var saveError: String?
+    @State private var photoError: String?
+    @State private var pendingPhotoData: Data?
     /// Opt-in public sharing; writes immediately (like photos), server-owned
     /// moderation status.
     @State private var isShared: Bool
+    @State private var sharing = false
+    @State private var shareError: String?
+    @State private var failedShareValue: Bool?
+    @State private var shareRequestVersion = 0
 
-    init(entry: VisitLogEntry, onSave: @escaping (String) -> Void) {
+    init(
+        entry: VisitLogEntry,
+        onSave: @escaping (String) -> Task<VisitStore.JournalWriteResult, Never>
+    ) {
         self.entry = entry
         self.onSave = onSave
         _text = State(initialValue: entry.note ?? "")
@@ -215,6 +312,11 @@ struct NoteEditorSheet: View {
                         .padding(10)
                         .frame(minHeight: 150)
                         .background(LoreColor.bone200, in: RoundedRectangle(cornerRadius: 14))
+                    if let saveError {
+                        writeError(saveError, actionTitle: "Try saving again") {
+                            Task { await saveNote() }
+                        }
+                    }
 
                     HStack {
                         Text("PHOTOS").font(LoreType.label).tracking(0.6).foregroundStyle(LoreColor.ink600)
@@ -228,12 +330,21 @@ struct NoteEditorSheet: View {
                         }
                         .disabled(uploading)
                     }
+                    if let photoError {
+                        writeError(photoError, actionTitle: pendingPhotoData == nil ? "Dismiss" : "Try photo again") {
+                            guard let pendingPhotoData else {
+                                self.photoError = nil
+                                return
+                            }
+                            Task { await uploadPhoto(pendingPhotoData) }
+                        }
+                    }
                     if photos.isEmpty {
                         Text("Add photos of this spot to remember it.")
                             .font(LoreType.caption).foregroundStyle(LoreColor.ink600)
                     } else {
                         ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 10) {
+                            LazyHStack(spacing: 10) {
                                 ForEach(photos, id: \.self) { path in
                                     JournalPhotoThumb(path: path, size: 96)
                                 }
@@ -251,27 +362,112 @@ struct NoteEditorSheet: View {
             .navigationTitle("Your lore")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { dismiss() }
+                        .disabled(isWriting)
+                }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
-                        onSave(text.trimmingCharacters(in: .whitespacesAndNewlines))
-                        dismiss()
+                    Button {
+                        Task { await saveNote() }
+                    } label: {
+                        if saving {
+                            ProgressView()
+                        } else {
+                            Text("Save")
+                        }
                     }
+                    .disabled(isWriting)
                 }
             }
             .onChange(of: picked) { _, item in
                 guard let item else { return }
-                Task {
-                    uploading = true
-                    if let data = try? await item.loadTransferable(type: Data.self),
-                       let jpeg = Self.downscaledJPEG(data) {
-                        await visits.addPhoto(placeID: entry.placeID, imageData: jpeg)
-                    }
-                    picked = nil
-                    uploading = false
-                }
+                Task { await prepareAndUploadPhoto(item) }
             }
+            .task(id: entry.placeID) {
+                let originalText = entry.note ?? ""
+                guard let refreshed = await visits.loadHistoryEntry(placeID: entry.placeID) else { return }
+                if text == originalText { text = refreshed.note ?? "" }
+                if shareRequestVersion == 0 { isShared = refreshed.isShared }
+            }
+            .interactiveDismissDisabled(isWriting)
         }
+    }
+
+    private var isWriting: Bool { saving || uploading || sharing }
+
+    private func saveNote() async {
+        guard !isWriting else { return }
+        saving = true
+        saveError = nil
+        let note = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let result = await onSave(note).value
+        saving = false
+        switch result {
+        case .saved:
+            dismiss()
+        case .failed(let message):
+            saveError = message
+        }
+    }
+
+    private func prepareAndUploadPhoto(_ item: PhotosPickerItem) async {
+        guard !uploading else { return }
+        uploading = true
+        photoError = nil
+        defer {
+            uploading = false
+            picked = nil
+        }
+
+        do {
+            guard let data = try await item.loadTransferable(type: Data.self),
+                  let jpeg = Self.downscaledJPEG(data) else {
+                photoError = "Lore couldn't read that image. Choose another photo and try again."
+                pendingPhotoData = nil
+                return
+            }
+            pendingPhotoData = jpeg
+            let result = await visits.addPhoto(placeID: entry.placeID, imageData: jpeg)
+            switch result {
+            case .saved:
+                pendingPhotoData = nil
+            case .failed(let message):
+                photoError = message
+            }
+        } catch {
+            pendingPhotoData = nil
+            photoError = "Lore couldn't read that image. Choose another photo and try again."
+        }
+    }
+
+    private func uploadPhoto(_ data: Data) async {
+        guard !uploading else { return }
+        uploading = true
+        photoError = nil
+        defer { uploading = false }
+        switch await visits.addPhoto(placeID: entry.placeID, imageData: data) {
+        case .saved:
+            pendingPhotoData = nil
+        case .failed(let message):
+            photoError = message
+        }
+    }
+
+    private func writeError(
+        _ message: String,
+        actionTitle: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label(message, systemImage: "exclamationmark.triangle.fill")
+                .font(LoreType.caption)
+                .foregroundStyle(LoreColor.error)
+                .fixedSize(horizontal: false, vertical: true)
+            Button(actionTitle, action: action)
+                .font(LoreType.button)
+                .foregroundStyle(LoreColor.brass700)
+        }
+        .accessibilityElement(children: .combine)
     }
 
     /// The live history row for this place (fresher than the captured entry).
@@ -283,7 +479,7 @@ struct NoteEditorSheet: View {
     /// on the reading side). Default private; writes immediately like photos.
     private var shareSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Toggle(isOn: $isShared) {
+            Toggle(isOn: shareBinding) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Share with all travelers")
                         .font(LoreType.button)
@@ -297,8 +493,23 @@ struct NoteEditorSheet: View {
                 }
             }
             .tint(LoreColor.brass700)
-            .onChange(of: isShared) { _, newValue in
-                Task { await visits.setShared(placeID: entry.placeID, isPublic: newValue) }
+            .disabled(saving || uploading)
+            if sharing {
+                HStack(spacing: 8) {
+                    ProgressView()
+                    Text("Updating sharing…")
+                        .font(LoreType.caption)
+                        .foregroundStyle(LoreColor.ink600)
+                }
+            }
+            if let shareError {
+                writeError(
+                    shareError,
+                    actionTitle: failedShareValue == false ? "Try making private again" : "Try sharing again"
+                ) {
+                    guard let failedShareValue else { return }
+                    requestSharing(failedShareValue)
+                }
             }
             if isShared {
                 Text("Keep it kind and true. Lore that other travelers report is hidden while we review it; abusive content is removed.")
@@ -316,6 +527,37 @@ struct NoteEditorSheet: View {
         }
         .padding(12)
         .background(LoreColor.bone200, in: RoundedRectangle(cornerRadius: 14))
+    }
+
+    private var shareBinding: Binding<Bool> {
+        Binding(
+            get: { isShared },
+            set: { requestSharing($0) }
+        )
+    }
+
+    private func requestSharing(_ desiredValue: Bool) {
+        isShared = desiredValue
+        shareError = nil
+        failedShareValue = nil
+        shareRequestVersion += 1
+        let version = shareRequestVersion
+        sharing = true
+
+        Task {
+            let result = await visits.setShared(placeID: entry.placeID, isPublic: desiredValue)
+            guard version == shareRequestVersion else { return }
+            sharing = false
+            switch result {
+            case .saved:
+                failedShareValue = nil
+            case .failed(let message):
+                // Never present a privacy state the server did not confirm.
+                isShared = liveEntry.isShared
+                failedShareValue = desiredValue
+                shareError = message
+            }
+        }
     }
 
     /// Downscale + JPEG-encode the picked image so uploads stay small.

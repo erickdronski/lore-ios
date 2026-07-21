@@ -104,6 +104,8 @@ enum TravelReads {
     /// `GET /rest/v1/visit?select=place_id,visited_at,note,place(name,emoji,city,kind)&order=visited_at.desc`
     static func visitHistory(
         accessToken: String,
+        limit: Int,
+        offset: Int,
         session: URLSession = .shared
     ) async throws -> [VisitLogEntry] {
         var components = URLComponents(
@@ -112,7 +114,9 @@ enum TravelReads {
         )
         components?.queryItems = [
             URLQueryItem(name: "select", value: "id,place_id,visited_at,note,photos,is_public,status,place(name,emoji,city,kind)"),
-            URLQueryItem(name: "order", value: "visited_at.desc"),
+            URLQueryItem(name: "order", value: "visited_at.desc,place_id.asc"),
+            URLQueryItem(name: "limit", value: String(max(1, limit))),
+            URLQueryItem(name: "offset", value: String(max(0, offset))),
         ]
         guard let url = components?.url else { throw TravelError.badURL }
 
@@ -125,6 +129,40 @@ enum TravelReads {
         try ensureOK(response, data: data)
         do {
             return try JSONDecoder().decode([VisitLogEntry].self, from: data)
+        } catch {
+            throw TravelError.decoding(error)
+        }
+    }
+
+    /// Fetch the newest visit row for one place. Photo writes use this when the
+    /// place is outside the currently loaded Journal page, preventing a PATCH
+    /// from replacing an existing private photo array with an incomplete one.
+    static func visitHistoryEntry(
+        placeID: String,
+        accessToken: String,
+        session: URLSession = .shared
+    ) async throws -> VisitLogEntry? {
+        var components = URLComponents(
+            url: Config.restURL.appending(path: "visit"),
+            resolvingAgainstBaseURL: false
+        )
+        components?.queryItems = [
+            URLQueryItem(name: "select", value: "id,place_id,visited_at,note,photos,is_public,status,place(name,emoji,city,kind)"),
+            URLQueryItem(name: "place_id", value: "eq.\(placeID)"),
+            URLQueryItem(name: "order", value: "visited_at.desc"),
+            URLQueryItem(name: "limit", value: "1"),
+        ]
+        guard let url = components?.url else { throw TravelError.badURL }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        apply(&request, accessToken: accessToken)
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        let (data, response) = try await session.data(for: request)
+        try ensureOK(response, data: data)
+        do {
+            return try JSONDecoder().decode([VisitLogEntry].self, from: data).first
         } catch {
             throw TravelError.decoding(error)
         }
@@ -151,7 +189,11 @@ enum TravelReads {
         apply(&request, accessToken: accessToken)
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("return=minimal", forHTTPHeaderField: "Prefer")
-        request.httpBody = try? JSONSerialization.data(withJSONObject: ["note": note])
+        do {
+            request.httpBody = try JSONSerialization.data(withJSONObject: ["note": note])
+        } catch {
+            throw TravelError.encoding(error)
+        }
 
         let (data, response) = try await session.data(for: request)
         try ensureOK(response, data: data)
@@ -173,7 +215,11 @@ enum TravelReads {
         apply(&request, accessToken: accessToken)
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("return=minimal", forHTTPHeaderField: "Prefer")
-        request.httpBody = try? JSONSerialization.data(withJSONObject: ["photos": photos])
+        do {
+            request.httpBody = try JSONSerialization.data(withJSONObject: ["photos": photos])
+        } catch {
+            throw TravelError.encoding(error)
+        }
         let (data, response) = try await session.data(for: request)
         try ensureOK(response, data: data)
     }
@@ -198,7 +244,11 @@ enum TravelReads {
         apply(&request, accessToken: accessToken)
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("return=minimal", forHTTPHeaderField: "Prefer")
-        request.httpBody = try? JSONSerialization.data(withJSONObject: ["is_public": isPublic])
+        do {
+            request.httpBody = try JSONSerialization.data(withJSONObject: ["is_public": isPublic])
+        } catch {
+            throw TravelError.encoding(error)
+        }
         let (data, response) = try await session.data(for: request)
         try ensureOK(response, data: data)
     }
