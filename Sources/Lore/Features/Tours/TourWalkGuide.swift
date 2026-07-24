@@ -62,6 +62,10 @@ final class TourWalkGuide: NSObject, CLLocationManagerDelegate {
     /// Begin guiding. Safe to call repeatedly; requests When-In-Use on first use.
     func start() {
         authorizationStatus = manager.authorizationStatus
+        guard !isDenied else {
+            isGuiding = false
+            return
+        }
         if authorizationStatus == .notDetermined {
             manager.requestWhenInUseAuthorization()
         }
@@ -102,6 +106,10 @@ final class TourWalkGuide: NSObject, CLLocationManagerDelegate {
             self.authorizationStatus = status
             if self.isGuiding && self.isAuthorized {
                 self.manager.startUpdatingLocation()
+            } else if self.isDenied {
+                self.isGuiding = false
+                self.manager.stopUpdatingLocation()
+                self.distanceToTarget = nil
             }
         }
     }

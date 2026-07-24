@@ -126,6 +126,11 @@ targets:
         # safe to enable now.
         NSSupportsLiveActivities: true
 
+        # Spoken tours keep playing when the screen locks or the app moves to
+        # the background. Location-driven stop advancement remains foreground.
+        UIBackgroundModes:
+          - audio
+
         # ── URL scheme (widget / Live Activity deep links) ─────────────────
         # `lore://place/{id}`, `lore://tour/{slug}`, `lore://map` — handled by
         # AppRouter.handleDeepLink via .onOpenURL (docs/16 §7/§8).

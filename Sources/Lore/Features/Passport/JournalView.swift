@@ -94,9 +94,10 @@ struct JournalView: View {
         }
         .background(LoreColor.ink950.ignoresSafeArea())
         .task { await visits.loadHistory() }
+        .refreshable { await visits.loadHistory(force: true) }
         .sheet(item: $editing) { entry in
             NoteEditorSheet(entry: entry) { note in
-                Task { await visits.saveNote(placeID: entry.placeID, note: note) }
+                await visits.saveNote(placeID: entry.placeID, note: note)
             }
         }
     }
@@ -173,18 +174,21 @@ struct JournalView: View {
 /// add their lore right where the place's story lives, not only from Passport.
 struct NoteEditorSheet: View {
     let entry: VisitLogEntry
-    let onSave: (String) -> Void
+    let onSave: (String) async -> Bool
 
     @Environment(\.dismiss) private var dismiss
     @Environment(VisitStore.self) private var visits
     @State private var text: String
     @State private var picked: PhotosPickerItem?
     @State private var uploading = false
+    @State private var saving = false
+    @State private var sheetError: String?
+    @State private var suppressShareChange = false
     /// Opt-in public sharing; writes immediately (like photos), server-owned
     /// moderation status.
     @State private var isShared: Bool
 
-    init(entry: VisitLogEntry, onSave: @escaping (String) -> Void) {
+    init(entry: VisitLogEntry, onSave: @escaping (String) async -> Bool) {
         self.entry = entry
         self.onSave = onSave
         _text = State(initialValue: entry.note ?? "")
@@ -243,6 +247,13 @@ struct NoteEditorSheet: View {
 
                     shareSection
 
+                    if let sheetError {
+                        Label(sheetError, systemImage: "exclamationmark.triangle.fill")
+                            .font(LoreType.caption)
+                            .foregroundStyle(LoreColor.error)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
                     Spacer(minLength: 0)
                 }
                 .padding(16)
@@ -254,18 +265,32 @@ struct NoteEditorSheet: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
-                        onSave(text.trimmingCharacters(in: .whitespacesAndNewlines))
-                        dismiss()
+                        Task {
+                            saving = true
+                            sheetError = nil
+                            let saved = await onSave(text.trimmingCharacters(in: .whitespacesAndNewlines))
+                            saving = false
+                            if saved {
+                                dismiss()
+                            } else {
+                                sheetError = visits.lastError ?? "Couldn't save your note."
+                            }
+                        }
                     }
+                    .disabled(saving || uploading)
                 }
             }
             .onChange(of: picked) { _, item in
                 guard let item else { return }
                 Task {
                     uploading = true
+                    sheetError = nil
                     if let data = try? await item.loadTransferable(type: Data.self),
                        let jpeg = Self.downscaledJPEG(data) {
-                        await visits.addPhoto(placeID: entry.placeID, imageData: jpeg)
+                        let added = await visits.addPhoto(placeID: entry.placeID, imageData: jpeg)
+                        if !added { sheetError = visits.lastError ?? "Couldn't add that photo." }
+                    } else {
+                        sheetError = "That photo couldn't be prepared for upload."
                     }
                     picked = nil
                     uploading = false
@@ -298,7 +323,19 @@ struct NoteEditorSheet: View {
             }
             .tint(LoreColor.brass700)
             .onChange(of: isShared) { _, newValue in
-                Task { await visits.setShared(placeID: entry.placeID, isPublic: newValue) }
+                if suppressShareChange {
+                    suppressShareChange = false
+                    return
+                }
+                Task {
+                    sheetError = nil
+                    let shared = await visits.setShared(placeID: entry.placeID, isPublic: newValue)
+                    if !shared {
+                        sheetError = visits.lastError ?? "Couldn't change sharing for that place."
+                        suppressShareChange = true
+                        isShared = !newValue
+                    }
+                }
             }
             if isShared {
                 Text("Keep it kind and true. Lore that other travelers report is hidden while we review it; abusive content is removed.")

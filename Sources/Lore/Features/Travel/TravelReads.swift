@@ -113,6 +113,7 @@ enum TravelReads {
         components?.queryItems = [
             URLQueryItem(name: "select", value: "id,place_id,visited_at,note,photos,is_public,status,place(name,emoji,city,kind)"),
             URLQueryItem(name: "order", value: "visited_at.desc"),
+            URLQueryItem(name: "limit", value: "200"),
         ]
         guard let url = components?.url else { throw TravelError.badURL }
 

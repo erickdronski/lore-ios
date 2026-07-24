@@ -82,7 +82,7 @@ struct PlaceCardView: View {
         }
         .sheet(isPresented: $showLoreEditor) {
             NoteEditorSheet(entry: loreEntry) { note in
-                Task { await visits.saveNote(placeID: place.id, note: note) }
+                await visits.saveNote(placeID: place.id, note: note)
             }
         }
         .sheet(isPresented: $showSignIn) {

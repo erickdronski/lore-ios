@@ -41,6 +41,10 @@
 	<string>Lore uses motion data to steady the compass, so nearby places stay pointed at the right spot as you move.</string>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+	</array>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UISupportedInterfaceOrientations</key>

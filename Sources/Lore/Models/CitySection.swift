@@ -42,6 +42,9 @@ enum SectionKindMeta {
         case "etiquette": return ("Blend In", "Local Code")
         case "number": return ("The Big Figures", "City in Numbers")
         case "market": return ("Go Where They Go", "Markets & Streets")
+        case "experience": return ("Start Here", "A Route Through the City")
+        case "listen": return ("Phone Down", "Listen to the City")
+        case "field_note": return ("Your Turn", "Explorer Prompt")
         default:
             let pretty = kind.replacingOccurrences(of: "_", with: " ").capitalized
             return ("The City's Own", pretty)
@@ -61,6 +64,9 @@ enum SectionKindMeta {
         case "etiquette": return 7
         case "market": return 8
         case "number": return 9
+        case "experience": return 10
+        case "listen": return 11
+        case "field_note": return 12
         default: return 50
         }
     }

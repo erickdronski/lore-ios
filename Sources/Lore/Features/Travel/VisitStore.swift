@@ -13,9 +13,9 @@ import Observation
 /// `UnlockCelebration` overlay) via `onUnlocks`.
 ///
 /// Signed-out is a first-class state (browsing never requires an account, see
-/// `SignInView`): with no session the store simply holds an empty set and every
-/// write is a silent no-op that reports `.signedOut` so the caller can nudge
-/// sign-in. Credentials arrive as a closure, the same decoupling
+/// `SignInView`): with no session the store holds an empty set and write methods
+/// return a signed-out result or a useful error so the caller can nudge sign-in.
+/// Credentials arrive as a closure, the same decoupling
 /// `OnboardingPrefsWriter` uses, so this type never imports the auth layer.
 @Observable
 @MainActor
@@ -49,6 +49,15 @@ final class VisitStore {
     var onUnlocks: ([Achievement]) -> Void
 
     private let api: LoreAPI
+
+    private struct CachedPhotoURL {
+        let url: URL
+        let expiresAt: Date
+    }
+
+    /// Signed Storage URLs are valid for an hour. Keep them for 50 minutes so
+    /// scrolling the journal does not re-sign every thumbnail on every appear.
+    private var photoURLCache: [String: CachedPhotoURL] = [:]
 
     init(
         api: LoreAPI = .shared,
@@ -106,7 +115,8 @@ final class VisitStore {
     private(set) var visitHistory: [VisitLogEntry] = []
     private(set) var historyLoaded = false
 
-    func loadHistory() async {
+    func loadHistory(force: Bool = false) async {
+        guard force || !historyLoaded else { return }
         guard let creds = credentials() else { visitHistory = []; historyLoaded = true; return }
         do {
             let rows = try await TravelReads.visitHistory(accessToken: creds.accessToken)
@@ -124,20 +134,33 @@ final class VisitStore {
     }
 
     /// Save the user's note ("their lore") on a visited place, then refresh.
-    func saveNote(placeID: String, note: String) async {
-        guard let creds = credentials() else { return }
+    @discardableResult
+    func saveNote(placeID: String, note: String) async -> Bool {
+        guard let creds = credentials() else {
+            lastError = "Sign in to save a journal note."
+            return false
+        }
         do {
+            lastError = nil
             try await TravelReads.updateVisitNote(placeID: placeID, note: note, accessToken: creds.accessToken)
-            await loadHistory()
+            await settleAchievements(for: creds)
+            await loadHistory(force: true)
+            return true
         } catch {
             lastError = "Couldn't save your note."
+            return false
         }
     }
 
     /// Upload a journal photo for a place, append its path, and refresh.
-    func addPhoto(placeID: String, imageData: Data) async {
-        guard let creds = credentials() else { return }
+    @discardableResult
+    func addPhoto(placeID: String, imageData: Data) async -> Bool {
+        guard let creds = credentials() else {
+            lastError = "Sign in to add a journal photo."
+            return false
+        }
         do {
+            lastError = nil
             let path = try await TravelReads.uploadJournalPhoto(
                 data: imageData, userID: creds.userID, placeID: placeID, accessToken: creds.accessToken
             )
@@ -145,30 +168,62 @@ final class VisitStore {
             try await TravelReads.updateVisitPhotos(
                 placeID: placeID, photos: existing + [path], accessToken: creds.accessToken
             )
-            await loadHistory()
+            await settleAchievements(for: creds)
+            await loadHistory(force: true)
+            return true
         } catch {
             lastError = "Couldn't add that photo."
+            return false
         }
     }
 
     /// A short-lived signed URL to display a private journal photo path.
     func signedPhotoURL(path: String) async -> URL? {
         guard let creds = credentials() else { return nil }
-        return try? await TravelReads.signedJournalPhotoURL(path: path, accessToken: creds.accessToken)
+        if let cached = photoURLCache[path], cached.expiresAt > Date() {
+            return cached.url
+        }
+        guard let url = try? await TravelReads.signedJournalPhotoURL(
+            path: path, accessToken: creds.accessToken
+        ) else { return nil }
+        photoURLCache[path] = CachedPhotoURL(
+            url: url,
+            expiresAt: Date().addingTimeInterval(50 * 60)
+        )
+        return url
     }
 
     /// Opt this place's lore in or out of the public traveler layer, then
     /// refresh so `is_public`/`status` reflect the server's truth.
-    func setShared(placeID: String, isPublic: Bool) async {
-        guard let creds = credentials() else { return }
+    @discardableResult
+    func setShared(placeID: String, isPublic: Bool) async -> Bool {
+        guard let creds = credentials() else {
+            lastError = "Sign in to share traveler lore."
+            return false
+        }
         do {
+            lastError = nil
             try await TravelReads.setVisitPublic(
                 placeID: placeID, isPublic: isPublic, accessToken: creds.accessToken
             )
-            await loadHistory()
+            await settleAchievements(for: creds)
+            await loadHistory(force: true)
+            return true
         } catch {
             lastError = "Couldn't change sharing for that place."
+            return false
         }
+    }
+
+    /// Journal actions have their own achievement families. Settle them at the
+    /// moment the action lands instead of waiting for the user's next visit.
+    private func settleAchievements(for creds: (userID: String, accessToken: String)) async {
+        let unlocked = (try? await api.recomputeAchievements(
+            userID: creds.userID,
+            accessToken: creds.accessToken
+        )) ?? []
+        guard credentials()?.userID == creds.userID else { return }
+        if !unlocked.isEmpty { onUnlocks(unlocked) }
     }
 
     // MARK: - Writes
@@ -248,6 +303,7 @@ final class VisitStore {
         loaded = false
         visitHistory = []
         historyLoaded = false
+        photoURLCache = [:]
         lastError = nil
     }
 }

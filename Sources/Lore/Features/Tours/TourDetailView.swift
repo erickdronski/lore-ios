@@ -330,7 +330,7 @@ struct TourDetailView: View {
             tour: tour,
             initialStopIndex: stopIndex + 1,
             currentStopName: liveStopName(at: stopIndex),
-            nextStopName: liveStopName(at: stopIndex + 1),
+            nextStopName: nextLiveStopName(at: stopIndex + 1),
             distanceToNextMeters: liveNextStopMeters
         )
     }
@@ -341,7 +341,7 @@ struct TourDetailView: View {
         liveActivity.updateProgress(
             currentStopIndex: stopIndex + 1,
             currentStopName: liveStopName(at: stopIndex),
-            nextStopName: liveStopName(at: stopIndex + 1),
+            nextStopName: nextLiveStopName(at: stopIndex + 1),
             distanceToNextMeters: liveNextStopMeters
         )
     }
@@ -352,6 +352,13 @@ struct TourDetailView: View {
         guard tour.stops.indices.contains(index) else { return "" }
         let stop = tour.stops[index]
         return model.place(id: stop.placeID)?.name ?? "Stop \(index + 1)"
+    }
+
+    /// Optional next-stop label for Live Activities. Nil at the final stop so
+    /// the Lock Screen never renders a bare "Next:" line.
+    private func nextLiveStopName(at index: Int) -> String? {
+        guard tour.stops.indices.contains(index) else { return nil }
+        return liveStopName(at: index)
     }
 
     private var currentStop: TourStop? {
@@ -551,7 +558,7 @@ struct TourDetailView: View {
             .overlay(Capsule().strokeBorder(LoreColor.brass700.opacity(0.4), lineWidth: 1))
         }
         .buttonStyle(.pressable)
-        .disabled(entitlements.isPlus && currentNarrative == nil)
+        .disabled(entitlements.isPlus && currentNarrative == nil && currentAudioURL == nil)
         .accessibilityLabel(entitlements.isPlus
             ? (narration.isSpeaking ? "Stop audio" : "Play this stop's audio")
             : "Play this stop's audio, a Lore Plus feature")
@@ -581,7 +588,11 @@ struct TourDetailView: View {
         Button {
             if entitlements.isPlus {
                 Haptics.play(.chipTap)
-                toggleGuide()
+                if walkGuide.isDenied {
+                    OnboardingSettings.open()
+                } else {
+                    toggleGuide()
+                }
             } else {
                 showPaywall = true
             }
