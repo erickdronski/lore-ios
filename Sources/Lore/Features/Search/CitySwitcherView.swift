@@ -229,7 +229,8 @@ enum CityRegion: String, CaseIterable, Identifiable {
         case "US":
             return .unitedStates
         case "GB", "UK", "FR", "DE", "IT", "ES", "NL", "SE", "IE", "PT",
-             "CH", "AT", "BE", "DK", "NO", "FI", "PL", "CZ", "GR", "HU", "RO":
+             "CH", "AT", "BE", "DK", "NO", "FI", "PL", "CZ", "GR", "HU", "RO",
+             "IS", "RU":
             return .europe
         case "JP", "CN", "IN", "KR", "SG", "TH", "HK", "TW", "VN", "MY", "ID", "PH":
             return .asia
@@ -264,6 +265,39 @@ enum CityRegion: String, CaseIterable, Identifiable {
         case "IN": return "India"
         case "AE": return "United Arab Emirates"
         case "NL": return "Netherlands"
+        case "SG": return "Singapore"
+        case "KR": return "South Korea"
+        case "TH": return "Thailand"
+        case "AT": return "Austria"
+        case "CH": return "Switzerland"
+        case "CZ": return "Czechia"
+        case "PL": return "Poland"
+        case "HU": return "Hungary"
+        case "TR": return "Turkey"
+        case "EG": return "Egypt"
+        case "BE": return "Belgium"
+        case "CO": return "Colombia"
+        case "HK": return "Hong Kong"
+        case "TW": return "Taiwan"
+        case "ID": return "Indonesia"
+        case "IE": return "Ireland"
+        case "GR": return "Greece"
+        case "RU": return "Russia"
+        case "VN": return "Vietnam"
+        case "PE": return "Peru"
+        case "FI": return "Finland"
+        case "DK": return "Denmark"
+        case "IS": return "Iceland"
+        case "RO": return "Romania"
+        case "QA": return "Qatar"
+        case "NO": return "Norway"
+        case "AR": return "Argentina"
+        case "PT": return "Portugal"
+        case "MY": return "Malaysia"
+        case "PH": return "Philippines"
+        case "CL": return "Chile"
+        case "SA": return "Saudi Arabia"
+        case "IL": return "Israel"
         case "SE": return "Sweden"
         case "NZ": return "New Zealand"
         case "NG": return "Nigeria"

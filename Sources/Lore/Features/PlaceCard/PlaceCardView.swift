@@ -9,6 +9,9 @@ struct PlaceCardView: View {
     /// so the card never imports the tab structure; a no-op default keeps
     /// previews / standalone hosts working.
     var onMeetCity: (String) -> Void = { _ in }
+    /// City theme handed in by the map when already loaded. Standalone routes
+    /// fetch a fallback below so every doorway gets the same city-room tone.
+    var cityTheme: CityTheme? = nil
     /// Open straight to the dossier on appear. Used only by the App Store
     /// screenshot pipeline (`ScreenshotSupport` "dive" stage) so a capture can
     /// land on the deep dive without a tap; defaults off for every real
@@ -35,8 +38,11 @@ struct PlaceCardView: View {
     /// that fills the card for free users (TestFlight feedback: "wasted real
     /// estate, fill the white space below with more fun").
     @State private var dive: Dive?
+    @State private var loadedTheme: CityTheme?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    private var activeTheme: CityTheme? { cityTheme ?? loadedTheme }
+    private var accent: Color { activeTheme?.accentColor ?? LoreColor.brass700 }
 
     var body: some View {
         ZStack {
@@ -70,6 +76,10 @@ struct PlaceCardView: View {
         // The user's journal entries, so `yourLore` can render this place's note
         // + photos the moment the card opens (cheap: one RLS-scoped GET).
         .task(id: place.id) { await visits.loadHistory() }
+        .task(id: place.city) {
+            guard cityTheme == nil else { return }
+            loadedTheme = (try? await LoreAPI.shared.cityTheme(city: place.city)) ?? nil
+        }
         .sheet(isPresented: $showLoreEditor) {
             NoteEditorSheet(entry: loreEntry) { note in
                 Task { await visits.saveNote(placeID: place.id, note: note) }
@@ -252,6 +262,11 @@ struct PlaceCardView: View {
                 .padding(16)
             }
             .background(LoreColor.bone100)
+            .overlay(alignment: .top) {
+                CityThemeWash(theme: activeTheme)
+                    .opacity(0.34)
+                    .allowsHitTesting(false)
+            }
         }
     }
 
@@ -266,7 +281,7 @@ struct PlaceCardView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("THE STORY")
                     .loreLabelStyle()
-                    .foregroundStyle(LoreColor.brass700)
+                    .foregroundStyle(accent)
                 Text(narrative)
                     .font(LoreType.body)
                     .foregroundStyle(LoreColor.ink)
@@ -379,6 +394,12 @@ struct PlaceCardView: View {
         HStack(alignment: .center, spacing: 12) {
             Text(place.displayEmoji)
                 .font(.system(size: 34))
+                .frame(width: 54, height: 54)
+                .background(
+                    Circle()
+                        .fill(activeTheme?.accentSoftColor.opacity(0.18) ?? LoreColor.bone200)
+                )
+                .overlay(Circle().strokeBorder(accent.opacity(0.35), lineWidth: 1))
             VStack(alignment: .leading, spacing: 4) {
                 Text(place.name)
                     .font(LoreType.displayL)
@@ -390,7 +411,7 @@ struct PlaceCardView: View {
             Spacer()
             VStack(alignment: .trailing, spacing: 8) {
                 if let year = place.layer1?.yearBuilt {
-                    YearChip(year: year)
+                    YearChip(year: year, accent: accent)
                 }
                 shareButton
             }
@@ -409,7 +430,8 @@ struct PlaceCardView: View {
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(LoreColor.ink)
                 .frame(width: 36, height: 36)
-                .background(LoreColor.bone200, in: Circle())
+                .background(activeTheme?.accentSoftColor.opacity(0.16) ?? LoreColor.bone200, in: Circle())
+                .overlay(Circle().strokeBorder(accent.opacity(0.26), lineWidth: 1))
         }
         .buttonStyle(.pressable)
         .accessibilityLabel(Text("Share \(place.name)"))
@@ -417,16 +439,18 @@ struct PlaceCardView: View {
 
     @ViewBuilder
     private var factChips: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if let architect = place.layer1?.architect {
-                FactRow(label: "Architect", value: architect)
-            }
-            if let style = place.layer1?.style {
-                FactRow(label: "Style", value: style)
-            }
-            if let heightM = place.heightM {
-                // Height rolls up on first view (LUXURY-MOTION §5 tickers).
-                NumericFactRow(label: "Height", value: Int(heightM), suffix: " m")
+        if place.layer1?.architect != nil || place.layer1?.style != nil || place.heightM != nil {
+            VStack(alignment: .leading, spacing: 8) {
+                if let architect = place.layer1?.architect {
+                    FactRow(label: "Architect", value: architect)
+                }
+                if let style = place.layer1?.style {
+                    FactRow(label: "Style", value: style)
+                }
+                if let heightM = place.heightM {
+                    // Height rolls up on first view (LUXURY-MOTION §5 tickers).
+                    NumericFactRow(label: "Height", value: Int(heightM), suffix: " m")
+                }
             }
         }
     }
@@ -455,11 +479,12 @@ struct NumericFactRow: View {
 
 struct YearChip: View {
     let year: Int
+    var accent: Color = LoreColor.brass700
 
     var body: some View {
         Text(String(year))
             .font(LoreType.display(size: 15, weight: .medium))
-            .foregroundStyle(LoreColor.brass700)
+            .foregroundStyle(accent)
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
             .background(LoreColor.bone200, in: RoundedRectangle(cornerRadius: 8))

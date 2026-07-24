@@ -44,6 +44,7 @@ enum ScreenshotSupport {
     }
 
     /// Idempotent. Prepares a clean, first-run-skipped state for the capturer.
+    @MainActor
     static func applyIfNeeded() {
         guard isActive else { return }
         // Mark onboarding complete so the full-screen cover never presents.

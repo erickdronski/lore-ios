@@ -407,10 +407,17 @@ final class CultureModel {
     /// Human-friendly city name. Falls back to a title-cased slug when the
     /// `city` table hasn't been consulted (this surface only needs the slug).
     func cityDisplayName(for slug: String) -> String {
-        cityNames[slug] ?? slug.capitalized
+        cityNames[slug] ?? Self.prettyCitySlug(slug)
     }
 
     private var cityNames: [String: String] = [:]
+
+    private static func prettyCitySlug(_ slug: String) -> String {
+        slug
+            .split(separator: "-")
+            .map { $0.capitalized }
+            .joined(separator: " ")
+    }
 
     func load(city: String) async {
         guard case .loading = state else { return }

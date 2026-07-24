@@ -108,6 +108,7 @@ struct MapScreen: View {
             .safeAreaInset(edge: .top) {
                 MapHeader(
                     cityName: model.cityDisplayName(for: city),
+                    theme: model.theme,
                     onLocate: locateMe,
                     onSearch: onOpenSearch,
                     onSwitchCity: onOpenCitySwitcher,
@@ -142,11 +143,13 @@ struct MapScreen: View {
                     places: model.places,
                     onSelect: { selectedPlaceID = $0.id },
                     onNeedsSignIn: onNeedsSignIn,
-                    relevance: relevance
+                    relevance: relevance,
+                    city: city,
+                    theme: model.theme
                 )
             }
             .sheet(item: selectedPlaceBinding) { place in
-                PlaceCardView(place: place, onMeetCity: onMeetCity)
+                PlaceCardView(place: place, onMeetCity: onMeetCity, cityTheme: model.theme)
                     .presentationDetents([.medium, .large])
                     .presentationBackground(.regularMaterial)
                     .presentationCornerRadius(24)
@@ -196,7 +199,8 @@ struct MapScreen: View {
                             weighting: relevance.weighting(for: place),
                             index: index,
                             isSelected: selectedPlaceID == place.id,
-                            isVisited: visits.hasVisited(place.id)
+                            isVisited: visits.hasVisited(place.id),
+                            theme: model.theme
                         )
                     }
                     .tag(place.id)
@@ -346,6 +350,9 @@ final class MapScreenModel {
     /// The city's stories; the map surfaces the haunted ones after dark.
     /// Best-effort — an empty list just means no wisps tonight.
     var stories: [Story] = []
+    /// The city's signature hue system, if curated. Best-effort; nil keeps the
+    /// house palette so older deployments or unthemed cities still render.
+    private(set) var theme: CityTheme?
     var errorMessage: String?
     /// The camera region to fly to when a (new) city loads. The view observes
     /// this and eases to it (§7 "flyTo eases").
@@ -373,13 +380,17 @@ final class MapScreenModel {
 
     /// Human city name for the header; falls back to a title-cased slug.
     func cityDisplayName(for slug: String) -> String {
-        cityNames[slug] ?? slug.capitalized
+        cityNames[slug] ?? slug
+            .split(separator: "-")
+            .map { $0.capitalized }
+            .joined(separator: " ")
     }
 
     func load(city: String, force: Bool = false) async {
         guard force || city != loadedCity else { return }
         errorMessage = nil
         places = []
+        theme = nil
         loadedCity = nil
         cameraTarget = nil
         do {
@@ -387,10 +398,12 @@ final class MapScreenModel {
             // stories (the night layer); a failure in either never blocks pins.
             async let citiesTask = try? LoreAPI.shared.cities()
             async let storiesTask = try? LoreAPI.shared.stories(city: city)
+            async let themeTask = try? LoreAPI.shared.cityTheme(city: city)
             let loaded = try await LoreAPI.shared.places(city: city)
             places = loaded
             loadedCity = city
             stories = (await storiesTask) ?? []
+            theme = (await themeTask) ?? nil
 
             if let cities = await citiesTask {
                 cityNames = Dictionary(
@@ -400,7 +413,7 @@ final class MapScreenModel {
                 if let match = cities.first(where: { $0.slug == city }) {
                     cameraTarget = MKCoordinateRegion(
                         center: match.coordinate,
-                        span: MKCoordinateSpan(latitudeDelta: 0.045, longitudeDelta: 0.045)
+                        span: Self.span(forZoom: match.zoom)
                     )
                 }
             }
@@ -430,6 +443,16 @@ final class MapScreenModel {
         )
         return MKCoordinateRegion(center: center, span: span)
     }
+
+    /// Approximate MapKit span from the curated web-style zoom. This keeps
+    /// sprawling metros and compact old towns from arriving in the same box.
+    private static func span(forZoom zoom: Double?) -> MKCoordinateSpan {
+        guard let zoom else {
+            return MKCoordinateSpan(latitudeDelta: 0.045, longitudeDelta: 0.045)
+        }
+        let delta = min(0.18, max(0.018, 0.045 * pow(2, 13.8 - zoom)))
+        return MKCoordinateSpan(latitudeDelta: delta, longitudeDelta: delta)
+    }
 }
 
 // MARK: - Header
@@ -439,11 +462,13 @@ final class MapScreenModel {
 /// affordance. App chrome, so Ink/Brass, never Amber (Amber is the world's).
 struct MapHeader: View {
     let cityName: String
+    var theme: CityTheme? = nil
     /// Center the map on the user (gated to signed-in upstream).
     var onLocate: () -> Void = {}
     let onSearch: () -> Void
     let onSwitchCity: () -> Void
     let onMeetCity: () -> Void
+    private var accent: Color { theme?.accentColor ?? LoreColor.brass700 }
 
     var body: some View {
         HStack(spacing: 10) {
@@ -460,6 +485,7 @@ struct MapHeader: View {
                 .padding(.horizontal, 12)
                 .frame(height: 40)
                 .background(.ultraThinMaterial, in: Capsule())
+                .overlay(Capsule().strokeBorder(accent.opacity(theme == nil ? 0.12 : 0.36), lineWidth: 1))
             }
             .buttonStyle(.plain)
             .accessibilityLabel(Text("Current city, \(cityName)"))
@@ -487,6 +513,7 @@ struct MapHeader: View {
                     .foregroundStyle(LoreColor.ink)
                     .frame(width: 40, height: 40)
                     .background(.ultraThinMaterial, in: Circle())
+                    .overlay(Circle().strokeBorder(accent.opacity(theme == nil ? 0.1 : 0.32), lineWidth: 1))
             }
             .buttonStyle(.plain)
             .accessibilityLabel(Text("Meet \(cityName)"))
@@ -497,6 +524,7 @@ struct MapHeader: View {
                     .foregroundStyle(LoreColor.ink)
                     .frame(width: 40, height: 40)
                     .background(.ultraThinMaterial, in: Circle())
+                    .overlay(Circle().strokeBorder(accent.opacity(theme == nil ? 0.1 : 0.32), lineWidth: 1))
             }
             .buttonStyle(.plain)
             .accessibilityLabel(Text("Search Lore"))
@@ -530,6 +558,8 @@ struct PlacePinBadge: View {
     /// inside a pin crashes (EXC_BREAKPOINT) when annotations rebuild on a city
     /// switch. Passing a plain value keeps the seal without the crash.
     var isVisited: Bool = false
+    /// Current city theme, used as a quiet pin halo. Amber remains the pin fill.
+    var theme: CityTheme? = nil
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var bloomed = false
@@ -541,10 +571,10 @@ struct PlacePinBadge: View {
                     .fill(LoreColor.amber)
                     .strokeBorder(LoreColor.ink, lineWidth: 1.5)
                     .shadow(
-                        color: LoreColor.ink.opacity(0.35),
-                        radius: 3,
+                        color: (theme?.glowColor ?? LoreColor.ink).opacity(theme == nil ? 0.35 : 0.42),
+                        radius: theme == nil ? 3 : 6,
                         x: 0,
-                        y: 1
+                        y: theme == nil ? 1 : 2
                     )
                 Text(place.displayEmoji)
                     .font(.system(size: 15))

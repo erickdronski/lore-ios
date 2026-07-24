@@ -30,6 +30,8 @@ struct NearMeShelf: View {
     /// The city these places belong to, published to the home-screen widget
     /// alongside the nearest places (docs/16 §7). Defaults to the pilot city.
     var city: String = Config.defaultCity
+    /// Current city theme, applied as a restrained room-tone on shelf cards.
+    var theme: CityTheme? = nil
 
     @State private var provider = NearMeLocationProvider()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -119,7 +121,8 @@ struct NearMeShelf: View {
                         ranked: ranked,
                         hasOffer: offerPlaceIDs.contains(ranked.place.id),
                         onSelect: { onSelect(ranked.place) },
-                        onNeedsSignIn: onNeedsSignIn
+                        onNeedsSignIn: onNeedsSignIn,
+                        theme: theme
                     )
                     .modifier(StaggerChild(
                         index: index,
@@ -179,10 +182,13 @@ struct NearMeCard: View {
     var hasOffer: Bool = false
     let onSelect: () -> Void
     var onNeedsSignIn: () -> Void = {}
+    /// Current city theme, if curated. Used for the medallion ring and top rule.
+    var theme: CityTheme? = nil
 
     @Environment(VisitStore.self) private var visits
 
     private var place: Place { ranked.place }
+    private var accent: Color { theme?.accentColor ?? LoreColor.brass300 }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -231,8 +237,15 @@ struct NearMeCard: View {
         .background(RoundedRectangle(cornerRadius: 18).fill(LoreColor.ink800))
         .overlay(
             RoundedRectangle(cornerRadius: 18)
-                .strokeBorder(LoreColor.ink700, lineWidth: 1)
+                .strokeBorder(accent.opacity(theme == nil ? 0.18 : 0.42), lineWidth: 1)
         )
+        .overlay(alignment: .topLeading) {
+            Capsule()
+                .fill(accent.opacity(theme == nil ? 0 : 0.82))
+                .frame(width: 38, height: 3)
+                .padding(.leading, 14)
+                .accessibilityHidden(true)
+        }
     }
 
     private var medallion: some View {
@@ -240,7 +253,7 @@ struct NearMeCard: View {
             .font(.system(size: 22))
             .frame(width: 44, height: 44)
             .background(Circle().fill(LoreColor.ink900))
-            .overlay(Circle().strokeBorder(LoreColor.brass300.opacity(0.4), lineWidth: 1))
+            .overlay(Circle().strokeBorder(accent.opacity(0.5), lineWidth: 1))
             // A quiet brass "offers here" mark, only when one truly exists.
             .overlay(alignment: .bottomTrailing) {
                 if hasOffer { offerMark }

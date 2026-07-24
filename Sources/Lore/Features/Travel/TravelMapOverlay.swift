@@ -38,6 +38,10 @@ struct TravelMapControls: View {
 
     /// Relevance derived from the current prefs + whether a filter is active.
     let relevance: MapRelevance
+    /// Active city slug, forwarded to the widget snapshot and the shelf.
+    var city: String = Config.defaultCity
+    /// The city's curated hue system. Nil keeps the house palette.
+    var theme: CityTheme? = nil
 
     /// Places after the hard filter, for the shelf (pins are filtered by the
     /// map cell reading `filters.allows`).
@@ -58,7 +62,9 @@ struct TravelMapControls: View {
                         places: filteredPlaces,
                         relevance: relevance,
                         onSelect: onSelect,
-                        onNeedsSignIn: onNeedsSignIn
+                        onNeedsSignIn: onNeedsSignIn,
+                        city: city,
+                        theme: theme
                     )
                 }
                 .transition(.move(edge: .bottom).combined(with: .opacity))
