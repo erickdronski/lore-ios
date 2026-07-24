@@ -96,8 +96,40 @@ struct LoreApp: App {
 /// (search / city switcher / Meet-the-City / paywall / place card) the router
 /// raises. Reads the shared stores from the environment `LoreApp` injected.
 struct RootTabView: View {
-    enum Tab: Hashable {
+    enum Tab: String, CaseIterable, Hashable, Identifiable {
         case map, scanner, tours, passport, profile
+
+        var id: Self { self }
+
+        var title: String {
+            switch self {
+            case .map: L10n.t("tab.map")
+            case .scanner: L10n.t("tab.scanner")
+            case .tours: L10n.t("tab.tours")
+            case .passport: L10n.t("tab.passport")
+            case .profile: L10n.t("tab.profile")
+            }
+        }
+
+        var systemImage: String {
+            switch self {
+            case .map: "map"
+            case .scanner: "camera.viewfinder"
+            case .tours: "figure.walk"
+            case .passport: "seal"
+            case .profile: "person.crop.circle"
+            }
+        }
+
+        var subtitle: String {
+            switch self {
+            case .map: "Discover what is around you"
+            case .scanner: "Reveal stories in the world"
+            case .tours: "Walk a city with purpose"
+            case .passport: "Badges, visits, and journals"
+            case .profile: "Membership and preferences"
+            }
+        }
     }
 
     @Environment(AuthService.self) private var auth
@@ -113,6 +145,7 @@ struct RootTabView: View {
     @State private var dayNight = DayNightStore()
     @Environment(TravelSession.self) private var travel
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     @State private var selection: Tab = .map
 
@@ -143,34 +176,7 @@ struct RootTabView: View {
     #endif
 
     var body: some View {
-        TabView(selection: $selection) {
-            MapScreen(
-                city: router.selectedCity,
-                prefs: prefs.prefs,
-                onOpenSearch: { showSearch = true },
-                onOpenCitySwitcher: { showCitySwitcher = true },
-                onMeetCity: { meetCity = $0 },
-                onNeedsSignIn: { showSignIn = true }
-            )
-            .tabItem { Label(L10n.t("tab.map"), systemImage: "map") }
-            .tag(Tab.map)
-
-            ScannerScreen(city: router.selectedCity, prefs: prefs.prefs, onMeetCity: { meetCity = $0 })
-                .tabItem { Label(L10n.t("tab.scanner"), systemImage: "camera.viewfinder") }
-                .tag(Tab.scanner)
-
-            ToursScreen()
-                .tabItem { Label(L10n.t("tab.tours"), systemImage: "figure.walk") }
-                .tag(Tab.tours)
-
-            PassportView()
-                .tabItem { Label(L10n.t("tab.passport"), systemImage: "seal") }
-                .tag(Tab.passport)
-
-            ProfileScreen()
-                .tabItem { Label(L10n.t("tab.profile"), systemImage: "person.crop.circle") }
-                .tag(Tab.profile)
-        }
+        appShell
         // The badge-earned reward moment, app-wide: a visit logged on ANY tab
         // feeds VisitStore.onUnlocks -> TravelSession.pendingUnlocks; this raises
         // the same UnlockCelebration the Passport uses, over everything, so a
@@ -278,6 +284,174 @@ struct RootTabView: View {
             guard phase == .active else { return }
             Task { await auth.refreshIfNeeded() }
         }
+    }
+
+    /// Compact windows retain Lore's familiar bottom tabs. Regular-width iPad
+    /// windows use an editorial sidebar, freeing the full height for maps,
+    /// culture, tours, and the Passport wall. Stage Manager can move between
+    /// the two naturally as a window crosses the system size-class boundary.
+    @ViewBuilder
+    private var appShell: some View {
+        if horizontalSizeClass == .regular {
+            NavigationSplitView {
+                tabletSidebar
+                    .navigationSplitViewColumnWidth(min: 236, ideal: 268, max: 310)
+            } detail: {
+                tabletTabView
+            }
+            .navigationSplitViewStyle(.balanced)
+        } else {
+            compactTabView
+        }
+    }
+
+    private var compactTabView: some View {
+        TabView(selection: $selection) {
+            ForEach(Tab.allCases) { tab in
+                surface(for: tab)
+                    .tabItem { Label(tab.title, systemImage: tab.systemImage) }
+                    .tag(tab)
+            }
+        }
+    }
+
+    /// Keep every visited surface's navigation and scroll state alive while
+    /// the custom sidebar owns selection. The system tab bar is deliberately
+    /// hidden in regular width so tablet users get one clear navigation model.
+    private var tabletTabView: some View {
+        TabView(selection: $selection) {
+            ForEach(Tab.allCases) { tab in
+                surface(for: tab)
+                    .tag(tab)
+            }
+        }
+        .toolbar(.hidden, for: .tabBar)
+    }
+
+    private var tabletSidebar: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 5) {
+                Text("LORE")
+                    .font(LoreType.display(size: 30, weight: .bold))
+                    .tracking(2.5)
+                    .foregroundStyle(LoreColor.ink)
+                Text("Every place has a story.")
+                    .font(LoreType.caption)
+                    .foregroundStyle(LoreColor.ink600)
+            }
+            .padding(.horizontal, 22)
+            .padding(.top, 30)
+            .padding(.bottom, 22)
+
+            Text("EXPLORE")
+                .font(.system(size: 11, weight: .bold, design: .rounded))
+                .tracking(1.5)
+                .foregroundStyle(LoreColor.brass700)
+                .padding(.horizontal, 22)
+                .padding(.bottom, 8)
+
+            VStack(spacing: 6) {
+                ForEach(Tab.allCases) { tab in
+                    tabletSidebarButton(tab)
+                }
+            }
+            .padding(.horizontal, 12)
+
+            Spacer(minLength: 20)
+
+            Button {
+                showCitySwitcher = true
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "mappin.and.ellipse")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(LoreColor.brass700)
+                        .frame(width: 34, height: 34)
+                        .background(LoreColor.bone200, in: Circle())
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("EXPLORING")
+                            .font(.system(size: 9, weight: .bold, design: .rounded))
+                            .tracking(1.2)
+                            .foregroundStyle(LoreColor.ink600)
+                        Text(cityLabel(router.selectedCity))
+                            .font(LoreType.display(size: 16, weight: .semibold))
+                            .foregroundStyle(LoreColor.ink)
+                    }
+                    Spacer(minLength: 4)
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(LoreColor.ink600)
+                }
+                .padding(12)
+                .background(LoreColor.bone, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .strokeBorder(LoreColor.ink.opacity(0.08))
+                }
+            }
+            .buttonStyle(.plain)
+            .padding(12)
+        }
+        .background(LoreColor.bone100.ignoresSafeArea())
+        .toolbar(.hidden, for: .navigationBar)
+    }
+
+    private func tabletSidebarButton(_ tab: Tab) -> some View {
+        Button {
+            Haptics.play(.chipTap)
+            withAnimation(LoreMotion.tap) { selection = tab }
+        } label: {
+            HStack(spacing: 13) {
+                Image(systemName: tab.systemImage)
+                    .font(.system(size: 17, weight: .semibold))
+                    .frame(width: 24)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(tab.title)
+                        .font(LoreType.display(size: 17, weight: .semibold))
+                    Text(tab.subtitle)
+                        .font(.system(size: 11, weight: .regular))
+                        .lineLimit(1)
+                        .opacity(selection == tab ? 0.72 : 0.62)
+                }
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(selection == tab ? LoreColor.bone : LoreColor.ink)
+            .padding(.horizontal, 13)
+            .frame(height: 58)
+            .background {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(selection == tab ? LoreColor.ink : Color.clear)
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selection == tab ? .isSelected : [])
+    }
+
+    @ViewBuilder
+    private func surface(for tab: Tab) -> some View {
+        switch tab {
+        case .map:
+            MapScreen(
+                city: router.selectedCity,
+                prefs: prefs.prefs,
+                onOpenSearch: { showSearch = true },
+                onOpenCitySwitcher: { showCitySwitcher = true },
+                onMeetCity: { meetCity = $0 },
+                onNeedsSignIn: { showSignIn = true }
+            )
+        case .scanner:
+            ScannerScreen(city: router.selectedCity, prefs: prefs.prefs, onMeetCity: { meetCity = $0 })
+        case .tours:
+            ToursScreen()
+        case .passport:
+            PassportView()
+        case .profile:
+            ProfileScreen()
+        }
+    }
+
+    private func cityLabel(_ slug: String) -> String {
+        slug.replacingOccurrences(of: "-", with: " ").capitalized
     }
 
     /// Resolve the nearest live city to a fresh location fix and hand it to the

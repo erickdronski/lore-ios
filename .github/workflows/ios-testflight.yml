@@ -88,6 +88,14 @@ jobs:
           CODE_SIGNING_ALLOWED=NO
           build
 
+      - name: Verify universal iPhone and iPad metadata
+        run: |
+          APP_PLIST="$(find ~/Library/Developer/Xcode/DerivedData -path '*/Build/Products/Release-iphonesimulator/Lore.app/Info.plist' -print -quit)"
+          test -n "$APP_PLIST"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :UIDeviceFamily:0' "$APP_PLIST")" = "1"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :UIDeviceFamily:1' "$APP_PLIST")" = "2"
+          /usr/libexec/PlistBuddy -c 'Print :UISupportedInterfaceOrientations~ipad' "$APP_PLIST" | grep -q UIInterfaceOrientationLandscapeLeft
+
       - name: Save the build log on failure
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

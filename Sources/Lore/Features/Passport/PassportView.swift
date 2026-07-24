@@ -157,9 +157,7 @@ struct PassportView: View {
                             .padding(.horizontal, 16)
                         LazyVGrid(
                             columns: [
-                                GridItem(.flexible(), spacing: 12),
-                                GridItem(.flexible(), spacing: 12),
-                                GridItem(.flexible(), spacing: 12),
+                                GridItem(.adaptive(minimum: 100, maximum: 140), spacing: 12),
                             ],
                             spacing: 20
                         ) {
@@ -284,7 +282,8 @@ struct PassportSummary: View {
 // MARK: - Category section
 
 /// One category's worth of badges in a lazy grid. The category header carries a
-/// glyph + human title; the grid flows three-up and never dumps text.
+/// glyph + human title; the grid flows from three-up on iPhone to a broad
+/// badge atlas on iPad without stretching individual medallions.
 struct CategorySection: View {
     let section: PassportSection
 
@@ -293,9 +292,7 @@ struct CategorySection: View {
     @State private var appeared = false
 
     private let columns = [
-        GridItem(.flexible(), spacing: 12),
-        GridItem(.flexible(), spacing: 12),
-        GridItem(.flexible(), spacing: 12),
+        GridItem(.adaptive(minimum: 100, maximum: 140), spacing: 12),
     ]
 
     var body: some View {

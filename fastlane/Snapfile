@@ -1,13 +1,14 @@
 # fastlane snapshot config for Lore's App Store screenshots.
 #
-# Runs on the Simulator (no code signing). Captures the non-camera surfaces at
-# the 6.9" size, which App Store Connect now requires and can down-scale to the
-# 6.5" slot, so one device covers both iPhone requirements.
+# Runs on the Simulator (no code signing). Captures the non-camera surfaces for
+# both storefront families: the 6.9" iPhone size and the full 13" iPad canvas.
+# One device in each family covers the smaller storefront slots.
 #
 # Regenerate any time: `bundle exec fastlane screenshots`.
 
 devices([
-  "iPhone 16 Pro Max"
+  "iPhone 16 Pro Max",
+  "iPad Pro 13-inch (M5)",
 ])
 
 languages([

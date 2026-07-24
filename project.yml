@@ -60,7 +60,10 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon # Sources/Lore/Resources/Assets.xcassets/AppIcon.appiconset (1024px, no alpha)
         MARKETING_VERSION: "1.0"
         CURRENT_PROJECT_VERSION: "1"
-        TARGETED_DEVICE_FAMILY: "1" # iPhone only — Wi-Fi-only iPads can never localize (docs/10 §1)
+        # Universal iPhone + iPad. Location-aware surfaces already degrade to
+        # city browsing when a device has no precise fix, so Wi-Fi-only iPads
+        # keep the full Lore experience without pretending they have GPS.
+        TARGETED_DEVICE_FAMILY: "1,2"
         INFOPLIST_KEY_UIUserInterfaceStyle: Automatic
         SUPPORTS_MACCATALYST: false
 
@@ -117,6 +120,11 @@ targets:
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
         ITSAppUsesNonExemptEncryption: false
 
         # ── Live Activities (ActivityKit) ──────────────────────────────────
@@ -178,7 +186,7 @@ targets:
         PRODUCT_NAME: LoreWidget
         MARKETING_VERSION: "1.0"
         CURRENT_PROJECT_VERSION: "1"
-        TARGETED_DEVICE_FAMILY: "1"
+        TARGETED_DEVICE_FAMILY: "1,2"
         SKIP_INSTALL: true
         # App Group entitlement is portal-gated — same note as the app target.
         # Both targets must carry `group.com.erickdronski.lore` for the snapshot hand-off

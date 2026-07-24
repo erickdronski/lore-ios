@@ -1,4 +1,5 @@
 import XCTest
+import UIKit
 
 /// App Store screenshot capturer, driven by `fastlane screenshots`
 /// (see fastlane/Snapfile + the screenshots.yml workflow).
@@ -43,8 +44,17 @@ final class LoreScreenshots: XCTestCase {
         // ── Launch 1: the tab surfaces ──────────────────────────────────────
         app.launch()
 
-        let tabBar = app.tabBars.firstMatch
-        _ = tabBar.waitForExistence(timeout: 30)
+        if UIDevice.current.userInterfaceIdiom == .phone {
+            XCTAssertTrue(
+                app.tabBars.firstMatch.waitForExistence(timeout: 30),
+                "the compact layout should expose Lore's tab bar"
+            )
+        } else {
+            XCTAssertTrue(
+                sidebarButton(app, "Map").waitForExistence(timeout: 30),
+                "the regular-width iPad layout should expose Lore's sidebar"
+            )
+        }
 
         // MAP — the default surface. Tap the Map tab once (harmless, we're
         // already here) to trip the interruption monitor / dismiss any location
@@ -94,6 +104,20 @@ final class LoreScreenshots: XCTestCase {
         let button = app.tabBars.buttons[label]
         if button.waitForExistence(timeout: 15) {
             button.tap()
+            return
         }
+
+        let sidebar = sidebarButton(app, label)
+        if sidebar.waitForExistence(timeout: 15) {
+            sidebar.tap()
+        }
+    }
+
+    /// Sidebar buttons combine the section title and its editorial subtitle
+    /// into one accessibility label, so match the stable title prefix.
+    private func sidebarButton(_ app: XCUIApplication, _ label: String) -> XCUIElement {
+        app.buttons
+            .matching(NSPredicate(format: "label BEGINSWITH %@", "\(label),"))
+            .firstMatch
     }
 }
