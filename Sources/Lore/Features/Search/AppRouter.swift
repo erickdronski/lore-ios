@@ -37,7 +37,7 @@ enum LoreRoute: Hashable {
             self = .place(id: result.ref, city: result.city)
         case .story:
             self = .story(id: result.ref, city: result.city)
-        case .culture:
+        case .culture, .person:
             self = .culture(id: result.ref, city: result.city)
         case .tour:
             self = .tour(slug: result.slug ?? result.ref, city: result.city)

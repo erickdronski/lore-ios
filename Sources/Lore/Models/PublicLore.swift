@@ -10,7 +10,6 @@ struct PublicLore: Decodable, Identifiable {
     let authorID: String
     let displayName: String
     let note: String?
-    let photos: [String]?
     let visitedAt: String?
     let sharedAt: String?
 
@@ -19,7 +18,7 @@ struct PublicLore: Decodable, Identifiable {
         case placeID = "place_id"
         case authorID = "author_id"
         case displayName = "display_name"
-        case note, photos
+        case note
         case visitedAt = "visited_at"
         case sharedAt = "shared_at"
     }

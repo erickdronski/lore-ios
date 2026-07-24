@@ -251,7 +251,7 @@ struct NoteEditorSheet: View {
             .navigationTitle("Your lore")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
                         onSave(text.trimmingCharacters(in: .whitespacesAndNewlines))

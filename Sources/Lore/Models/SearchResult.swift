@@ -52,9 +52,12 @@ struct SearchResult: Codable, Identifiable, Hashable {
         case story
         case tour
         case culture
+        case person
         case city
 
-        /// Forward-compatible: unknown kinds fall back to `.place`.
+        /// Forward-compatible: unknown kinds fall back to `.place`, while the
+        /// backend's legacy `person` rows get their own kind so they route into
+        /// Meet the City instead of trying to open a nonexistent place.
         init(from decoder: Decoder) throws {
             let raw = try decoder.singleValueContainer().decode(String.self)
             self = Kind(rawValue: raw) ?? .place
@@ -67,6 +70,7 @@ struct SearchResult: Codable, Identifiable, Hashable {
             case .story: return "text.book.closed"
             case .tour: return "figure.walk"
             case .culture: return "quote.bubble"
+            case .person: return "person.crop.circle"
             case .city: return "building.2"
             }
         }

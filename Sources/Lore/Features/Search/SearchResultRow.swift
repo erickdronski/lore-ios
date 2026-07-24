@@ -78,7 +78,7 @@ extension SearchResult.Kind {
         case .city: return "Cities"
         case .place: return "Places"
         case .story: return "Stories"
-        case .culture: return "People & Culture"
+        case .culture, .person: return "People & Culture"
         case .tour: return "Tours"
         }
     }
@@ -89,7 +89,7 @@ extension SearchResult.Kind {
         switch self {
         case .city: return 0
         case .place: return 1
-        case .culture: return 2
+        case .culture, .person: return 2
         case .story: return 3
         case .tour: return 4
         }
