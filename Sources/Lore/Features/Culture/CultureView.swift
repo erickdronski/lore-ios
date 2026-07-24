@@ -453,7 +453,7 @@ final class CultureModel {
                     return a == b ? $0.kind < $1.kind : a < b
                 }
 
-            state = (rows.isEmpty && facts.isEmpty) ? .empty : .loaded
+            state = (rows.isEmpty && facts.isEmpty && sections.isEmpty) ? .empty : .loaded
         } catch {
             state = .failed("Check your connection and try again.")
         }
