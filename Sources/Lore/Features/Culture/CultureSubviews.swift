@@ -47,27 +47,34 @@ struct CultureQuoteCard: View {
 
     /// One quote card face inside the pager.
     private func quoteFace(_ quote: CityCulture) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("\u{201C}")
-                .font(LoreType.display(size: 52, weight: .semibold))
-                .foregroundStyle(LoreColor.brass300)
-                .frame(height: 28, alignment: .top)
-                .accessibilityHidden(true)
-
-            Text(quote.headline)
-                .font(LoreType.display(size: 24, weight: .medium))
-                .foregroundStyle(LoreColor.bone)
-                .minimumScaleFactor(0.6)
-                .lineLimit(5)
-                .fixedSize(horizontal: false, vertical: true)
-
-            if let attribution = quote.attribution ?? quote.body {
-                Text(attribution)
-                    .font(LoreType.caption)
+        ZStack(alignment: .bottomTrailing) {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("\u{201C}")
+                    .font(LoreType.display(size: 52, weight: .semibold))
                     .foregroundStyle(LoreColor.brass300)
-                    .lineLimit(2)
+                    .frame(height: 28, alignment: .top)
+                    .accessibilityHidden(true)
+
+                Text(quote.headline)
+                    .font(LoreType.display(size: 24, weight: .medium))
+                    .foregroundStyle(LoreColor.bone)
+                    .minimumScaleFactor(0.6)
+                    .lineLimit(5)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Spacer(minLength: 0)
+
+                if let attribution = quote.attribution ?? quote.body {
+                    Text(attribution)
+                        .font(LoreType.caption)
+                        .foregroundStyle(LoreColor.brass300)
+                        .lineLimit(2)
+                        .padding(.trailing, 68)
+                }
             }
-            Spacer(minLength: 0)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+
+            QuoteAuthorPortrait(quote: quote)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         .padding(20)
@@ -107,6 +114,84 @@ struct CultureQuoteCard: View {
         withAnimation(LoreSpring.smooth(reduceMotion: false)) {
             index = (index + 1) % quotes.count
         }
+    }
+}
+
+/// A compact portrait signature for a quote. Named speakers resolve through
+/// the same Wikipedia image path as Famous Faces; the curated emoji remains a
+/// useful offline and non-person fallback.
+private struct QuoteAuthorPortrait: View {
+    let quote: CityCulture
+    @State private var portraitURL: URL?
+
+    private let diameter: CGFloat = 52
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(
+                    LinearGradient(
+                        colors: [LoreColor.ink700, LoreColor.ink900],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .overlay(
+                    Text(quote.displayEmoji)
+                        .font(.system(size: 21))
+                )
+
+            if let portraitURL {
+                AsyncImage(
+                    url: portraitURL,
+                    transaction: Transaction(animation: LoreMotion.bloom)
+                ) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .scaledToFill()
+                            .transition(.opacity)
+                    case .empty, .failure:
+                        Color.clear
+                    @unknown default:
+                        Color.clear
+                    }
+                }
+                .clipShape(Circle())
+            }
+        }
+        .frame(width: diameter, height: diameter)
+        .overlay(
+            Circle()
+                .strokeBorder(LoreColor.brass300, lineWidth: 1.5)
+        )
+        .shadow(color: .black.opacity(0.24), radius: 8, y: 4)
+        .task(id: portraitTitle) {
+            guard let portraitTitle else {
+                portraitURL = nil
+                return
+            }
+            portraitURL = await WikipediaService.shared.portraitURL(for: portraitTitle)
+        }
+        .accessibilityHidden(true)
+    }
+
+    private var portraitTitle: String? {
+        if let title = quote.wikipediaTitle { return title }
+        guard let attribution = quote.attribution?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !attribution.isEmpty else { return nil }
+
+        // Most curated attributions are "Name, role/context". A few use
+        // "Name in Work"; both reduce cleanly to Wikipedia's article title.
+        let beforeContext = attribution.split(separator: ",", maxSplits: 1).first.map(String.init)
+            ?? attribution
+        let lowercased = beforeContext.lowercased()
+        if let range = lowercased.range(of: " in ") {
+            return String(beforeContext[..<range.lowerBound])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return beforeContext.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 
