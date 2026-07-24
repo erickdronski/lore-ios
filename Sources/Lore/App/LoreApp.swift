@@ -148,6 +148,9 @@ struct RootTabView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     @State private var selection: Tab = .map
+    /// iPad users can reclaim the full map/content canvas and restore the
+    /// editorial rail from a small edge handle without rebuilding any tab.
+    @State private var tabletColumnVisibility: NavigationSplitViewVisibility = .all
 
     /// One-shot location source used only to snap the active city to the user's
     /// nearest city on launch (TestFlight feedback: "it says Chicago but I'm in
@@ -293,13 +296,20 @@ struct RootTabView: View {
     @ViewBuilder
     private var appShell: some View {
         if horizontalSizeClass == .regular {
-            NavigationSplitView {
+            NavigationSplitView(columnVisibility: $tabletColumnVisibility) {
                 tabletSidebar
                     .navigationSplitViewColumnWidth(min: 236, ideal: 268, max: 310)
             } detail: {
                 tabletTabView
+                    .overlay(alignment: .leading) {
+                        if tabletColumnVisibility == .detailOnly {
+                            tabletSidebarRestoreButton
+                                .transition(.move(edge: .leading).combined(with: .opacity))
+                        }
+                    }
             }
             .navigationSplitViewStyle(.balanced)
+            .animation(LoreMotion.tap, value: tabletColumnVisibility)
         } else {
             compactTabView
         }
@@ -330,14 +340,33 @@ struct RootTabView: View {
 
     private var tabletSidebar: some View {
         VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 5) {
-                Text("LORE")
-                    .font(LoreType.display(size: 30, weight: .bold))
-                    .tracking(2.5)
-                    .foregroundStyle(LoreColor.ink)
-                Text("Every place has a story.")
-                    .font(LoreType.caption)
-                    .foregroundStyle(LoreColor.ink600)
+            HStack(alignment: .top, spacing: 10) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("LORE")
+                        .font(LoreType.display(size: 30, weight: .bold))
+                        .tracking(2.5)
+                        .foregroundStyle(LoreColor.ink)
+                    Text("Every place has a story.")
+                        .font(LoreType.caption)
+                        .foregroundStyle(LoreColor.ink600)
+                }
+
+                Spacer(minLength: 4)
+
+                Button {
+                    Haptics.play(.chipTap)
+                    withAnimation(LoreMotion.tap) { tabletColumnVisibility = .detailOnly }
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(LoreColor.ink600)
+                        .frame(width: 34, height: 34)
+                        .background(LoreColor.bone200, in: Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Hide sidebar")
+                .help("Hide sidebar")
+                .keyboardShortcut("s", modifiers: [.command, .control])
             }
             .padding(.horizontal, 22)
             .padding(.top, 30)
@@ -394,6 +423,29 @@ struct RootTabView: View {
         }
         .background(LoreColor.bone100.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
+    }
+
+    /// A quiet edge tab, not a top-left floating button: it stays clear of the
+    /// map's city picker and the navigation titles on content-heavy surfaces.
+    private var tabletSidebarRestoreButton: some View {
+        Button {
+            Haptics.play(.chipTap)
+            withAnimation(LoreMotion.tap) { tabletColumnVisibility = .all }
+        } label: {
+            Image(systemName: "chevron.right")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(LoreColor.ink)
+                .frame(width: 34, height: 52)
+                .background(.ultraThinMaterial, in: Capsule())
+                .overlay(Capsule().strokeBorder(LoreColor.brass700.opacity(0.3)))
+                .shadow(color: .black.opacity(0.18), radius: 8, x: 2, y: 3)
+        }
+        .buttonStyle(.plain)
+        .padding(.leading, 8)
+        .accessibilityLabel("Show sidebar")
+        .help("Show sidebar")
+        .keyboardShortcut("s", modifiers: [.command, .control])
+        .zIndex(20)
     }
 
     private func tabletSidebarButton(_ tab: Tab) -> some View {
