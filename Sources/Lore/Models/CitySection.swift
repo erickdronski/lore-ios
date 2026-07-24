@@ -33,7 +33,9 @@ enum SectionKindMeta {
     static func header(for kind: String) -> (eyebrow: String, title: String) {
         switch kind {
         case "name_origin": return ("First, the Name", "Why It's Called That")
+        case "phrase": return ("Carry These Words", "Traveler Phrases")
         case "dish": return ("Eat Like a Local", "Taste of the City")
+        case "drink": return ("Order Like a Local", "What to Drink")
         case "ritual": return ("Live Like a Local", "Rituals")
         case "soundmark": return ("Eyes Closed", "The City's Sound")
         case "material": return ("Look Closer", "What It's Made Of")
@@ -55,18 +57,20 @@ enum SectionKindMeta {
     static func order(for kind: String) -> Int {
         switch kind {
         case "name_origin": return 0   // identity first
-        case "dish": return 1
-        case "ritual": return 2
-        case "soundmark": return 3
-        case "material": return 4
-        case "sound": return 5
-        case "screen": return 6
-        case "etiquette": return 7
-        case "market": return 8
-        case "number": return 9
-        case "experience": return 10
-        case "listen": return 11
-        case "field_note": return 12
+        case "phrase": return 1
+        case "dish": return 2
+        case "drink": return 3
+        case "ritual": return 4
+        case "soundmark": return 5
+        case "material": return 6
+        case "sound": return 7
+        case "screen": return 8
+        case "etiquette": return 9
+        case "market": return 10
+        case "number": return 11
+        case "experience": return 12
+        case "listen": return 13
+        case "field_note": return 14
         default: return 50
         }
     }

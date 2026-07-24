@@ -65,6 +65,8 @@ private struct FlavorCard: View {
             (entry.kind == "experience" && entry.placeID != nil)
     }
 
+    private var isPhrase: Bool { entry.kind == "phrase" }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Rectangle()
@@ -80,22 +82,26 @@ private struct FlavorCard: View {
                     .foregroundStyle(LoreColor.bone)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            Text(entry.body)
-                .font(LoreType.caption)
-                .foregroundStyle(LoreColor.bone.opacity(0.78))
-                .lineSpacing(2)
-                .fixedSize(horizontal: false, vertical: true)
-            if let attribution = entry.attribution, !attribution.isEmpty {
-                Text(attribution)
-                    .font(LoreType.micro)
-                    .foregroundStyle(LoreColor.ink600)
+            if isPhrase {
+                phraseTranslation
+            } else {
+                Text(entry.body)
+                    .font(LoreType.caption)
+                    .foregroundStyle(LoreColor.bone.opacity(0.78))
+                    .lineSpacing(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let attribution = entry.attribution, !attribution.isEmpty {
+                    Text(attribution)
+                        .font(LoreType.micro)
+                        .foregroundStyle(LoreColor.ink600)
+                }
             }
             Spacer(minLength: 0)
             action
         }
         .padding(14)
         .frame(width: 280, alignment: .topLeading)
-        .frame(minHeight: isInteractive ? 218 : 132)
+        .frame(minHeight: isInteractive ? 218 : (isPhrase ? 178 : 132))
         .background(
             completed ? LoreColor.ink800 : LoreColor.ink900,
             in: RoundedRectangle(cornerRadius: 16)
@@ -137,6 +143,29 @@ private struct FlavorCard: View {
             completeExperience()
         }
         .accessibilityElement(children: isInteractive ? .contain : .combine)
+    }
+
+    private var phraseTranslation: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let pronunciation = entry.attribution, !pronunciation.isEmpty {
+                Label(pronunciation, systemImage: "waveform")
+                    .font(LoreType.micro)
+                    .foregroundStyle(accent)
+            }
+
+            Rectangle()
+                .fill(LoreColor.bone.opacity(0.12))
+                .frame(height: 1)
+
+            Text("ENGLISH")
+                .font(LoreType.micro)
+                .tracking(0.8)
+                .foregroundStyle(LoreColor.ink600)
+            Text(entry.body)
+                .font(LoreType.caption)
+                .foregroundStyle(LoreColor.bone.opacity(0.86))
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     @ViewBuilder

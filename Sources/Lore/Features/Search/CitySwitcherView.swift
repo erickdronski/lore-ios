@@ -1,8 +1,9 @@
 import SwiftUI
 
 /// The city switcher: the live roster from `GET /city?status=eq.live&order=sort`,
-/// grouped United States first, then International, each city a tappable row
-/// with its emoji. A search field at the top filters the loaded roster locally;
+/// grouped by travel region, each city a tappable row with its emoji. Travelers
+/// can pin future destinations into a private, account-scoped planning shelf.
+/// A search field at the top filters the loaded roster locally;
 /// once the roster outgrows what's worth loading whole, the same field falls
 /// back to the `search_lore` RPC (city hits only) so it scales past the local
 /// list. Tapping a city routes through the injected router (`switchCity`).
@@ -14,7 +15,9 @@ struct CitySwitcherView: View {
     let currentCity: String?
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(AuthService.self) private var auth
     @State private var model = CitySwitcherModel()
+    @State private var planningSlugs: Set<String> = []
 
     /// Hook to the shared router: taps drive `router.switchCity(to:)` and the
     /// current selection is read from `router.selectedCity`.
@@ -38,6 +41,7 @@ struct CitySwitcherView: View {
             }
             .navigationTitle("Choose a city")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarColorScheme(.light, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Close") { dismiss() }
@@ -52,6 +56,9 @@ struct CitySwitcherView: View {
                 model.queryChanged(newValue)
             }
             .task { await model.load() }
+            .task(id: auth.session?.user.id) {
+                planningSlugs = CityPlanningStore.cities(userID: auth.session?.user.id)
+            }
         }
     }
 
@@ -73,11 +80,7 @@ struct CitySwitcherView: View {
                 description: Text("Live cities appear here as they're chronicled.")
             )
         case .loaded:
-            if model.isFiltering && model.filteredSections.allSatisfy({ $0.cities.isEmpty }) {
-                ContentUnavailableView.search(text: model.query)
-            } else {
-                cityList
-            }
+            cityList
         }
     }
 
@@ -97,35 +100,129 @@ struct CitySwitcherView: View {
     }
 
     private var cityList: some View {
-        List {
-            ForEach(model.filteredSections) { section in
-                if !section.cities.isEmpty {
-                    Section {
-                        ForEach(section.cities) { city in
-                            Button {
-                                select(city)
-                            } label: {
-                                CityRow(
-                                    city: city,
-                                    isCurrent: city.slug == currentCity
-                                )
+        let sections = model.filteredSections(planningSlugs: planningSlugs)
+
+        return VStack(spacing: 0) {
+            travelerFilterBar
+
+            if sections.isEmpty {
+                if model.selectedFilter == .planning && !model.isFiltering {
+                    ContentUnavailableView(
+                        "No trips pinned yet",
+                        systemImage: "pin.circle",
+                        description: Text("Pin a city to keep it close while you plan and learn.")
+                    )
+                } else {
+                    ContentUnavailableView.search(text: model.query)
+                }
+            } else {
+                List {
+                    ForEach(sections) { section in
+                        Section {
+                            ForEach(section.cities) { city in
+                                HStack(spacing: 4) {
+                                    Button {
+                                        select(city)
+                                    } label: {
+                                        CityRow(
+                                            city: city,
+                                            isCurrent: city.slug == currentCity
+                                        )
+                                    }
+                                    .buttonStyle(.plain)
+
+                                    Button {
+                                        togglePlanning(city)
+                                    } label: {
+                                        Image(systemName: planningSlugs.contains(city.slug) ? "pin.fill" : "pin")
+                                            .font(.system(size: 15, weight: .semibold))
+                                            .foregroundStyle(
+                                                planningSlugs.contains(city.slug)
+                                                    ? LoreColor.brass700
+                                                    : LoreColor.ink600
+                                            )
+                                            .frame(width: 42, height: 42)
+                                            .contentShape(Rectangle())
+                                    }
+                                    .buttonStyle(.plain)
+                                    .accessibilityLabel(
+                                        planningSlugs.contains(city.slug)
+                                            ? "Remove \(city.name) from trip planning"
+                                            : "Pin \(city.name) for trip planning"
+                                    )
+                                }
+                                .listRowBackground(LoreColor.bone50)
                             }
-                            .buttonStyle(.plain)
-                            .listRowBackground(LoreColor.bone50)
+                        } header: {
+                            Text(section.title)
+                                .font(LoreType.label)
+                                .tracking(0.6)
+                                .foregroundStyle(LoreColor.ink600)
+                                .textCase(nil)
                         }
-                    } header: {
-                        Text(section.title)
-                            .font(LoreType.label)
-                            .tracking(0.6)
-                            .foregroundStyle(LoreColor.ink600)
-                            .textCase(nil)
                     }
                 }
+                .listStyle(.insetGrouped)
+                .scrollContentBackground(.hidden)
+                .scrollDismissesKeyboard(.immediately)
             }
         }
-        .listStyle(.insetGrouped)
-        .scrollContentBackground(.hidden)
-        .scrollDismissesKeyboard(.immediately)
+    }
+
+    private var travelerFilterBar: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 7) {
+                Image(systemName: "pin.fill")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(LoreColor.brass700)
+                Text(planningSlugs.isEmpty ? "Pin cities you are planning" : "\(planningSlugs.count) saved for your next trip")
+                    .font(LoreType.caption)
+                    .foregroundStyle(LoreColor.ink600)
+            }
+            .padding(.horizontal, 16)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(CityBrowseFilter.allCases) { filter in
+                        Button {
+                            Haptics.play(.chipTap)
+                            model.selectedFilter = filter
+                        } label: {
+                            Label(filter.title, systemImage: filter.symbol)
+                                .font(LoreType.label)
+                                .foregroundStyle(
+                                    model.selectedFilter == filter
+                                        ? LoreColor.bone50
+                                        : LoreColor.ink
+                                )
+                                .padding(.horizontal, 12)
+                                .frame(height: 34)
+                                .background(
+                                    model.selectedFilter == filter
+                                        ? LoreColor.brass700
+                                        : LoreColor.bone50,
+                                    in: Capsule()
+                                )
+                                .overlay {
+                                    if model.selectedFilter != filter {
+                                        Capsule().strokeBorder(LoreColor.ink.opacity(0.12))
+                                    }
+                                }
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityAddTraits(model.selectedFilter == filter ? .isSelected : [])
+                    }
+                }
+                .padding(.horizontal, 16)
+            }
+        }
+        .padding(.vertical, 10)
+        .background(LoreColor.bone100)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(LoreColor.ink.opacity(0.08))
+                .frame(height: 1)
+        }
     }
 
     private func select(_ city: City) {
@@ -133,6 +230,16 @@ struct CitySwitcherView: View {
         let slug = city.slug
         dismiss()
         onSelect(slug)
+    }
+
+    private func togglePlanning(_ city: City) {
+        Haptics.play(.chipTap)
+        withAnimation(LoreMotion.tap) {
+            planningSlugs = CityPlanningStore.toggle(
+                city: city.slug,
+                userID: auth.session?.user.id
+            )
+        }
     }
 }
 
@@ -171,13 +278,69 @@ struct CityRow: View {
             }
         }
         .padding(.vertical, 4)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(isCurrent ? [.isButton, .isSelected] : .isButton)
+        .accessibilityAddTraits(isCurrent ? .isSelected : [])
     }
 }
 
 // MARK: - Region grouping
+
+enum CityBrowseFilter: String, CaseIterable, Identifiable {
+    case all
+    case planning
+    case unitedStates
+    case europe
+    case asia
+    case americas
+    case middleEastAfrica
+    case oceania
+    case international
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .all: return "All"
+        case .planning: return "Planning"
+        case .unitedStates: return "US"
+        case .europe: return "Europe"
+        case .asia: return "Asia"
+        case .americas: return "Americas"
+        case .middleEastAfrica: return "Africa & Middle East"
+        case .oceania: return "Oceania"
+        case .international: return "More"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .all: return "globe.americas.fill"
+        case .planning: return "pin.fill"
+        case .unitedStates: return "star.fill"
+        case .europe: return "globe.europe.africa.fill"
+        case .asia: return "globe.asia.australia.fill"
+        case .americas: return "globe.americas.fill"
+        case .middleEastAfrica: return "sun.max.fill"
+        case .oceania: return "water.waves"
+        case .international: return "map.fill"
+        }
+    }
+
+    var region: CityRegion? {
+        switch self {
+        case .unitedStates: return .unitedStates
+        case .europe: return .europe
+        case .asia: return .asia
+        case .americas: return .americas
+        case .middleEastAfrica: return .middleEastAfrica
+        case .oceania: return .oceania
+        case .international: return .international
+        case .all, .planning: return nil
+        }
+    }
+}
 
 /// Continent grouping for the switcher (TestFlight feedback: "filters should be
 /// here for USA, Asia, Europe, etc."), plus country-code display names. Kept
@@ -315,12 +478,10 @@ enum CityRegion: String, CaseIterable, Identifiable {
 }
 
 /// A rendered region section, its cities in curated (`sort`) order.
-struct CityRegionSection: Identifiable {
-    let region: CityRegion
+struct CityListSection: Identifiable {
+    let id: String
+    let title: String
     let cities: [City]
-
-    var id: String { region.id }
-    var title: String { region.title }
 }
 
 // MARK: - Model
@@ -337,6 +498,7 @@ final class CitySwitcherModel {
 
     /// The live search/filter text.
     var query: String = ""
+    var selectedFilter: CityBrowseFilter = .all
 
     private(set) var state: State = .loading
     /// The full loaded roster, in curated `sort` order.
@@ -370,22 +532,53 @@ final class CitySwitcherModel {
         }
     }
 
-    /// The regions to render, each filtered by the current query. Sections with
-    /// no matches are still returned (empty) so the view can decide whether to
-    /// show them; `cityList` skips empty ones.
-    var filteredSections: [CityRegionSection] {
+    /// The sections to render after combining search, region, and private trip
+    /// pins. Empty sections are omitted so the view can show one useful empty
+    /// state for either search or the planning shelf.
+    func filteredSections(planningSlugs: Set<String>) -> [CityListSection] {
         let matches = filteredCities
+
+        if selectedFilter == .planning {
+            let planning = matches.filter { planningSlugs.contains($0.slug) }
+            return planning.isEmpty ? [] : [
+                CityListSection(
+                    id: "planning",
+                    title: "Planning next",
+                    cities: planning.sorted(by: Self.curatedOrder)
+                )
+            ]
+        }
+
+        if let region = selectedFilter.region {
+            let regionCities = matches
+                .filter { CityRegion.region(forCountry: $0.country) == region }
+                .sorted(by: Self.curatedOrder)
+            return regionCities.isEmpty ? [] : [
+                CityListSection(id: region.id, title: region.title, cities: regionCities)
+            ]
+        }
+
         let byRegion = Dictionary(grouping: matches) {
             CityRegion.region(forCountry: $0.country)
         }
-        return CityRegion.allCases
+        var sections: [CityListSection] = []
+        let planning = matches
+            .filter { planningSlugs.contains($0.slug) }
+            .sorted(by: Self.curatedOrder)
+        if !planning.isEmpty {
+            sections.append(CityListSection(id: "planning", title: "Planning next", cities: planning))
+        }
+
+        sections.append(contentsOf: CityRegion.allCases
             .sorted { $0.sortIndex < $1.sortIndex }
-            .map { region in
-                CityRegionSection(
-                    region: region,
-                    cities: (byRegion[region] ?? []).sorted(by: Self.curatedOrder)
-                )
-            }
+            .compactMap { region in
+                let cities = (byRegion[region] ?? [])
+                    .filter { !planningSlugs.contains($0.slug) }
+                    .sorted(by: Self.curatedOrder)
+                guard !cities.isEmpty else { return nil }
+                return CityListSection(id: region.id, title: region.title, cities: cities)
+            })
+        return sections
     }
 
     /// The roster narrowed to the current query. Local substring match on name
@@ -401,6 +594,8 @@ final class CitySwitcherModel {
             if city.name.lowercased().contains(q) { return true }
             if city.slug.lowercased().contains(q) { return true }
             if let country = city.country?.lowercased(), country.contains(q) { return true }
+            if let country = city.country,
+               CityRegion.displayCountry(country).lowercased().contains(q) { return true }
             if let remote = remoteMatchSlugs, remote.contains(city.slug) { return true }
             return false
         }
