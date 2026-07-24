@@ -94,17 +94,21 @@ Deno.serve(async (req) => {
     });
     const json = await resp.json();
     if (!resp.ok) {
-      // e.g. "Cloud Vision API has not been used in project ... before or it is
-      // disabled" — the one owner step. Surface it (server log + body) so it's
-      // actionable, never silently swallowed.
-      console.error("vision error", JSON.stringify(json));
-      return new Response(JSON.stringify({ error: json?.error?.message ?? "vision failed" }), {
+      const providerCode = typeof json?.error?.status === "string"
+        ? json.error.status
+        : "VISION_FAILED";
+      console.error("vision provider error", { status: resp.status, code: providerCode });
+      return new Response(JSON.stringify({
+        error: "vision provider request failed",
+        code: providerCode,
+      }), {
         status: 502, headers: { ...CORS, "Content-Type": "application/json" },
       });
     }
     annotations = json?.responses?.[0]?.landmarkAnnotations;
   } catch (e) {
-    return new Response(JSON.stringify({ error: String(e) }), {
+    console.error("vision request failed", e instanceof Error ? e.name : "unknown error");
+    return new Response(JSON.stringify({ error: "vision request failed" }), {
       status: 502, headers: { ...CORS, "Content-Type": "application/json" },
     });
   }
