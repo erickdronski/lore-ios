@@ -6,6 +6,7 @@ import SwiftUI
 /// content + curator note, previous/next controls.
 struct TourDetailView: View {
     let tour: Tour
+    @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(EntitlementStore.self) private var entitlements
     @Environment(StoreKitService.self) private var store
@@ -37,6 +38,10 @@ struct TourDetailView: View {
     /// city's places resolve (an explicit region, never `.automatic`, which
     /// mis-frames a sparse set of pins).
     @State private var mapCamera: MapCameraPosition = .automatic
+    /// Restore once, then persist every manual or guided stop change.
+    @State private var didRestoreProgress = false
+    /// Full-screen completion beat at the final stop.
+    @State private var showCompletion = false
 
     /// A premium curated walk the current viewer hasn't unlocked.
     private var isLocked: Bool { tour.isPremium && !entitlements.isPlus }
@@ -88,10 +93,16 @@ struct TourDetailView: View {
         .background(LoreColor.bone100)
         .navigationTitle(tour.title)
         .navigationBarTitleDisplayMode(.inline)
-        .task { await model.load(city: tour.city); await loadNarrative(); focusRouteMap() }
+        .task {
+            await model.load(city: tour.city)
+            restoreProgress()
+            await loadNarrative()
+            focusRouteMap()
+        }
         // Push each stop change into the Live Activity so the Lock Screen /
         // Dynamic Island track the walk (docs/16 §8). No-op when not running.
         .onChange(of: stopIndex) { _, _ in
+            persistProgress()
             syncLiveActivity()
             retargetGuide()
             Task { await loadNarrative() }
@@ -104,6 +115,15 @@ struct TourDetailView: View {
         .onDisappear { liveActivity.end(); narration.stop(); walkGuide.stop() }
         .sheet(isPresented: $showPaywall) {
             PaywallView(entitlements: entitlements, store: store, auth: auth, context: .tours)
+        }
+        .overlay {
+            if showCompletion {
+                TourCompletionView(tour: tour) {
+                    showCompletion = false
+                    dismiss()
+                }
+                .transition(.opacity)
+            }
         }
     }
 
@@ -722,9 +742,16 @@ struct TourDetailView: View {
             .disabled(stopIndex == 0)
 
             Button {
-                withAnimation(LoreSpring.smooth(reduceMotion: reduceMotion)) { stopIndex += 1 }
+                if stopIndex >= tour.stops.count - 1 {
+                    finishTour()
+                } else {
+                    withAnimation(LoreSpring.smooth(reduceMotion: reduceMotion)) { stopIndex += 1 }
+                }
             } label: {
-                Label("Next stop", systemImage: "chevron.right")
+                Label(
+                    stopIndex >= tour.stops.count - 1 ? "Finish tour" : "Next stop",
+                    systemImage: stopIndex >= tour.stops.count - 1 ? "checkmark" : "chevron.right"
+                )
                     .font(LoreType.button)
                     .frame(maxWidth: .infinity)
                     .frame(height: 44)
@@ -732,8 +759,40 @@ struct TourDetailView: View {
                     .foregroundStyle(LoreColor.bone)
             }
             .buttonStyle(.pressable)
-            .disabled(stopIndex >= tour.stops.count - 1)
         }
+    }
+
+    private func restoreProgress() {
+        guard !didRestoreProgress else { return }
+        didRestoreProgress = true
+        let progress = TourProgressStore.progress(
+            for: tour.slug,
+            userID: auth.session?.user.id,
+            stopCount: tour.stops.count
+        )
+        if let savedIndex = progress.stopIndex {
+            stopIndex = savedIndex
+        }
+    }
+
+    private func persistProgress() {
+        guard didRestoreProgress else { return }
+        TourProgressStore.save(
+            stopIndex: stopIndex,
+            for: tour.slug,
+            userID: auth.session?.user.id
+        )
+    }
+
+    private func finishTour() {
+        TourProgressStore.complete(
+            tourSlug: tour.slug,
+            userID: auth.session?.user.id
+        )
+        liveActivity.end()
+        narration.stop()
+        walkGuide.stop()
+        withAnimation(LoreMotion.tap) { showCompletion = true }
     }
 
     /// Directional slide: advancing pushes the new stop in from the trailing
@@ -744,6 +803,62 @@ struct TourDetailView: View {
             insertion: .move(edge: .trailing).combined(with: .opacity),
             removal: .move(edge: .leading).combined(with: .opacity)
         )
+    }
+}
+
+private struct TourCompletionView: View {
+    let tour: Tour
+    let onDismiss: () -> Void
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var appeared = false
+    @State private var burst = false
+
+    var body: some View {
+        ZStack {
+            LoreColor.ink950.opacity(0.94).ignoresSafeArea()
+            if !reduceMotion {
+                ConfettiBurst(active: burst, tier: .gold)
+                    .ignoresSafeArea()
+                    .allowsHitTesting(false)
+            }
+            VStack(spacing: 18) {
+                Text(tour.displayEmoji)
+                    .font(.system(size: 58))
+                    .scaleEffect(appeared ? 1 : 0.65)
+                Text("Walk complete")
+                    .loreLabelStyle()
+                    .tracking(1.2)
+                    .foregroundStyle(LoreColor.brass300)
+                Text(tour.title)
+                    .font(LoreType.displayL)
+                    .foregroundStyle(LoreColor.bone)
+                    .multilineTextAlignment(.center)
+                Text("Every stop is now part of your Lore trail. You can replay this route any time.")
+                    .font(LoreType.body)
+                    .foregroundStyle(LoreColor.bone.opacity(0.75))
+                    .multilineTextAlignment(.center)
+                Button("Back to tours", action: onDismiss)
+                    .font(LoreType.button)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 48)
+                    .background(LoreColor.bone, in: Capsule())
+                    .foregroundStyle(LoreColor.ink)
+                    .buttonStyle(.pressable)
+            }
+            .padding(28)
+            .frame(maxWidth: 360)
+            .opacity(appeared ? 1 : 0)
+        }
+        .onAppear {
+            Haptics.play(.badgeEarned)
+            withAnimation(LoreSpring.bounce(reduceMotion: reduceMotion)) {
+                appeared = true
+            }
+            if !reduceMotion {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { burst = true }
+            }
+        }
     }
 }
 

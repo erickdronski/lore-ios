@@ -130,6 +130,7 @@ targets:
         # the background. Location-driven stop advancement remains foreground.
         UIBackgroundModes:
           - audio
+          - remote-notification
 
         # ── URL scheme (widget / Live Activity deep links) ─────────────────
         # `lore://place/{id}`, `lore://tour/{slug}`, `lore://map` — handled by

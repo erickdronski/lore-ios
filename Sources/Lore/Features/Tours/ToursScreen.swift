@@ -63,7 +63,11 @@ struct ToursScreen: View {
                         Section {
                             ForEach(model.toursByCity[city] ?? []) { tour in
                                 NavigationLink(value: tour) {
-                                    TourRow(tour: tour, isPlus: entitlements.isPlus)
+                                    TourRow(
+                                        tour: tour,
+                                        isPlus: entitlements.isPlus,
+                                        userID: auth.session?.user.id
+                                    )
                                 }
                             }
                         } header: {
@@ -239,6 +243,8 @@ struct TourRow: View {
     let tour: Tour
     /// Whether the viewer is a Lore+ member (drives the premium lock marker).
     var isPlus: Bool = false
+    var userID: String?
+    @State private var progress = TourProgressStore.Progress.empty
 
     var body: some View {
         HStack(spacing: 12) {
@@ -259,6 +265,15 @@ struct TourRow: View {
                         .loreLabelStyle()
                         .foregroundStyle(LoreColor.brass700)
                 }
+                if progress.isCompleted {
+                    Label("Completed", systemImage: "checkmark.seal.fill")
+                        .font(LoreType.caption)
+                        .foregroundStyle(LoreColor.brass700)
+                } else if let stopIndex = progress.stopIndex {
+                    Label("Resume at stop \(stopIndex + 1)", systemImage: "arrow.clockwise")
+                        .font(LoreType.caption)
+                        .foregroundStyle(LoreColor.brass700)
+                }
             }
             // A curated premium walk reads as Lore+ to a free member, so the
             // gate on the detail screen is never a surprise.
@@ -268,6 +283,13 @@ struct TourRow: View {
             }
         }
         .padding(.vertical, 4)
+        .onAppear {
+            progress = TourProgressStore.progress(
+                for: tour.slug,
+                userID: userID,
+                stopCount: tour.stops.count
+            )
+        }
     }
 }
 
