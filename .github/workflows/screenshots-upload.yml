@@ -12,16 +12,20 @@ concurrency:
   group: app-store-screenshots-upload
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   upload:
     runs-on: ubuntu-latest
+    environment: app-store-production
     timeout-minutes: 20
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Ruby + Fastlane (cached)
-        uses: ruby/setup-ruby@v1
+        uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1
         with:
           ruby-version: "3.2"
           bundler-cache: true
@@ -35,7 +39,7 @@ jobs:
 
       - name: Save fastlane log on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: deliver-log
           path: fastlane/report.xml

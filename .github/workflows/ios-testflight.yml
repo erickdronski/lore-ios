@@ -38,8 +38,11 @@ concurrency:
   # Cancel superseded push/PR validation runs; NEVER cancel a dispatch (TestFlight upload mid-flight)
   cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
 
+permissions:
+  contents: read
+
 jobs:
-  validate-and-release:
+  validate:
     # macos-15 ships Xcode 26 (the iOS 26 SDK), which App Store Connect now
     # REQUIRES for every upload; macos-14 topped out at the iOS 18.2 SDK and
     # Apple rejects those with a 409 "must be built with the iOS 26 SDK".
@@ -47,7 +50,7 @@ jobs:
     timeout-minutes: 50
     steps:
       - name: Checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Select Xcode 26.3
         uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1
@@ -66,7 +69,7 @@ jobs:
         run: xcodegen generate
 
       - name: Ruby + Fastlane (cached)
-        uses: ruby/setup-ruby@6e5d382445ae5590b7449d8b3bc8cb1c2c27f617 # v1
+        uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1
         with:
           ruby-version: "3.2"
           bundler-cache: true
@@ -85,8 +88,49 @@ jobs:
           CODE_SIGNING_ALLOWED=NO
           build
 
-      - name: Build and upload to TestFlight
-        if: github.event_name == 'workflow_dispatch' && inputs.upload_to_testflight
+      - name: Save the build log on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: build-logs
+          path: |
+            ~/Library/Logs/gym/*.log
+            fastlane/report.xml
+            build/test-results
+          if-no-files-found: ignore
+          retention-days: 7
+
+  release-testflight:
+    needs: validate
+    if: github.event_name == 'workflow_dispatch' && inputs.upload_to_testflight
+    runs-on: macos-15
+    environment: testflight
+    timeout-minutes: 50
+    steps:
+      - name: Verify release branch
+        run: test "$GITHUB_REF" = "refs/heads/main"
+
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Select Xcode 26.3
+        uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1
+        with:
+          xcode-version: "26.3"
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate the Xcode project
+        run: xcodegen generate
+
+      - name: Ruby + Fastlane (cached)
+        uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1
+        with:
+          ruby-version: "3.2"
+          bundler-cache: true
+
+      - name: Build and upload the validated commit to TestFlight
         env:
           LORE_TESTED: "1"
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
@@ -100,10 +144,9 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: build-logs
+          name: testflight-build-logs
           path: |
             ~/Library/Logs/gym/*.log
             fastlane/report.xml
-            build/test-results
           if-no-files-found: ignore
           retention-days: 7
