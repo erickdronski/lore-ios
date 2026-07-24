@@ -59,6 +59,9 @@ struct MapScreen: View {
     // same defaults the web map persists to.
     @State private var mapMode: LoreMapLibreView.Mode = .night
     @State private var mapViewMode: LoreMapLibreView.ViewMode = .tilted
+    /// The map's serendipity beat: briefly names a fresh place while the camera
+    /// flies there, then opens its card.
+    @State private var surprisePlace: Place?
 
     /// The relevance lens for the current prefs + whether a hard filter is on
     /// + the night layer's re-weighting after dark.
@@ -134,6 +137,13 @@ struct MapScreen: View {
             .overlay(alignment: .topTrailing) {
                 mapControls
                     .padding(.top, 110)
+            }
+            .overlay(alignment: .top) {
+                if let surprisePlace {
+                    SerendipityToast(place: surprisePlace, theme: model.theme)
+                        .padding(.top, 58)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
             }
             .safeAreaInset(edge: .bottom) {
                 // The composed Travel controls: filter chips over the near-me
@@ -245,6 +255,12 @@ struct MapScreen: View {
     private var mapControls: some View {
         VStack(spacing: 10) {
             mapControlButton(
+                system: "sparkles",
+                on: surprisePlace != nil,
+                label: "Surprise me with an undiscovered place"
+            ) { surpriseMe() }
+
+            mapControlButton(
                 system: dimensional ? "view.2d" : "view.3d",
                 on: dimensional,
                 label: dimensional ? "Flatten map" : "3D map"
@@ -340,6 +356,74 @@ struct MapScreen: View {
                 position = .region(region)
             }
         }
+    }
+
+    /// Pick an unvisited visible place whenever possible, fly close enough to
+    /// create anticipation, then reveal its place card. No countdown, scarcity,
+    /// or artificial streak pressure: the reward is simply finding somewhere
+    /// the traveler has not opened yet.
+    private func surpriseMe() {
+        let fresh = visiblePlaces.filter { !visits.hasVisited($0.id) }
+        let pool = fresh.isEmpty ? visiblePlaces : fresh
+        guard let place = pool.randomElement() else { return }
+
+        Haptics.play(.scannerLock)
+        selectedPlaceID = nil
+        withAnimation(LoreSpring.slow) {
+            surprisePlace = place
+            position = .region(MKCoordinateRegion(
+                center: place.coordinate,
+                span: MKCoordinateSpan(latitudeDelta: 0.012, longitudeDelta: 0.012)
+            ))
+        }
+
+        let revealDelay = reduceMotion ? 0.12 : 0.72
+        DispatchQueue.main.asyncAfter(deadline: .now() + revealDelay) {
+            guard surprisePlace?.id == place.id else { return }
+            selectedPlaceID = place.id
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.6) {
+            guard surprisePlace?.id == place.id else { return }
+            withAnimation(LoreMotion.tap) { surprisePlace = nil }
+        }
+    }
+}
+
+private struct SerendipityToast: View {
+    let place: Place
+    let theme: CityTheme?
+
+    var body: some View {
+        HStack(spacing: 11) {
+            Text(place.displayEmoji)
+                .font(.system(size: 25))
+            VStack(alignment: .leading, spacing: 1) {
+                Text("A NEW TRAIL")
+                    .loreLabelStyle()
+                    .tracking(1.1)
+                    .foregroundStyle(theme?.accentColor ?? LoreColor.brass700)
+                Text(place.name)
+                    .font(LoreType.button)
+                    .foregroundStyle(LoreColor.ink)
+                    .lineLimit(1)
+            }
+            Image(systemName: "location.fill")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(theme?.accentColor ?? LoreColor.brass700)
+        }
+        .padding(.horizontal, 15)
+        .frame(height: 58)
+        .background(.ultraThinMaterial, in: Capsule())
+        .overlay(
+            Capsule().strokeBorder(
+                (theme?.accentColor ?? LoreColor.brass700).opacity(0.65),
+                lineWidth: 1
+            )
+        )
+        .shadow(color: LoreColor.ink950.opacity(0.18), radius: 16, y: 8)
+        .padding(.horizontal, 64)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Surprise destination: \(place.name)")
     }
 }
 

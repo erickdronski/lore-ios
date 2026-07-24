@@ -37,7 +37,7 @@ struct CityFlavorShelf: View {
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
                 ForEach(entries) { entry in
                     FlavorCard(entry: entry, accent: accent)
                 }
@@ -51,6 +51,19 @@ struct CityFlavorShelf: View {
 private struct FlavorCard: View {
     let entry: CitySection
     let accent: Color
+
+    @Environment(AuthService.self) private var auth
+    @Environment(AppRouter.self) private var router
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var completed = false
+    @State private var isListening = false
+    @State private var secondsRemaining = 30
+    @State private var pulse = false
+
+    private var isInteractive: Bool {
+        entry.kind == "listen" || entry.kind == "field_note" ||
+            (entry.kind == "experience" && entry.placeID != nil)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -78,15 +91,142 @@ private struct FlavorCard: View {
                     .foregroundStyle(LoreColor.ink600)
             }
             Spacer(minLength: 0)
+            action
         }
         .padding(14)
         .frame(width: 280, alignment: .topLeading)
-        .frame(minHeight: 132)
-        .background(LoreColor.ink900, in: RoundedRectangle(cornerRadius: 16))
+        .frame(minHeight: isInteractive ? 218 : 132)
+        .background(
+            completed ? LoreColor.ink800 : LoreColor.ink900,
+            in: RoundedRectangle(cornerRadius: 16)
+        )
         .overlay(
             RoundedRectangle(cornerRadius: 16)
-                .strokeBorder(LoreColor.ink700, lineWidth: 1)
+                .strokeBorder(completed ? accent : LoreColor.ink700, lineWidth: completed ? 1.5 : 1)
         )
-        .accessibilityElement(children: .combine)
+        .overlay(alignment: .topTrailing) {
+            if completed {
+                Image(systemName: "checkmark.seal.fill")
+                    .font(.system(size: 19, weight: .semibold))
+                    .foregroundStyle(accent)
+                    .padding(12)
+                    .transition(.scale.combined(with: .opacity))
+            }
+        }
+        .scaleEffect(pulse && !reduceMotion ? 1.035 : 1)
+        .animation(LoreSpring.bounce(reduceMotion: reduceMotion), value: completed)
+        .task(id: auth.session?.user.id) {
+            completed = CityExperienceProgressStore.isCompleted(
+                entryID: entry.id,
+                userID: auth.session?.user.id
+            )
+        }
+        .task(id: isListening) {
+            guard isListening else { return }
+            while secondsRemaining > 0 {
+                do {
+                    try await Task.sleep(for: .seconds(1))
+                } catch {
+                    return
+                }
+                guard isListening else { return }
+                secondsRemaining -= 1
+            }
+            guard isListening else { return }
+            isListening = false
+            completeExperience()
+        }
+        .accessibilityElement(children: isInteractive ? .contain : .combine)
+    }
+
+    @ViewBuilder
+    private var action: some View {
+        switch entry.kind {
+        case "listen":
+            Button(action: toggleListening) {
+                HStack(spacing: 8) {
+                    Image(systemName: completed ? "ear.badge.checkmark" : (isListening ? "waveform" : "ear"))
+                    Text(listenLabel)
+                    Spacer(minLength: 0)
+                    if isListening {
+                        Text("\(secondsRemaining)s")
+                            .monospacedDigit()
+                    }
+                }
+                .font(LoreType.button)
+                .foregroundStyle(completed ? LoreColor.ink900 : LoreColor.bone)
+                .padding(.horizontal, 12)
+                .frame(height: 40)
+                .background(completed ? accent : LoreColor.ink700, in: Capsule())
+            }
+            .buttonStyle(.pressable)
+            .disabled(completed)
+
+        case "field_note":
+            Button {
+                completeExperience()
+            } label: {
+                Label(completed ? "Explorer moment captured" : "I tried this", systemImage: completed ? "checkmark" : "sparkles")
+                    .font(LoreType.button)
+                    .foregroundStyle(completed ? LoreColor.ink900 : LoreColor.bone)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 40)
+                    .background(completed ? accent : LoreColor.ink700, in: Capsule())
+            }
+            .buttonStyle(.pressable)
+            .disabled(completed)
+
+        case "experience":
+            if let placeID = entry.placeID {
+                Button {
+                    Haptics.play(.dossierOpen)
+                    router.route(.place(id: placeID, city: entry.city))
+                } label: {
+                    Label("Open the starting point", systemImage: "location.fill")
+                        .font(LoreType.button)
+                        .foregroundStyle(LoreColor.bone)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 40)
+                        .background(LoreColor.ink700, in: Capsule())
+                }
+                .buttonStyle(.pressable)
+            }
+
+        default:
+            EmptyView()
+        }
+    }
+
+    private var listenLabel: String {
+        if completed { return "Sound quest complete" }
+        return isListening ? "Listening now" : "Start a 30-second sound quest"
+    }
+
+    private func toggleListening() {
+        if completed { return }
+        Haptics.play(.chipTap)
+        if isListening {
+            isListening = false
+            secondsRemaining = 30
+        } else {
+            secondsRemaining = 30
+            isListening = true
+        }
+    }
+
+    private func completeExperience() {
+        guard !completed else { return }
+        CityExperienceProgressStore.complete(
+            entryID: entry.id,
+            userID: auth.session?.user.id
+        )
+        Haptics.play(.badgeEarned)
+        withAnimation(LoreSpring.bounce(reduceMotion: reduceMotion)) {
+            completed = true
+            pulse = true
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.55) {
+            withAnimation(LoreMotion.tap) { pulse = false }
+        }
     }
 }
