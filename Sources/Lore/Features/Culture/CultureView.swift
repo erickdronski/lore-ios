@@ -47,15 +47,11 @@ struct CultureView: View {
                 content
             }
         }
-        // App is pinned to light scheme at the root, so a system large title
-        // renders near-black on this dark ground. Title is drawn in-content as
-        // bone (see `header`); keep the bar an opaque dark strip for a light
-        // status bar.
-        .navigationTitle("")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(.visible, for: .navigationBar)
-        .toolbarBackground(LoreColor.ink900, for: .navigationBar)
-        .toolbarColorScheme(.dark, for: .navigationBar)
+        // The title is drawn in-content. Hide the otherwise-empty navigation
+        // bar so the cinematic sky flows through the status area without a
+        // horizontal seam above "Meet {City}."
+        .toolbar(.hidden, for: .navigationBar)
+        .preferredColorScheme(.dark)
         .task { await model.load(city: city) }
         .onAppear {
             if reduceMotion {
