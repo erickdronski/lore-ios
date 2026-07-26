@@ -7,7 +7,13 @@ All notable changes to Lore are documented in this file. The project follows
 
 ### Added
 
-- Reserved for changes after the current public engineering baseline.
+- Universal iPad layout with a collapsible traveler sidebar and landscape support.
+- Region filters, pinned trip-planning cities, and destination travel essentials.
+- Adaptive UI coverage across compact phones, iPads, Dynamic Type, and orientation changes.
+
+### Changed
+
+- Advanced the App Store marketing version to 1.1 for the next release train.
 
 ## [1.0.0-beta.1] - 2026-07-23
 

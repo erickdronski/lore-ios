@@ -91,9 +91,9 @@ plutil -lint Sources/Lore/PrivacyInfo.xcprivacy \
 
 ## Release state
 
-- Marketing version: `1.0`
+- Marketing version: `1.1`
 - Bundle ID: `com.erickdronski.lore`
-- Minimum platform: iOS 17, iPhone only
+- Minimum platform: iOS 17, universal iPhone and iPad
 - Delivery: tested native build through a manual TestFlight lane
 
 The final release authority is a clean simulator test run plus a signed Release archive from the same commit uploaded to App Store Connect.

@@ -91,7 +91,7 @@ Never upload the old map/profile set.
 
 ## App Review is separate
 
-A processed TestFlight build is not approval to submit version 1.0 for review.
+A processed TestFlight build is not approval to submit version 1.1 for review.
 Use `/Users/dron/Projects/lore/legal/APP-STORE-LISTING.md` and `HANDOFF.md` for
 the current submission gates. Explicit approval is required before pressing
 Submit for Review.

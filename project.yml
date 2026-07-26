@@ -58,7 +58,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.erickdronski.lore
         PRODUCT_NAME: Lore
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon # Sources/Lore/Resources/Assets.xcassets/AppIcon.appiconset (1024px, no alpha)
-        MARKETING_VERSION: "1.0"
+        MARKETING_VERSION: "1.1"
         CURRENT_PROJECT_VERSION: "1"
         # Universal iPhone + iPad. Location-aware surfaces already degrade to
         # city browsing when a device has no precise fix, so Wi-Fi-only iPads
@@ -117,6 +117,8 @@ targets:
       path: Sources/Lore/Info.plist
       properties:
         CFBundleDisplayName: Lore
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
@@ -184,7 +186,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.erickdronski.lore.LoreWidget
         PRODUCT_NAME: LoreWidget
-        MARKETING_VERSION: "1.0"
+        MARKETING_VERSION: "1.1"
         CURRENT_PROJECT_VERSION: "1"
         TARGETED_DEVICE_FAMILY: "1,2"
         SKIP_INSTALL: true
@@ -201,6 +203,8 @@ targets:
       properties:
         CFBundleDisplayName: Lore
         CFBundleName: LoreWidget
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
 

@@ -88,10 +88,17 @@ jobs:
           CODE_SIGNING_ALLOWED=NO
           build
 
-      - name: Verify universal iPhone and iPad metadata
+      - name: Verify release versions and universal iPhone and iPad metadata
         run: |
           APP_PLIST="$(find ~/Library/Developer/Xcode/DerivedData -path '*/Build/Products/Release-iphonesimulator/Lore.app/Info.plist' -print -quit)"
           test -n "$APP_PLIST"
+          WIDGET_PLIST="$(dirname "$APP_PLIST")/PlugIns/LoreWidget.appex/Info.plist"
+          test -f "$WIDGET_PLIST"
+          EXPECTED_VERSION="$(xcodebuild -project Lore.xcodeproj -target Lore -configuration Release -showBuildSettings 2>/dev/null | sed -n 's/^[[:space:]]*MARKETING_VERSION = //p')"
+          test -n "$EXPECTED_VERSION"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_PLIST")" = "$EXPECTED_VERSION"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$WIDGET_PLIST")" = "$EXPECTED_VERSION"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP_PLIST")" = "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$WIDGET_PLIST")"
           test "$(/usr/libexec/PlistBuddy -c 'Print :UIDeviceFamily:0' "$APP_PLIST")" = "1"
           test "$(/usr/libexec/PlistBuddy -c 'Print :UIDeviceFamily:1' "$APP_PLIST")" = "2"
           /usr/libexec/PlistBuddy -c 'Print :UISupportedInterfaceOrientations~ipad' "$APP_PLIST" | grep -q UIInterfaceOrientationLandscapeLeft
