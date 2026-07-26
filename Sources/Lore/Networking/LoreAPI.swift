@@ -314,6 +314,14 @@ struct LoreAPI {
                 URLQueryItem(name: "city", value: "eq.\(city)"),
                 URLQueryItem(name: "order", value: "sort.asc"),
             ]),
+            ("city_theme", [
+                URLQueryItem(name: "city", value: "eq.\(city)"),
+                URLQueryItem(name: "limit", value: "1"),
+            ]),
+            ("city_section", [
+                URLQueryItem(name: "city", value: "eq.\(city)"),
+                URLQueryItem(name: "order", value: "sort.asc"),
+            ]),
             ("tour", [
                 URLQueryItem(name: "city", value: "eq.\(city)"),
                 URLQueryItem(name: "select", value: "*,tour_stop(*)"),

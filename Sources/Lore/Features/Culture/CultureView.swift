@@ -443,7 +443,15 @@ final class CultureModel {
             theme = (await themeTask) ?? nil
             let sections = (await sectionsTask) ?? []
             flavor = Dictionary(grouping: sections, by: \.kind)
-                .map { (kind: $0.key, entries: $0.value.sorted { ($0.sort ?? 100) < ($1.sort ?? 100) }) }
+                .map {
+                    (kind: $0.key, entries: $0.value.sorted {
+                        let leftSort = $0.sort ?? 100
+                        let rightSort = $1.sort ?? 100
+                        return leftSort == rightSort
+                            ? $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
+                            : leftSort < rightSort
+                    })
+                }
                 .sorted {
                     let (a, b) = (SectionKindMeta.order(for: $0.kind), SectionKindMeta.order(for: $1.kind))
                     return a == b ? $0.kind < $1.kind : a < b

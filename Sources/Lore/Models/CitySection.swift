@@ -17,11 +17,52 @@ struct CitySection: Decodable, Identifiable, Hashable {
     let attribution: String?
     let emoji: String?
     let placeID: String?
+    /// Editorial provenance. HTTP(S) values become a source affordance in the
+    /// flavor card; internal `editorial:` markers remain intentionally hidden.
+    let source: String?
+    let provenanceState: String?
     let sort: Int?
+    let meta: Meta?
+
+    struct Meta: Decodable, Hashable {
+        let language: String?
+        let originalScript: String?
+        let original: String?
+
+        enum CodingKeys: String, CodingKey {
+            case language
+            case originalScript = "original_script"
+            case original
+        }
+    }
 
     enum CodingKeys: String, CodingKey {
-        case id, city, kind, title, body, attribution, emoji, sort
+        case id, city, kind, title, body, attribution, emoji, source, sort, meta
         case placeID = "place_id"
+        case provenanceState = "provenance_state"
+    }
+
+    var sourceURL: URL? {
+        guard
+            let source,
+            let url = URL(string: source),
+            let scheme = url.scheme?.lowercased(),
+            ["http", "https"].contains(scheme),
+            url.host != nil
+        else { return nil }
+
+        return url
+    }
+
+    var spokenPhrase: String {
+        if let originalScript = (meta?.originalScript ?? meta?.original)?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+           !originalScript.isEmpty {
+            return originalScript
+        }
+
+        return title.components(separatedBy: "·").first?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? title
     }
 }
 

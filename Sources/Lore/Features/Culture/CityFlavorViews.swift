@@ -34,12 +34,13 @@ struct CityThemeWash: View {
 struct CityFlavorShelf: View {
     let entries: [CitySection]
     let accent: Color
+    @State private var narration = NarrationService()
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(alignment: .top, spacing: 12) {
                 ForEach(entries) { entry in
-                    FlavorCard(entry: entry, accent: accent)
+                    FlavorCard(entry: entry, accent: accent, narration: narration)
                 }
             }
             .padding(.horizontal, 16)
@@ -51,6 +52,7 @@ struct CityFlavorShelf: View {
 private struct FlavorCard: View {
     let entry: CitySection
     let accent: Color
+    let narration: NarrationService
 
     @Environment(AuthService.self) private var auth
     @Environment(AppRouter.self) private var router
@@ -66,6 +68,9 @@ private struct FlavorCard: View {
     }
 
     private var isPhrase: Bool { entry.kind == "phrase" }
+    private var isPhraseSpeaking: Bool {
+        narration.isSpeaking && narration.activeSpeechID == entry.id
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -98,10 +103,18 @@ private struct FlavorCard: View {
             }
             Spacer(minLength: 0)
             action
+            if let sourceURL = entry.sourceURL {
+                Link(destination: sourceURL) {
+                    Label("Editorial source", systemImage: "link")
+                        .font(LoreType.micro)
+                        .foregroundStyle(accent)
+                }
+                .accessibilityHint("Opens the source for this traveler note")
+            }
         }
         .padding(14)
         .frame(width: 280, alignment: .topLeading)
-        .frame(minHeight: isInteractive ? 218 : (isPhrase ? 178 : 132))
+        .frame(minHeight: isInteractive ? 238 : (isPhrase ? 198 : 152))
         .background(
             completed ? LoreColor.ink800 : LoreColor.ink900,
             in: RoundedRectangle(cornerRadius: 16)
@@ -171,6 +184,30 @@ private struct FlavorCard: View {
     @ViewBuilder
     private var action: some View {
         switch entry.kind {
+        case "phrase":
+            Button {
+                if isPhraseSpeaking {
+                    narration.stop()
+                } else {
+                    narration.speakPhrase(
+                        entry.spokenPhrase,
+                        languageName: entry.meta?.language,
+                        id: entry.id
+                    )
+                }
+            } label: {
+                Label(
+                    isPhraseSpeaking ? "Stop" : "Hear it",
+                    systemImage: isPhraseSpeaking ? "stop.fill" : "speaker.wave.2.fill"
+                )
+                .font(LoreType.button)
+                .foregroundStyle(LoreColor.bone)
+                .frame(maxWidth: .infinity)
+                .frame(height: 40)
+                .background(LoreColor.ink700, in: Capsule())
+            }
+            .buttonStyle(.pressable)
+
         case "listen":
             Button(action: toggleListening) {
                 HStack(spacing: 8) {

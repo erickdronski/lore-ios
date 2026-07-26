@@ -3,6 +3,8 @@ xcuserdata/
 .DS_Store
 build/
 DerivedData/
+__pycache__/
+*.py[cod]
 
 # fastlane generated
 fastlane/report.xml

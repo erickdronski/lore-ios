@@ -21,6 +21,8 @@ final class NarrationService {
     private(set) var offered: Place?
     /// True while the synthesizer is actively speaking.
     private(set) var isSpeaking = false
+    /// Identifies a short UI utterance so only its originating card shows Stop.
+    private(set) var activeSpeechID: String?
     /// The place we last auto-offered, so a re-lock on the same building
     /// doesn't re-nag (docs/12 open Q4 etiquette).
     private var lastOfferedID: String?
@@ -70,6 +72,7 @@ final class NarrationService {
     /// hijacking other audio harder than it needs to.
     func speak(_ place: Place, register: String) {
         offered = nil
+        activeSpeechID = nil
         // Cancel any in-flight hook so a new lock speaks now, not queued behind
         // the old one (AVSpeechSynthesizer enqueues by default).
         if synthesizer.isSpeaking { synthesizer.stopSpeaking(at: .immediate) }
@@ -86,6 +89,7 @@ final class NarrationService {
     /// speech first and drives the same isSpeaking state so a button can toggle.
     func speakDossier(_ text: String) {
         offered = nil
+        activeSpeechID = nil
         guard !text.isEmpty else { return }
         stopPlayback()
         if synthesizer.isSpeaking { synthesizer.stopSpeaking(at: .immediate) }
@@ -93,6 +97,22 @@ final class NarrationService {
         let utterance = AVSpeechUtterance(string: text)
         utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 0.94
         utterance.postUtteranceDelay = 0.15
+        isSpeaking = true
+        synthesizer.speak(utterance)
+    }
+
+    /// Speak a traveler phrase with the closest matching on-device voice.
+    /// Devices without that voice gracefully use the system default.
+    func speakPhrase(_ text: String, languageName: String?, id: String) {
+        guard !text.isEmpty else { return }
+        stopPlayback()
+        if synthesizer.isSpeaking { synthesizer.stopSpeaking(at: .immediate) }
+        configureSession()
+        let utterance = AVSpeechUtterance(string: text)
+        utterance.voice = Self.voice(matching: languageName)
+        utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 0.86
+        utterance.postUtteranceDelay = 0.1
+        activeSpeechID = id
         isSpeaking = true
         synthesizer.speak(utterance)
     }
@@ -114,6 +134,7 @@ final class NarrationService {
     /// the Listen button never silently does nothing.
     func playDossierAudio(_ url: URL, fallbackText: String? = nil) {
         offered = nil
+        activeSpeechID = nil
         if synthesizer.isSpeaking { synthesizer.stopSpeaking(at: .immediate) }
         stopPlayback()
         configureSession()
@@ -178,13 +199,36 @@ final class NarrationService {
             synthesizer.stopSpeaking(at: .immediate)
         }
         isSpeaking = false
+        activeSpeechID = nil
         offered = nil
         deactivateSession()
     }
 
     fileprivate func markStopped() {
         isSpeaking = false
+        activeSpeechID = nil
         deactivateSession()
+    }
+
+    private static func voice(matching languageName: String?) -> AVSpeechSynthesisVoice? {
+        guard let languageName else { return nil }
+        let english = Locale(identifier: "en")
+        let requested = languageName.folding(
+            options: [.caseInsensitive, .diacriticInsensitive],
+            locale: english
+        )
+
+        return AVSpeechSynthesisVoice.speechVoices().first { voice in
+            guard let code = Locale(identifier: voice.language).language.languageCode?.identifier,
+                  let localizedName = english.localizedString(forLanguageCode: code) else {
+                return false
+            }
+            let candidate = localizedName.folding(
+                options: [.caseInsensitive, .diacriticInsensitive],
+                locale: english
+            )
+            return requested.contains(candidate) || candidate.contains(requested)
+        }
     }
 
     private func configureSession() {
