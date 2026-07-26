@@ -419,6 +419,8 @@ struct RootTabView: View {
                 }
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Current city, \(cityLabel(router.selectedCity))")
+            .accessibilityHint("Switch cities and manage places you are planning to visit.")
             .padding(12)
         }
         .background(LoreColor.bone100.ignoresSafeArea())

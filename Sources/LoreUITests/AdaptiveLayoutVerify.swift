@@ -4,16 +4,16 @@ import XCTest
 /// Guards the universal shell itself. Screenshot coverage exercises the rich
 /// surfaces; this test makes the compact/regular navigation contract explicit.
 final class AdaptiveLayoutVerify: XCTestCase {
+    override func setUpWithError() throws {
+        continueAfterFailure = false
+    }
+
     @MainActor
     func testNavigationMatchesTheDeviceCanvas() throws {
-        let app = XCUIApplication()
-        app.launchArguments += ["LORE_SCREENSHOTS"]
-        app.launch()
+        let app = launchApp()
 
         if UIDevice.current.userInterfaceIdiom == .pad {
-            let mapSidebarButton = app.buttons
-                .matching(NSPredicate(format: "label BEGINSWITH %@", "Map,"))
-                .firstMatch
+            let mapSidebarButton = sidebarButton(app, "Map")
             XCTAssertTrue(mapSidebarButton.waitForExistence(timeout: 30))
             XCTAssertFalse(app.tabBars.firstMatch.exists)
 
@@ -38,5 +38,162 @@ final class AdaptiveLayoutVerify: XCTestCase {
             XCTAssertTrue(app.tabBars.buttons["Map"].exists)
             XCTAssertTrue(app.tabBars.buttons["Passport"].exists)
         }
+    }
+
+    /// Exercises Lore as a traveler rather than treating launch as success:
+    /// browse the primary surfaces, open the journal, filter the city roster,
+    /// and persist then remove a planned trip.
+    @MainActor
+    func testPrimaryTravelerJourneyRemainsReachable() throws {
+        let app = launchApp()
+
+        XCTAssertTrue(currentCityButton(app).waitForExistence(timeout: 35))
+
+        selectDestination(app, "Tours")
+        XCTAssertTrue(app.staticTexts["Build a city walk"].waitForExistence(timeout: 25))
+        XCTAssertTrue(currentCityButton(app).exists)
+
+        selectDestination(app, "Passport")
+        XCTAssertTrue(app.staticTexts["Your exploration, earned"].waitForExistence(timeout: 25))
+
+        let journal = app.buttons
+            .matching(NSPredicate(format: "label CONTAINS %@", "Your Journal"))
+            .firstMatch
+        XCTAssertTrue(journal.waitForExistence(timeout: 10))
+        if !journal.isHittable {
+            app.swipeUp()
+        }
+        journal.tap()
+        XCTAssertTrue(app.staticTexts["Journal"].waitForExistence(timeout: 10))
+
+        selectDestination(app, "Profile")
+        XCTAssertTrue(app.staticTexts["Profile"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.staticTexts["Every place has a story."].exists)
+
+        selectDestination(app, "Map")
+        let cityButton = currentCityButton(app)
+        XCTAssertTrue(cityButton.waitForExistence(timeout: 20))
+        cityButton.tap()
+
+        XCTAssertTrue(app.buttons["Close"].waitForExistence(timeout: 20))
+        for filter in ["All", "Planning", "US", "Europe", "Asia"] {
+            XCTAssertTrue(app.buttons[filter].exists, "\(filter) city filter should be reachable")
+        }
+
+        app.buttons["Europe"].tap()
+        let pinButton = app.buttons
+            .matching(NSPredicate(format: "label BEGINSWITH %@ AND label ENDSWITH %@", "Pin ", " for trip planning"))
+            .firstMatch
+        XCTAssertTrue(pinButton.waitForExistence(timeout: 20))
+
+        let cityName = pinButton.label
+            .replacingOccurrences(of: "Pin ", with: "")
+            .replacingOccurrences(of: " for trip planning", with: "")
+        pinButton.tap()
+
+        let removeButton = app.buttons["Remove \(cityName) from trip planning"]
+        XCTAssertTrue(removeButton.waitForExistence(timeout: 5))
+        app.buttons["Planning"].tap()
+        XCTAssertTrue(removeButton.waitForExistence(timeout: 5))
+
+        // Leave the simulator clean so fleet order never changes the result.
+        removeButton.tap()
+        XCTAssertTrue(app.staticTexts["No trips pinned yet"].waitForExistence(timeout: 5))
+        app.buttons["Close"].tap()
+        XCTAssertTrue(currentCityButton(app).waitForExistence(timeout: 10))
+    }
+
+    @MainActor
+    func testAccessibilityTextSizeKeepsPrimaryNavigationReachable() throws {
+        let app = launchApp(
+            contentSizeCategory: "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge"
+        )
+
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            for destination in ["Map", "Scanner", "Tours", "Passport", "Profile"] {
+                let button = sidebarButton(app, destination)
+                XCTAssertTrue(button.waitForExistence(timeout: 30))
+                XCTAssertTrue(button.isHittable, "\(destination) should remain tappable at accessibility text sizes")
+            }
+        } else {
+            XCTAssertTrue(app.tabBars.firstMatch.waitForExistence(timeout: 30))
+            for destination in ["Map", "Scanner", "Tours", "Passport", "Profile"] {
+                let button = app.tabBars.buttons[destination]
+                XCTAssertTrue(button.exists)
+                XCTAssertTrue(button.isHittable, "\(destination) should remain tappable at accessibility text sizes")
+            }
+        }
+
+        selectDestination(app, "Profile")
+        XCTAssertTrue(app.staticTexts["Profile"].waitForExistence(timeout: 15))
+    }
+
+    @MainActor
+    func testIPadLandscapeKeepsSidebarAndPlanningReachable() throws {
+        guard UIDevice.current.userInterfaceIdiom == .pad else {
+            throw XCTSkip("iPhone is intentionally portrait-only")
+        }
+
+        XCUIDevice.shared.orientation = .landscapeLeft
+        defer { XCUIDevice.shared.orientation = .portrait }
+
+        let app = launchApp()
+        XCTAssertTrue(sidebarButton(app, "Map").waitForExistence(timeout: 30))
+        XCTAssertTrue(app.buttons["Hide sidebar"].isHittable)
+
+        let cityButton = currentCityButton(app)
+        XCTAssertTrue(cityButton.waitForExistence(timeout: 20))
+        cityButton.tap()
+        XCTAssertTrue(app.buttons["Close"].waitForExistence(timeout: 20))
+        XCTAssertTrue(app.buttons["Planning"].isHittable)
+        XCTAssertTrue(app.buttons["Europe"].isHittable)
+        XCTAssertTrue(app.buttons["Asia"].isHittable)
+        app.buttons["Close"].tap()
+
+        app.buttons["Hide sidebar"].tap()
+        XCTAssertTrue(app.buttons["Show sidebar"].waitForExistence(timeout: 5))
+        app.buttons["Show sidebar"].tap()
+        XCTAssertTrue(sidebarButton(app, "Map").waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    private func launchApp(
+        contentSizeCategory: String = "UICTContentSizeCategoryLarge"
+    ) -> XCUIApplication {
+        let app = XCUIApplication()
+        // The preferred category is a persistent app default. Set it on every
+        // launch so an accessibility run cannot contaminate later fleet tests.
+        app.launchArguments += [
+            "LORE_SCREENSHOTS",
+            "-UIPreferredContentSizeCategoryName",
+            contentSizeCategory,
+        ]
+        app.launch()
+        return app
+    }
+
+    @MainActor
+    private func selectDestination(_ app: XCUIApplication, _ label: String) {
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            let button = sidebarButton(app, label)
+            XCTAssertTrue(button.waitForExistence(timeout: 20))
+            button.tap()
+        } else {
+            let button = app.tabBars.buttons[label]
+            XCTAssertTrue(button.waitForExistence(timeout: 20))
+            button.tap()
+        }
+    }
+
+    private func sidebarButton(_ app: XCUIApplication, _ label: String) -> XCUIElement {
+        app.buttons
+            .matching(NSPredicate(format: "label BEGINSWITH %@", "\(label),"))
+            .firstMatch
+    }
+
+    private func currentCityButton(_ app: XCUIApplication) -> XCUIElement {
+        app.buttons
+            .matching(NSPredicate(format: "label BEGINSWITH %@", "Current city, "))
+            .firstMatch
     }
 }
