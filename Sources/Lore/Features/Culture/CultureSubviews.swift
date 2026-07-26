@@ -18,6 +18,7 @@ struct CultureQuoteCard: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.scenePhase) private var scenePhase
     @ScaledMetric(relativeTo: .title2) private var quoteSize: CGFloat = 24
 
     /// ~9s per quote, long enough to read a sentence, short enough to feel
@@ -47,12 +48,10 @@ struct CultureQuoteCard: View {
             .tabViewStyle(.page(indexDisplayMode: .never))
             .frame(height: cardHeight)
 
-            if quotes.count > 1 {
-                quoteDots
-            }
+            quoteControls
         }
         .onReceive(rotation) { _ in
-            guard autoAdvance, !voiceOverEnabled, quotes.count > 1 else { return }
+            guard autoAdvance, scenePhase == .active, !voiceOverEnabled, quotes.count > 1 else { return }
             advance()
         }
     }
@@ -157,6 +156,67 @@ struct CultureQuoteCard: View {
         .accessibilityHidden(true)
     }
 
+    private var quoteControls: some View {
+        HStack(spacing: 12) {
+            if quotes.count > 1 {
+                Button {
+                    autoAdvance = false
+                    move(by: -1)
+                } label: {
+                    Image(systemName: "chevron.left")
+                }
+                .accessibilityLabel("Previous quote")
+
+                quoteDots
+
+                Button {
+                    autoAdvance = false
+                    move(by: 1)
+                } label: {
+                    Image(systemName: "chevron.right")
+                }
+                .accessibilityLabel("Next quote")
+
+                Button {
+                    autoAdvance.toggle()
+                } label: {
+                    Image(systemName: autoAdvance ? "pause.fill" : "play.fill")
+                }
+                .accessibilityLabel(autoAdvance ? "Pause quote rotation" : "Resume quote rotation")
+            }
+
+            Spacer(minLength: 0)
+
+            if let currentQuote {
+                if let source = currentQuote.cultureSourceURL {
+                    Link(destination: source) {
+                        Image(systemName: "link")
+                    }
+                    .accessibilityLabel("Open quote source")
+                }
+
+                ShareLink(item: shareText(for: currentQuote)) {
+                    Image(systemName: "square.and.arrow.up")
+                }
+                .accessibilityLabel("Share this quote")
+            }
+        }
+        .font(.system(size: 14, weight: .semibold))
+        .foregroundStyle(LoreColor.amber)
+        .frame(minHeight: 30)
+        .padding(.horizontal, 6)
+    }
+
+    private var currentQuote: CityCulture? {
+        guard quotes.indices.contains(index) else { return quotes.first }
+        return quotes[index]
+    }
+
+    private func shareText(for quote: CityCulture) -> String {
+        let author = quote.attribution.map { "\n\n\($0)" } ?? ""
+        return "\u{201C}\(quote.headline)\u{201D}\(author)\n\nDiscovered with Lore."
+    }
+
     private func accessibilityLabel(for quote: CityCulture) -> String {
         let attribution = quote.attribution.map { ", \($0)" } ?? ""
         return "\(quote.headline)\(attribution)"
@@ -165,9 +225,13 @@ struct CultureQuoteCard: View {
     /// Auto-advance to the next quote (the ambient beat); manual paging is the
     /// user's swipe on the pager.
     private func advance() {
+        move(by: 1)
+    }
+
+    private func move(by offset: Int) {
         guard quotes.count > 1 else { return }
         withAnimation(LoreSpring.smooth(reduceMotion: reduceMotion)) {
-            index = (index + 1) % quotes.count
+            index = (index + offset + quotes.count) % quotes.count
         }
     }
 }
@@ -493,6 +557,9 @@ struct LingoFlipCard: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityLabel)
         .accessibilityHint("Double tap to flip. Touch and hold to read the full meaning.")
+        .accessibilityAction(named: "Read full meaning") {
+            showExpanded = true
+        }
     }
 
     /// The shared tile chrome for both faces so the flip looks like one card.
@@ -531,36 +598,65 @@ struct LingoDetailSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                HStack(alignment: .center, spacing: 12) {
-                    Text(entry.displayEmoji)
-                        .font(.system(size: 44))
-                    Text(entry.headline)
-                        .font(LoreType.display(size: 26, weight: .semibold))
-                        .foregroundStyle(LoreColor.amber)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Spacer(minLength: 0)
-                }
-                .padding(.top, 24)
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack(alignment: .center, spacing: 12) {
+                        Text(entry.displayEmoji)
+                            .font(.system(size: 44))
+                        Text(entry.headline)
+                            .font(LoreType.display(size: 26, weight: .semibold))
+                            .foregroundStyle(LoreColor.amber)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityAddTraits(.isHeader)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.top, 24)
 
-                if let body = entry.body {
-                    Text(body)
-                        .font(LoreType.body)
-                        .foregroundStyle(LoreColor.bone)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                    if let body = entry.body {
+                        Text(body)
+                            .font(LoreType.body)
+                            .foregroundStyle(LoreColor.bone)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
 
-                Spacer(minLength: 24)
+                    HStack(spacing: 12) {
+                        if let source = entry.cultureSourceURL {
+                            Link(destination: source) {
+                                Label("Source", systemImage: "link")
+                            }
+                        }
+                        ShareLink(item: accessibilityLabel) {
+                            Label("Share", systemImage: "square.and.arrow.up")
+                        }
+                    }
+                    .font(LoreType.button)
+                    .foregroundStyle(LoreColor.amber)
+
+                    Spacer(minLength: 24)
+                }
+                .frame(maxWidth: 680, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.horizontal, 24)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 24)
+            .background(LoreColor.ink900.ignoresSafeArea())
+            .navigationTitle("Local meaning")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
         }
-        .background(LoreColor.ink900.ignoresSafeArea())
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(Text(entry.body.map { "\(entry.headline). \($0)" } ?? entry.headline))
+        .accessibilityLabel(accessibilityLabel)
+    }
+
+    private var accessibilityLabel: String {
+        entry.body.map { "\(entry.headline). \($0)" } ?? entry.headline
     }
 }
 

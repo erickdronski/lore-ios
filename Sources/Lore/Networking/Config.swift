@@ -46,6 +46,12 @@ enum Config {
 
     // MARK: Feature flags
 
+    /// Nearby-story notifications stay hidden until the release App ID has the
+    /// APNs entitlement and Lore has a real token-registration/sender path.
+    /// Asking for consent before both halves exist would promise a feature the
+    /// app cannot deliver.
+    static let pushNotificationsEnabled = false
+
     /// Render the native MapLibre GL Native map (the flagship map, docs/17 +
     /// docs/22) instead of the MapKit stand-in. Default false so the app builds
     /// and runs today on any machine, MapKit is still the shipped map. Flip to

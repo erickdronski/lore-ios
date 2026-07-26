@@ -104,7 +104,7 @@ enum PlusFeature {
 
     /// Short CTA subtitle.
     var unlockSubtitle: String {
-        "7 days free, then $5.99/mo"
+        "See plans and your App Store price"
     }
 }
 

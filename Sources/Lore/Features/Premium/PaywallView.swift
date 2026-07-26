@@ -1,19 +1,19 @@
 import SwiftUI
 import UIKit
 import Observation
+import StoreKit
 
 /// The Lore+ paywall (brand/DESIGN.md §7 `DiveSheet`/paywall row + §6 "Paywall
 /// enter": skeleton cross-fades at reveal.bloom, no bounce, no shimmer). Ink
 /// background so the camera/world recedes, a brass-sheen hero, the honest
-/// free-vs-plus table, and the monthly / annual choice with the 7-day trial.
+/// free-vs-plus table, and the monthly / annual choice with an App Store offer.
 ///
-/// Prices are locked in docs/00-DECISIONS.md §7: **$5.99/mo, $34.99/yr, $99.99
-/// lifetime, 7-day free trial.** The purchase runs through **StoreKit 2** today (the real client
-/// path, `StoreKitService`); RevenueCat remains the planned server-side truth
+/// The purchase runs through **StoreKit 2** today (the real client path,
+/// `StoreKitService`); RevenueCat remains the planned server-side truth
 /// and lands at P3 (docs/16-APPLE-TOOLKITS.md §1, docs/00 §2). Localized prices
-/// come from the loaded `Product`s when available, falling back to the hardcoded
-/// USD lines. The "Start 7-day free trial" CTA branches on real intro-offer
-/// eligibility so it never lies to a returning subscriber.
+/// come only from loaded `Product`s, never a hardcoded storefront assumption.
+/// Trial copy requires both a real free-trial offer and Apple Account
+/// eligibility, and derives the duration from StoreKit.
 ///
 /// Presentation contract: present in a `.sheet`; the caller passes the
 /// `EntitlementStore`, the `StoreKitService`, and an `AuthService` (for the
@@ -31,9 +31,11 @@ struct PaywallView: View {
     var context: PaywallContext = .general
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var model = PaywallModel()
     /// Content cross-fades in (reveal.bloom feel, no bounce/shimmer per §6).
     @State private var appeared = false
+    @State private var showManageSubscriptions = false
 
     var body: some View {
         ZStack {
@@ -45,6 +47,7 @@ struct PaywallView: View {
                     // A current member sees only the acknowledgement, never the
                     // plan picker / feature table / trial fine print.
                     if !entitlements.isPlus {
+                        valueHighlights
                         planPicker
                         featureTable
                         tripPassSection
@@ -69,6 +72,7 @@ struct PaywallView: View {
             closeButton
         }
         .presentationDragIndicator(.visible)
+        .manageSubscriptionsSheet(isPresented: $showManageSubscriptions)
         .onAppear {
             appeared = true
             model.store = store
@@ -78,13 +82,18 @@ struct PaywallView: View {
             model.store = store
             // Load real StoreKit products (localized prices) + intro-offer
             // eligibility so the plan rows and CTA are truthful.
-            await store.loadProducts()
-            await model.refreshEligibility()
+            await reloadStore()
             // Reflect any membership the user already has (e.g. re-opened the
             // paywall) so the CTA reads "You're a member" rather than selling.
             let token = await auth.validAccessToken()
             await entitlements.refresh(accessToken: token)
         }
+    }
+
+    private func reloadStore(force: Bool = false) async {
+        await store.loadProducts(force: force)
+        model.reconcileSelection()
+        await model.refreshEligibility()
     }
 
     // MARK: Hero
@@ -111,34 +120,112 @@ struct PaywallView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 8)
         }
+        .padding(.top, 20)
+    }
+
+    private var valueHighlights: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 10) {
+                valueHighlight("Go deeper", icon: "books.vertical.fill", detail: "Unlimited dossiers")
+                valueHighlight("Walk hands-free", icon: "headphones", detail: "Narrated tours")
+                valueHighlight("Travel ready", icon: "arrow.down.circle.fill", detail: "Offline city packs")
+            }
+
+            VStack(spacing: 10) {
+                valueHighlight("Go deeper", icon: "books.vertical.fill", detail: "Unlimited dossiers")
+                valueHighlight("Walk hands-free", icon: "headphones", detail: "Narrated tours")
+                valueHighlight("Travel ready", icon: "arrow.down.circle.fill", detail: "Offline city packs")
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Lore plus highlights")
+    }
+
+    private func valueHighlight(_ title: String, icon: String, detail: String) -> some View {
+        VStack(spacing: 7) {
+            Image(systemName: icon)
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(LoreColor.brass300)
+            Text(title)
+                .font(LoreType.label)
+                .foregroundStyle(LoreColor.bone)
+                .multilineTextAlignment(.center)
+            Text(detail)
+                .font(LoreType.caption)
+                .foregroundStyle(LoreColor.bone.opacity(0.78))
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity, minHeight: 88)
+        .padding(.horizontal, 8)
+        .background(LoreColor.ink800, in: RoundedRectangle(cornerRadius: 16))
+        .accessibilityElement(children: .combine)
     }
 
     // MARK: Plan picker (monthly / annual)
 
-    /// The subscriptions (monthly/annual) always render — they degrade to honest
-    /// hardcoded prices if StoreKit is slow. Lifetime is a separate non-consumable:
-    /// show it only when its product actually loaded, so a reviewer never taps a
-    /// visible plan that dead-ends at purchase (App Review 2.1 / 3.1.1). Mirrors
-    /// the trip-pass section's guard.
-    private var visiblePlans: [PaywallModel.Plan] {
-        PaywallModel.Plan.allCases.filter { plan in
-            plan != .lifetime || store.product(for: plan.productID) != nil
-        }
+    private var availablePlans: [PaywallModel.Plan] {
+        PaywallModel.Plan.allCases.filter { store.product(for: $0.productID) != nil }
     }
 
+    @ViewBuilder
     private var planPicker: some View {
-        VStack(spacing: 10) {
-            ForEach(visiblePlans) { plan in
-                PlanRow(
-                    plan: plan,
-                    priceLine: model.displayPriceLine(for: plan),
-                    selected: model.selectedPlan == plan
-                ) {
-                    Haptics.play(.chipTap)
-                    model.selectedPlan = plan
+        if store.isLoadingProducts && availablePlans.isEmpty {
+            VStack(spacing: 10) {
+                ForEach([PaywallModel.Plan.annual, .monthly]) { plan in
+                    PlanRow(
+                        plan: plan,
+                        priceLine: "Loading App Store price",
+                        badge: nil,
+                        selected: false,
+                        enabled: false,
+                        onTap: {}
+                    )
+                }
+            }
+            .accessibilityLabel("Loading membership options from the App Store")
+        } else if availablePlans.isEmpty {
+            storeUnavailableCard
+        } else {
+            VStack(spacing: 10) {
+                ForEach(availablePlans) { plan in
+                    PlanRow(
+                        plan: plan,
+                        priceLine: model.displayPriceLine(for: plan) ?? "Price unavailable",
+                        badge: model.badge(for: plan),
+                        selected: model.selectedPlan == plan,
+                        enabled: true
+                    ) {
+                        Haptics.play(.chipTap)
+                        Task { await model.select(plan) }
+                    }
                 }
             }
         }
+    }
+
+    private var storeUnavailableCard: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "wifi.exclamationmark")
+                .font(.system(size: 24, weight: .semibold))
+                .foregroundStyle(LoreColor.brass300)
+            Text("App Store options unavailable")
+                .font(LoreType.button)
+                .foregroundStyle(LoreColor.bone)
+            Text(store.lastError ?? "Lore couldn't load localized membership options.")
+                .font(LoreType.caption)
+                .foregroundStyle(LoreColor.bone.opacity(0.78))
+                .multilineTextAlignment(.center)
+            Button("Try again") {
+                Task { await reloadStore(force: true) }
+            }
+            .font(LoreType.button)
+            .foregroundStyle(LoreColor.brass300)
+            .frame(minHeight: 44)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(18)
+        .background(LoreColor.ink800, in: RoundedRectangle(cornerRadius: 18))
+        .accessibilityElement(children: .contain)
     }
 
     // MARK: Free vs. Lore+ table
@@ -146,27 +233,36 @@ struct PaywallView: View {
     private var featureTable: some View {
         VStack(spacing: 0) {
             // Header row
-            HStack {
+            if dynamicTypeSize.isAccessibilitySize {
                 Text("What you get")
                     .font(LoreType.label)
                     .tracking(0.6)
-                    .foregroundStyle(LoreColor.bone.opacity(0.72))
-                Spacer()
-                Text("Free")
-                    .font(LoreType.label).tracking(0.6)
-                    .foregroundStyle(LoreColor.bone.opacity(0.72))
-                    .frame(width: 52)
-                Text("Lore+")
-                    .font(LoreType.label).tracking(0.6)
-                    .foregroundStyle(LoreColor.brass300)
-                    .frame(width: 52)
+                    .foregroundStyle(LoreColor.bone.opacity(0.78))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(16)
+            } else {
+                HStack {
+                    Text("What you get")
+                        .font(LoreType.label)
+                        .tracking(0.6)
+                        .foregroundStyle(LoreColor.bone.opacity(0.78))
+                    Spacer()
+                    Text("Free")
+                        .font(LoreType.label).tracking(0.6)
+                        .foregroundStyle(LoreColor.bone.opacity(0.78))
+                        .frame(width: 52)
+                    Text("Lore+")
+                        .font(LoreType.label).tracking(0.6)
+                        .foregroundStyle(LoreColor.brass300)
+                        .frame(width: 52)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
 
             ForEach(FeatureComparison.all) { row in
                 Divider().overlay(LoreColor.ink700)
-                FeatureRow(row: row)
+                FeatureRow(row: row, usesExpandedLayout: dynamicTypeSize.isAccessibilitySize)
             }
         }
         .background(LoreColor.ink800, in: RoundedRectangle(cornerRadius: 20))
@@ -181,13 +277,48 @@ struct PaywallView: View {
     @ViewBuilder
     private var purchaseButton: some View {
         if entitlements.isPlus {
-            // Already a member, no sell, just acknowledge.
-            HStack(spacing: 8) {
-                Image(systemName: "checkmark.seal.fill")
-                Text(entitlements.isTrialing ? "You're on the Lore+ trial" : "You're a Lore+ member")
+            VStack(spacing: 12) {
+                HStack(spacing: 8) {
+                    Image(systemName: "checkmark.seal.fill")
+                    Text(entitlements.isTrialing ? "Your Lore+ trial is active" : "Your Lore+ access is active")
+                        .font(LoreType.button)
+                }
+                .foregroundStyle(LoreColor.successDark)
+
+                if store.hasFamilySharedAccess {
+                    Label("Shared with you through Apple Family Sharing", systemImage: "person.2.fill")
+                        .font(LoreType.caption)
+                        .foregroundStyle(LoreColor.bone.opacity(0.82))
+                } else if entitlements.isUsingCachedEntitlement {
+                    Label("Using a recently verified membership while offline", systemImage: "checkmark.icloud")
+                        .font(LoreType.caption)
+                        .foregroundStyle(LoreColor.bone.opacity(0.82))
+                }
+
+                switch store.accessKind {
+                case .subscription:
+                    Button("Manage or cancel subscription") {
+                        showManageSubscriptions = true
+                    }
                     .font(LoreType.button)
+                    .foregroundStyle(LoreColor.brass300)
+                    .frame(minHeight: 44)
+                    Text("Cancellation is handled by Apple. Access continues through the paid period shown in your Apple Account.")
+                        .font(LoreType.caption)
+                        .foregroundStyle(LoreColor.bone.opacity(0.72))
+                        .multilineTextAlignment(.center)
+                case .lifetime:
+                    Text("Lifetime access is a one-time purchase and does not renew.")
+                        .font(LoreType.caption)
+                        .foregroundStyle(LoreColor.bone.opacity(0.78))
+                case .tripPass:
+                    Text(tripPassStatusText)
+                        .font(LoreType.caption)
+                        .foregroundStyle(LoreColor.bone.opacity(0.78))
+                case .none:
+                    EmptyView()
+                }
             }
-            .foregroundStyle(LoreColor.successDark)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 14)
         } else {
@@ -219,7 +350,10 @@ struct PaywallView: View {
                     .frame(height: 56)
                 }
                 .buttonStyle(.plain)
-                .disabled(model.isPurchasing)
+                .disabled(!model.canPurchaseSelectedPlan)
+                .opacity(model.canPurchaseSelectedPlan ? 1 : 0.62)
+                .accessibilityLabel(model.purchaseAccessibilityLabel)
+                .accessibilityHint("Apple shows a confirmation sheet before any purchase is completed")
 
                 Button("Restore purchases") {
                     Task { await restore() }
@@ -227,6 +361,14 @@ struct PaywallView: View {
                 .font(LoreType.caption)
                 .foregroundStyle(LoreColor.bone.opacity(0.72))
                 .disabled(model.isPurchasing)
+                .frame(minHeight: 44)
+
+                if store.productLoadState == .partial, let message = store.lastError {
+                    Text(message)
+                        .font(LoreType.caption)
+                        .foregroundStyle(LoreColor.bone.opacity(0.78))
+                        .multilineTextAlignment(.center)
+                }
 
                 if let error = model.purchaseError {
                     Text(error)
@@ -243,6 +385,13 @@ struct PaywallView: View {
                 }
             }
         }
+    }
+
+    private var tripPassStatusText: String {
+        guard let expiry = store.tripPassExpiresAt else {
+            return "Your trip pass is active and does not auto-renew."
+        }
+        return "Your trip pass is active until \(expiry.formatted(date: .abbreviated, time: .shortened)) and does not auto-renew."
     }
 
     /// A non-renewing "just visiting" option for one-trip users (the beta-fleet's
@@ -313,14 +462,21 @@ struct PaywallView: View {
     /// Functional Terms of Use + Privacy Policy links, required on the purchase
     /// screen for auto-renewable subscriptions (App Store Review 3.1.2).
     private var legalLinks: some View {
-        HStack(spacing: 14) {
-            Link("Terms of Use", destination: URL(string: "https://lore-web-liart.vercel.app/terms")!)
-            Text("·").foregroundStyle(LoreColor.ink700)
-            Link("Privacy Policy", destination: URL(string: "https://lore-web-liart.vercel.app/privacy")!)
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 14) {
+                Link("Terms of Use", destination: URL(string: "https://lore-web-liart.vercel.app/terms")!)
+                Text("·").foregroundStyle(LoreColor.ink700)
+                Link("Privacy Policy", destination: URL(string: "https://lore-web-liart.vercel.app/privacy")!)
+            }
+            VStack(spacing: 10) {
+                Link("Terms of Use", destination: URL(string: "https://lore-web-liart.vercel.app/terms")!)
+                Link("Privacy Policy", destination: URL(string: "https://lore-web-liart.vercel.app/privacy")!)
+            }
         }
         .font(LoreType.caption)
         .tint(LoreColor.brass300)
         .padding(.top, 2)
+        .frame(minHeight: 44)
     }
 
     private var closeButton: some View {
@@ -333,7 +489,7 @@ struct PaywallView: View {
                     Image(systemName: "xmark")
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(LoreColor.bone)
-                        .frame(width: 32, height: 32)
+                        .frame(width: 44, height: 44)
                         .background(LoreColor.ink800, in: Circle())
                 }
                 .padding(16)
@@ -358,17 +514,21 @@ struct PaywallView: View {
             let token = await auth.validAccessToken()
             await entitlements.refresh(accessToken: token)
             Haptics.play(.badgeEarned)  // the unlock is a reward moment
+            UIAccessibility.post(notification: .announcement, argument: "Lore plus unlocked")
             dismiss()
         case .pending:
             // Ask-to-Buy / SCA, the grant arrives later via Transaction.updates.
             // Leave the sheet up with the model's informational message.
-            break
+            UIAccessibility.post(
+                notification: .announcement,
+                argument: "Purchase pending Apple approval. Lore plus will unlock automatically when approved."
+            )
         case .userCancelled:
             break  // no-op, no error
         case .inProgress:
             break
         case .failed:
-            break  // model.purchaseError already set
+            UIAccessibility.post(notification: .announcement, argument: model.purchaseError)
         }
     }
 
@@ -377,7 +537,10 @@ struct PaywallView: View {
         if case .restored = outcome {
             let token = await auth.validAccessToken()
             await entitlements.refresh(accessToken: token)
+            UIAccessibility.post(notification: .announcement, argument: "Purchases restored. Lore plus is active.")
             dismiss()
+        } else if let error = model.purchaseError {
+            UIAccessibility.post(notification: .announcement, argument: error)
         }
     }
 }
@@ -407,9 +570,11 @@ enum PaywallContext {
 
 private struct PlanRow: View {
     let plan: PaywallModel.Plan
-    /// Localized price when the StoreKit product loaded, else the hardcoded line.
+    /// Localized price from StoreKit, or a loading placeholder on a disabled row.
     let priceLine: String
+    let badge: String?
     let selected: Bool
+    let enabled: Bool
     let onTap: () -> Void
 
     var body: some View {
@@ -424,7 +589,7 @@ private struct PlanRow: View {
                         Text(plan.title)
                             .font(LoreType.button)
                             .foregroundStyle(LoreColor.bone)
-                        if let badge = plan.savingsBadge {
+                        if let badge {
                             Text(badge)
                                 .font(LoreType.label).tracking(0.4)
                                 .foregroundStyle(LoreColor.ink)
@@ -453,8 +618,11 @@ private struct PlanRow: View {
             )
         }
         .buttonStyle(.plain)
+        .disabled(!enabled)
+        .opacity(enabled ? 1 : 0.72)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(plan.title), \(priceLine)")
+        .accessibilityHint(enabled ? "Selects this Lore plus plan" : "Waiting for the App Store price")
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
     }
 }
@@ -501,18 +669,44 @@ struct FeatureComparison: Identifiable {
 
 private struct FeatureRow: View {
     let row: FeatureComparison
+    let usesExpandedLayout: Bool
 
+    @ViewBuilder
     var body: some View {
-        HStack {
-            Text(row.label)
-                .font(LoreType.body)
-                .foregroundStyle(LoreColor.bone)
-            Spacer()
-            cell(row.free).frame(width: 52)
-            cell(row.plus, plus: true).frame(width: 52)
+        if usesExpandedLayout {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(row.label)
+                    .font(LoreType.body)
+                    .foregroundStyle(LoreColor.bone)
+                HStack(spacing: 20) {
+                    labeledCell("Free", value: row.free)
+                    labeledCell("Lore+", value: row.plus, plus: true)
+                }
+            }
+            .padding(16)
+            .accessibilityElement(children: .combine)
+        } else {
+            HStack {
+                Text(row.label)
+                    .font(LoreType.body)
+                    .foregroundStyle(LoreColor.bone)
+                Spacer()
+                cell(row.free).frame(width: 52)
+                cell(row.plus, plus: true).frame(width: 52)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+    }
+
+    private func labeledCell(_ label: String, value: FeatureComparison.Cell, plus: Bool = false) -> some View {
+        HStack(spacing: 6) {
+            Text(label)
+                .font(LoreType.caption)
+                .foregroundStyle(plus ? LoreColor.brass300 : LoreColor.bone.opacity(0.78))
+            cell(value, plus: plus)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder
@@ -567,26 +761,6 @@ final class PaywallModel {
             }
         }
 
-        /// The fallback price line, locked in docs/00 §7. Used only when the
-        /// StoreKit product hasn't loaded; `PaywallModel.displayPriceLine(for:)`
-        /// prefers the localized `Product.displayPrice`.
-        var priceLine: String {
-            switch self {
-            case .monthly: return "$5.99 / month"
-            case .annual: return "$34.99 / year"
-            case .lifetime: return "$99.99 once"
-            }
-        }
-
-        /// The "save 51%" style badge on annual. $34.99 vs $71.88 ≈ 51% off.
-        var savingsBadge: String? {
-            switch self {
-            case .monthly: return nil
-            case .annual: return "Save 51%"
-            case .lifetime: return "Founder"
-            }
-        }
-
         /// The suffix appended to a localized `displayPrice` so the row reads
         /// "$5.99 / month" even when the number comes from StoreKit.
         var periodSuffix: String {
@@ -599,8 +773,8 @@ final class PaywallModel {
     }
 
     /// The StoreKit 2 client path, injected from the view's `onAppear`. Nil in
-    /// previews / before injection, the model degrades to hardcoded prices and
-    /// an honest "unavailable" purchase error.
+    /// previews / before injection, the model shows an unavailable state rather
+    /// than inventing a storefront price.
     var store: StoreKitService?
 
     var selectedPlan: Plan = .annual  // default to the better value
@@ -608,54 +782,108 @@ final class PaywallModel {
     private(set) var purchaseError: String?
     private(set) var purchaseNotice: String?
 
-    /// Whether the current Apple ID is eligible for the 7-day intro offer.
-    /// Drives the CTA copy so it never promises a trial to a returning user.
-    private(set) var isEligibleForTrial = true
+    /// StoreKit-authoritative duration for an eligible free trial. Nil means the
+    /// current product has no free trial or this Apple Account is ineligible.
+    private(set) var trialDurationDescription: String?
+    var isEligibleForTrial: Bool { trialDurationDescription != nil }
+    private(set) var hasCheckedEligibility = false
 
     /// Reload intro-offer eligibility for the selected plan (call after products
     /// load, and whenever the plan changes if you want per-plan precision, the
     /// two products share a subscription group, so eligibility is the same).
     func refreshEligibility() async {
-        guard let store else { return }
+        hasCheckedEligibility = false
+        guard let store, store.product(for: selectedPlan.productID) != nil else { return }
         // Lifetime is a non-consumable: no intro offer ever applies to it.
-        guard selectedPlan != .lifetime else { isEligibleForTrial = false; return }
-        isEligibleForTrial = await store.isEligibleForIntroOffer(productID: selectedPlan.productID)
+        guard selectedPlan != .lifetime else {
+            trialDurationDescription = nil
+            hasCheckedEligibility = true
+            return
+        }
+        trialDurationDescription = await store.eligibleFreeTrialDescription(
+            productID: selectedPlan.productID
+        )
+        hasCheckedEligibility = true
+    }
+
+    func select(_ plan: Plan) async {
+        selectedPlan = plan
+        await refreshEligibility()
+    }
+
+    func reconcileSelection() {
+        guard let store else { return }
+        if store.product(for: selectedPlan.productID) != nil { return }
+        selectedPlan = [.annual, .monthly, .lifetime].first {
+            store.product(for: $0.productID) != nil
+        } ?? .annual
     }
 
     /// The CTA title. Lifetime is a one-time unlock; the subscriptions promise
     /// the trial only when the Apple ID is actually eligible.
     var ctaTitle: String {
         if selectedPlan == .lifetime { return "Unlock Lore+ forever" }
-        return isEligibleForTrial ? "Start 7-day free trial" : "Subscribe"
+        if hasCheckedEligibility, isEligibleForTrial { return "Start free trial" }
+        return hasCheckedEligibility ? "Subscribe with Apple" : "Continue with Apple"
     }
 
     /// Localized price context beneath the CTA. Never repeat hardcoded USD when
     /// StoreKit has supplied the storefront's actual display price.
     var ctaSubtitle: String {
-        let price = displayPriceLine(for: selectedPlan)
+        guard let price = displayPriceLine(for: selectedPlan) else {
+            return "Loading price from the App Store"
+        }
         if selectedPlan == .lifetime { return "\(price) · one-time" }
-        return isEligibleForTrial ? "then \(price)" : price
+        if hasCheckedEligibility, let duration = trialDurationDescription {
+            return "\(duration) free, then \(price)"
+        }
+        return price
     }
 
     /// The fine print under the CTA, correct per plan (no trial/cancel language
     /// on the lifetime one-time purchase).
     var finePrintText: String {
-        let price = displayPriceLine(for: selectedPlan)
-        if selectedPlan == .lifetime {
-            return "\(price). One payment, unlocked forever. Your free daily dives and unlimited scanning never expire."
+        guard let price = displayPriceLine(for: selectedPlan) else {
+            return "Pricing and purchase availability are provided by the App Store. No purchase can begin until your localized price loads."
         }
-        let lead = isEligibleForTrial ? "7 days free, then \(price). " : "\(price). "
-        let renew = "Auto-renews \(selectedPlan == .annual ? "yearly" : "monthly") unless canceled at least 24 hours before the current period ends."
-        return lead + renew + " Cancel anytime in Settings. Your free daily dives and unlimited scanning never expire."
+        if selectedPlan == .lifetime {
+            return "\(price). One payment charged to your Apple Account at confirmation. This purchase does not renew."
+        }
+        let lead: String
+        if hasCheckedEligibility, let duration = trialDurationDescription {
+            lead = "\(duration.capitalized) free, then \(price). "
+        } else {
+            lead = "\(price). "
+        }
+        let renew = "Payment is charged to your Apple Account at confirmation. Auto-renews \(selectedPlan == .annual ? "yearly" : "monthly") unless canceled at least 24 hours before the current period ends."
+        return lead + renew + " Manage or cancel in Apple Account subscriptions. Your free Lore access never expires."
     }
 
-    /// The best price line for a plan: the localized StoreKit `displayPrice`
-    /// with the period suffix when the product loaded, else the hardcoded line.
-    func displayPriceLine(for plan: Plan) -> String {
-        if let product = store?.product(for: plan.productID) {
-            return product.displayPrice + plan.periodSuffix
+    /// Storefront-authoritative price. Nil is a first-class loading/unavailable
+    /// state and disables purchase rather than substituting a US price.
+    func displayPriceLine(for plan: Plan) -> String? {
+        guard let product = store?.product(for: plan.productID) else { return nil }
+        return product.displayPrice + plan.periodSuffix
+    }
+
+    func badge(for plan: Plan) -> String? {
+        switch plan {
+        case .monthly: return nil
+        case .annual: return "Best value"
+        case .lifetime: return "One-time"
         }
-        return plan.priceLine
+    }
+
+    var canPurchaseSelectedPlan: Bool {
+        guard !isPurchasing,
+              let store,
+              store.product(for: selectedPlan.productID) != nil
+        else { return false }
+        return AppStore.canMakePayments
+    }
+
+    var purchaseAccessibilityLabel: String {
+        "\(ctaTitle). \(ctaSubtitle)."
     }
 
     /// Purchase the selected plan through StoreKit 2.
@@ -674,6 +902,10 @@ final class PaywallModel {
         guard !isPurchasing else { return .inProgress }
         guard let store else {
             purchaseError = "The store isn't available right now. Try again."
+            return .failed(message: purchaseError!)
+        }
+        guard store.product(for: productID) != nil else {
+            purchaseError = "That option isn't available from the App Store right now. No purchase was started."
             return .failed(message: purchaseError!)
         }
         isPurchasing = true
@@ -698,6 +930,9 @@ final class PaywallModel {
     ///
     /// TODO(P3): defer to `Purchases.shared.restorePurchases()` once RC is wired.
     func restore() async -> StoreKitService.RestoreOutcome {
+        guard !isPurchasing else {
+            return .failed(message: "Another App Store request is already in progress.")
+        }
         guard let store else {
             purchaseError = "The store isn't available right now. Try again."
             return .failed(message: purchaseError!)

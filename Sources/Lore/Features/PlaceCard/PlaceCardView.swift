@@ -348,10 +348,15 @@ struct PlaceCardView: View {
     /// `heroURL` nil and marks the hero resolved so it hides.
     private func resolveHero() async {
         heroResolved = false
+        heroURL = nil
+        dive = nil
         let loaded = (try? await LoreAPI.shared.dive(placeID: place.id)) ?? nil
+        guard !Task.isCancelled else { return }
         dive = loaded
         if let title = loaded?.media.wikipediaTitle, !title.isEmpty {
-            heroURL = await WikipediaService.shared.portraitURL(for: title)
+            let resolvedURL = await WikipediaService.shared.portraitURL(for: title)
+            guard !Task.isCancelled else { return }
+            heroURL = resolvedURL
         }
         heroResolved = true
     }

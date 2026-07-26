@@ -48,7 +48,7 @@ struct DiveGateCard: View {
 
             UnlockButton(
                 title: "Keep reading with Lore+",
-                subtitle: "7 days free, then $5.99/mo",
+                subtitle: "See plans and your App Store price",
                 action: onUnlock
             )
 
@@ -81,7 +81,7 @@ struct DiveGateCard: View {
         .accessibilityLabel(
             "You've read your three free deep dives today. "
             + "More on \(placeName) is available with Lore plus. "
-            + "Unlock for 7 days free, then $5.99 a month."
+            + "Open Lore plus plans and your App Store price."
         )
     }
 }

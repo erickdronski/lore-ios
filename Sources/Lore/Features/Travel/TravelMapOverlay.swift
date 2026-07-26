@@ -67,6 +67,11 @@ struct TravelMapControls: View {
         VStack(spacing: 8) {
             handle
 
+            if let error = filters.lastError {
+                filterError(error)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+
             if !collapsed {
                 VStack(spacing: 12) {
                     CollectionChips(places: places)
@@ -102,7 +107,6 @@ struct TravelMapControls: View {
                 }
             }
         )
-        .gesture(collapseDrag)
         .onAppear { filters.syncCategories(from: places) }
         .onChange(of: places) { _, newValue in
             filters.syncCategories(from: newValue)
@@ -160,6 +164,9 @@ struct TravelMapControls: View {
             .padding(.horizontal, collapsed ? 0 : 16)
         }
         .buttonStyle(.plain)
+        // Only the handle owns the vertical drag. Attaching it to the entire
+        // deck stole gestures from horizontal filters and place-card shelves.
+        .simultaneousGesture(collapseDrag)
         .accessibilityLabel(collapsed ? "Show nearby field guide" : "Hide nearby field guide")
         .accessibilityValue(discoverySubtitle)
         .accessibilityHint(collapsed ? "Opens place filters and nearby cards." : "Collapses the deck to show more map.")
@@ -178,6 +185,26 @@ struct TravelMapControls: View {
         guard value != collapsed else { return }
         Haptics.play(.chipTap)
         withAnimation(LoreSpring.smooth(reduceMotion: reduceMotion)) { collapsed = value }
+    }
+
+    private func filterError(_ message: String) -> some View {
+        HStack(spacing: 9) {
+            Image(systemName: "exclamationmark.arrow.triangle.2.circlepath")
+                .foregroundStyle(LoreColor.amber)
+            Text(message)
+                .font(LoreType.caption)
+                .foregroundStyle(LoreColor.bone)
+            Spacer(minLength: 4)
+            Button("Retry") { filters.retryPersistence() }
+                .font(LoreType.button)
+                .foregroundStyle(LoreColor.amber)
+        }
+        .padding(.horizontal, 13)
+        .frame(minHeight: 42)
+        .background(LoreColor.ink900.opacity(0.97), in: Capsule())
+        .overlay(Capsule().strokeBorder(LoreColor.amber.opacity(0.35), lineWidth: 1))
+        .padding(.horizontal, 16)
+        .accessibilityElement(children: .contain)
     }
 }
 

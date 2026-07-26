@@ -15,8 +15,26 @@ struct SignInView: View {
     @State private var mode: Mode = .signIn
     @State private var apple = AppleSignInCoordinator()
     @State private var confirmedMinimumAge = false
+    @State private var operation: Operation?
+    @State private var actionTask: Task<Void, Never>?
+    @FocusState private var focusedField: Field?
 
     private enum Mode { case signIn, signUp }
+    private enum Field { case email, password }
+    private enum Operation: Equatable {
+        case credentials
+        case passwordReset
+        case apple
+        case oauth(String)
+    }
+
+    private var isWorking: Bool { operation != nil || auth.isBusy }
+    private var canSubmitCredentials: Bool {
+        AuthService.isValidEmail(email)
+            && !password.isEmpty
+            && (mode == .signIn || (confirmedMinimumAge && AuthService.isValidNewPassword(password)))
+            && !isWorking
+    }
 
     var body: some View {
         NavigationStack {
@@ -32,13 +50,25 @@ struct SignInView: View {
                             .keyboardType(.emailAddress)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
+                            .focused($focusedField, equals: .email)
+                            .submitLabel(.next)
+                            .onSubmit { focusedField = .password }
                             .padding(12)
                             .background(LoreColor.bone200, in: RoundedRectangle(cornerRadius: 14))
 
                         SecureField("Password", text: $password)
-                            .textContentType(.password)
+                            .textContentType(mode == .signUp ? .newPassword : .password)
+                            .focused($focusedField, equals: .password)
+                            .submitLabel(.go)
+                            .onSubmit(submitCredentials)
                             .padding(12)
                             .background(LoreColor.bone200, in: RoundedRectangle(cornerRadius: 14))
+                    }
+
+                    if mode == .signUp {
+                        Text("Use 8 to 128 characters.")
+                            .font(LoreType.micro)
+                            .foregroundStyle(LoreColor.ink600)
                     }
 
                     if mode == .signUp {
@@ -48,9 +78,9 @@ struct SignInView: View {
 
                         VStack(alignment: .leading, spacing: 3) {
                             Text("By creating an account, you agree to:")
-                            HStack(spacing: 8) {
-                                Link("Terms of Use", destination: URL(string: "https://lore-web-liart.vercel.app/terms")!)
-                                Link("Privacy Policy", destination: URL(string: "https://lore-web-liart.vercel.app/privacy")!)
+                            ViewThatFits(in: .horizontal) {
+                                HStack(spacing: 8) { policyLinks }
+                                VStack(alignment: .leading, spacing: 6) { policyLinks }
                             }
                         }
                         .font(LoreType.micro)
@@ -59,28 +89,17 @@ struct SignInView: View {
                     }
 
                     if let lastError = auth.lastError {
-                        Text(lastError)
-                            .font(LoreType.caption)
-                            .foregroundStyle(LoreColor.error)
+                        statusMessage(lastError, symbol: "exclamationmark.triangle.fill", color: LoreColor.error)
+                            .accessibilityIdentifier("auth.error")
                     }
                     if let lastNotice = auth.lastNotice {
-                        Text(lastNotice)
-                            .font(LoreType.caption)
-                            .foregroundStyle(LoreColor.success)
+                        statusMessage(lastNotice, symbol: "checkmark.circle.fill", color: LoreColor.success)
+                            .accessibilityIdentifier("auth.notice")
                     }
 
-                    Button {
-                        Task {
-                            if mode == .signUp {
-                                await auth.signUp(email: email, password: password)
-                            } else {
-                                await auth.signIn(email: email, password: password)
-                            }
-                            if auth.isSignedIn { dismiss() }
-                        }
-                    } label: {
+                    Button(action: submitCredentials) {
                         Group {
-                            if auth.isBusy {
+                            if operation == .credentials {
                                 ProgressView()
                             } else {
                                 Text(mode == .signUp ? "Create account" : "Sign in")
@@ -88,14 +107,11 @@ struct SignInView: View {
                             }
                         }
                         .frame(maxWidth: .infinity)
-                        .frame(height: 50)
+                        .frame(minHeight: 50)
                     }
                     .background(LoreColor.ink, in: Capsule())
                     .foregroundStyle(LoreColor.bone)
-                    .disabled(
-                        email.isEmpty || password.isEmpty || auth.isBusy
-                        || (mode == .signUp && !confirmedMinimumAge)
-                    )
+                    .disabled(!canSubmitCredentials)
 
                     // Third-party sign-in ships in Release as of 2026-07-16:
                     // Sign in with Apple is provisioned end to end (App ID
@@ -107,23 +123,26 @@ struct SignInView: View {
 
                     // Switch between sign in and account creation; reset link
                     // only in sign-in mode.
-                    HStack {
+                    VStack(alignment: .leading, spacing: 12) {
                         Button(mode == .signUp ? "Have an account? Sign in" : "New here? Create an account") {
                             mode = (mode == .signUp) ? .signIn : .signUp
                             confirmedMinimumAge = false
                             auth.lastError = nil
                             auth.lastNotice = nil
+                            focusedField = .email
                         }
                         .font(LoreType.caption)
                         .foregroundStyle(LoreColor.brass700)
-                        Spacer()
+                        .disabled(isWorking)
                         if mode == .signIn {
                             Button("Forgot password?") {
-                                Task { await auth.sendPasswordReset(email: email) }
+                                run(.passwordReset) {
+                                    await auth.sendPasswordReset(email: email)
+                                }
                             }
                             .font(LoreType.caption)
                             .foregroundStyle(LoreColor.ink600)
-                            .disabled(email.isEmpty || auth.isBusy)
+                            .disabled(!AuthService.isValidEmail(email) || isWorking)
                         }
                     }
 
@@ -142,7 +161,7 @@ struct SignInView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Close") { dismiss() }
+                    Button("Close", action: cancelAndDismiss)
                 }
             }
         }
@@ -150,6 +169,24 @@ struct SignInView: View {
         // scheme so the nav chrome + sheet grabber don't render dark on a
         // dark-mode device (matches ProfileScreen/SettingsView).
         .preferredColorScheme(.light)
+        .onDisappear {
+            actionTask?.cancel()
+            apple.cancel()
+        }
+    }
+
+    @ViewBuilder
+    private var policyLinks: some View {
+        Link("Terms of Use", destination: URL(string: "https://lore-web-liart.vercel.app/terms")!)
+        Link("Privacy Policy", destination: URL(string: "https://lore-web-liart.vercel.app/privacy")!)
+    }
+
+    private func statusMessage(_ message: String, symbol: String, color: Color) -> some View {
+        Label(message, systemImage: symbol)
+            .font(LoreType.caption)
+            .foregroundStyle(color)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityElement(children: .combine)
     }
 
     // MARK: - Social sign-in
@@ -183,34 +220,37 @@ struct SignInView: View {
     /// project.yml, and the Supabase Apple provider carries the bundle id.
     private var appleButton: some View {
         Button {
-            Task {
+            run(.apple) {
                 do {
                     let cred = try await apple.signIn()
                     await auth.signInWithApple(
                         idToken: cred.identityToken, rawNonce: cred.rawNonce,
                         fullName: cred.fullName, email: cred.email
                     )
-                    if auth.isSignedIn { dismiss() }
                 } catch AppleSignInCoordinator.AppleSignInError.cancelled {
                     // User backed out of the Apple sheet — nothing to show.
                 } catch {
                     // Everything else (missing token, network, keychain) must
                     // surface — an empty catch here left the button feeling dead.
                     // Shown via auth.lastError (SignInView renders it).
-                    auth.lastError = error.localizedDescription
+                    auth.lastError = AuthService.userFacingMessage(for: error)
                 }
             }
         } label: {
             HStack(spacing: 8) {
-                Image(systemName: "apple.logo")
-                Text("Continue with Apple").font(LoreType.button)
+                if operation == .apple {
+                    ProgressView().tint(.white)
+                } else {
+                    Image(systemName: "apple.logo")
+                    Text("Continue with Apple").font(LoreType.button)
+                }
             }
             .frame(maxWidth: .infinity)
-            .frame(height: 50)
+            .frame(minHeight: 50)
             .background(Color.black, in: Capsule())
             .foregroundStyle(.white)
         }
-        .disabled(auth.isBusy)
+        .disabled(isWorking)
     }
 
     /// A Supabase OAuth provider button (web flow).
@@ -219,15 +259,19 @@ struct SignInView: View {
         background: Color, foreground: Color, bordered: Bool = false
     ) -> some View {
         Button {
-            Task {
+            run(.oauth(provider)) {
                 await auth.signInWithOAuth(provider: provider)
-                if auth.isSignedIn { dismiss() }
             }
         } label: {
-            Text(title)
-                .font(LoreType.button)
+            Group {
+                if operation == .oauth(provider) {
+                    ProgressView().tint(foreground)
+                } else {
+                    Text(title).font(LoreType.button)
+                }
+            }
                 .frame(maxWidth: .infinity)
-                .frame(height: 50)
+                .frame(minHeight: 50)
                 .background(background, in: Capsule())
                 .foregroundStyle(foreground)
                 .overlay {
@@ -236,6 +280,40 @@ struct SignInView: View {
                     }
                 }
         }
-        .disabled(auth.isBusy)
+        .disabled(isWorking)
+    }
+
+    private func submitCredentials() {
+        guard canSubmitCredentials else { return }
+        focusedField = nil
+        run(.credentials) {
+            if mode == .signUp {
+                await auth.signUp(email: email, password: password)
+            } else {
+                await auth.signIn(email: email, password: password)
+            }
+        }
+    }
+
+    private func run(_ nextOperation: Operation, action: @escaping @MainActor () async -> Void) {
+        guard operation == nil, !auth.isBusy else { return }
+        operation = nextOperation
+        auth.lastError = nil
+        auth.lastNotice = nil
+        actionTask = Task { @MainActor in
+            defer {
+                operation = nil
+                actionTask = nil
+            }
+            await action()
+            guard !Task.isCancelled else { return }
+            if auth.isSignedIn { dismiss() }
+        }
+    }
+
+    private func cancelAndDismiss() {
+        actionTask?.cancel()
+        apple.cancel()
+        dismiss()
     }
 }

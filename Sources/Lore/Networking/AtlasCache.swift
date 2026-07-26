@@ -44,8 +44,7 @@ actor AtlasCache {
         freshFor: TimeInterval = AtlasCache.defaultFreshFor
     ) async throws -> Data {
         guard let key = cacheKey(for: request) else {
-            let (data, _) = try await session.data(for: request)
-            return data
+            return try await fetchValid(request, session: session)
         }
         let file = directory.appending(path: key)
 
@@ -58,6 +57,13 @@ actor AtlasCache {
             let data = try await fetchValid(request, session: session)
             try? data.write(to: file, options: .atomic)
             return data
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let error as URLError where error.code == .cancelled {
+            // A superseded city/search task must stay cancelled. Returning a
+            // stale payload here would let an old selection overwrite the new
+            // one after the traveler has already moved on.
+            throw error
         } catch {
             if let stale = read(file) { return stale.data }
             // Cache purged + no network: a downloaded city pack still answers.
@@ -111,8 +117,13 @@ actor AtlasCache {
     /// Network fetch that only accepts 2xx bodies, so an error payload can
     /// never poison the cache.
     private func fetchValid(_ request: URLRequest, session: URLSession) async throws -> Data {
+        try Task.checkCancellation()
         let (data, response) = try await session.data(for: request)
-        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+        try Task.checkCancellation()
+        guard let http = response as? HTTPURLResponse else {
+            throw LoreAPI.APIError.invalidResponse
+        }
+        if !(200..<300).contains(http.statusCode) {
             throw LoreAPI.APIError.http(
                 status: http.statusCode,
                 body: String(data: data, encoding: .utf8) ?? ""

@@ -15,7 +15,6 @@ struct LookAroundSection: View {
     let place: Place
 
     @State private var scene: MKLookAroundScene?
-    @State private var checked = false
 
     var body: some View {
         Group {
@@ -39,10 +38,11 @@ struct LookAroundSection: View {
         // Fetch once per place. A missing scene (no coverage) leaves the
         // section empty, never an error, never a spinner.
         .task(id: place.id) {
-            guard !checked else { return }
-            checked = true
+            scene = nil
             let request = MKLookAroundSceneRequest(coordinate: place.coordinate)
-            scene = try? await request.scene
+            let loaded = try? await request.scene
+            guard !Task.isCancelled else { return }
+            scene = loaded
         }
     }
 }

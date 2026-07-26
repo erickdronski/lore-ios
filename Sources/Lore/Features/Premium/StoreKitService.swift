@@ -2,6 +2,62 @@ import Foundation
 import Observation
 import StoreKit
 
+/// A testable, StoreKit-independent projection of a verified transaction.
+/// Keeping the policy pure makes revocation, expiration, upgrades, Family
+/// Sharing, and trip-pass windows deterministic instead of simulator-only.
+struct StoreEntitlementSnapshot: Equatable {
+    enum Ownership: Equatable {
+        case purchased
+        case familyShared
+    }
+
+    let productID: String
+    let purchaseDate: Date
+    let expirationDate: Date?
+    let revocationDate: Date?
+    let isUpgraded: Bool
+    let isIntroductory: Bool
+    let ownership: Ownership
+}
+
+struct StoreEntitlementResolution: Equatable {
+    let ownedProductIDs: Set<String>
+    let tripPassExpiresAt: Date?
+    let isInIntroPeriod: Bool
+    let includesFamilySharedAccess: Bool
+}
+
+enum StoreEntitlementResolver {
+    static func resolve(
+        current: [StoreEntitlementSnapshot],
+        history: [StoreEntitlementSnapshot],
+        now: Date
+    ) -> StoreEntitlementResolution {
+        let active = current.filter { snapshot in
+            guard StoreKitService.ProductID.subsAndLifetime.contains(snapshot.productID) else {
+                return false
+            }
+            guard snapshot.revocationDate == nil, !snapshot.isUpgraded else { return false }
+            guard let expiry = snapshot.expirationDate else { return true }
+            return expiry > now
+        }
+
+        let passExpiry = history.compactMap { snapshot -> Date? in
+            guard snapshot.revocationDate == nil,
+                  let duration = StoreKitService.ProductID.passDuration(snapshot.productID)
+            else { return nil }
+            return snapshot.purchaseDate.addingTimeInterval(duration)
+        }.max()
+
+        return StoreEntitlementResolution(
+            ownedProductIDs: Set(active.map(\.productID)),
+            tripPassExpiresAt: passExpiry,
+            isInIntroPeriod: active.contains(where: \.isIntroductory),
+            includesFamilySharedAccess: active.contains { $0.ownership == .familyShared }
+        )
+    }
+}
+
 /// The **StoreKit 2** client path for Lore+, the on-device transaction engine.
 ///
 /// Doctrine (docs/16-APPLE-TOOLKITS.md §1): StoreKit 2 and RevenueCat are
@@ -19,7 +75,7 @@ import StoreKit
 /// - reads on-device entitlements (`Transaction.currentEntitlements`),
 /// - listens for out-of-band changes (`Transaction.updates`),
 /// - restores (`AppStore.sync()`),
-/// - and reports intro-offer eligibility for the 7-day trial framing.
+/// - and reports StoreKit-authoritative free-trial eligibility and duration.
 ///
 /// **Reconciliation TODO (docs/16 §1 + docs/00 §2):** when the RevenueCat SDK
 /// lands at P3, `Purchases.shared` becomes the primary purchase driver (it runs
@@ -37,10 +93,10 @@ import StoreKit
 @Observable
 @MainActor
 final class StoreKitService {
-    /// The Lore+ products, App Store Connect identifiers (docs/16 §1). Ids are
-    /// price-agnostic on purpose: pricing is $5.99/mo, $34.99/yr, $99.99 lifetime
-    /// (locked 2026-07-06), and a future price change must never require a new
-    /// id. `lifetime` is a non-consumable Founder unlock; the subs auto-renew.
+    /// The Lore+ products, App Store Connect identifiers (docs/16 §1). IDs are
+    /// price-agnostic on purpose: storefront pricing and offers may change
+    /// without requiring new identifiers. `lifetime` is a non-consumable
+    /// unlock; the subscriptions auto-renew.
     /// Any owned product confers Lore+ (see `isPlus`).
     enum ProductID {
         static let monthly = "lore_plus_monthly"
@@ -56,6 +112,10 @@ final class StoreKitService {
         /// The non-renewing passes (tracked by purchase date + window).
         static let passes: [String] = [pass72h, pass7d]
         static let all: [String] = subsAndLifetime + passes
+        /// The recurring plans are the minimum viable catalog. Lifetime and
+        /// trip passes are optional and appear only when App Store Connect
+        /// returns them.
+        static let requiredSubscriptions: [String] = [monthly, annual]
 
         /// The access window a Trip Pass grants from its purchase date.
         static func passDuration(_ id: String) -> TimeInterval? {
@@ -71,10 +131,23 @@ final class StoreKitService {
     /// `EntitlementStore` reads and the RevenueCat entitlement (`plus`/`lore_plus`).
     static let entitlementName = "lore_plus"
 
+    enum ProductLoadState: Equatable {
+        case idle
+        case loading
+        case ready
+        case partial
+        case unavailable
+        case failed
+    }
+
     /// Loaded `Product`s, keyed by identifier. Empty until `loadProducts` runs;
-    /// the paywall renders localized prices from these when present, and falls
-    /// back to the hardcoded USD lines (`PaywallModel.Plan.priceLine`) otherwise.
+    /// the paywall renders only these localized storefront prices and disables
+    /// purchase when they are unavailable.
     private(set) var products: [String: Product] = [:]
+
+    /// Distinguishes a cold load, a partial App Store catalog, and a real
+    /// failure so the paywall never substitutes a potentially wrong USD price.
+    private(set) var productLoadState: ProductLoadState = .idle
 
     /// The set of product identifiers the user currently owns on this Apple ID,
     /// per `Transaction.currentEntitlements`. This is the offline signal
@@ -88,9 +161,25 @@ final class StoreKitService {
     /// Non-fatal load/purchase error surfaced where it helps; never blocks.
     private(set) var lastError: String?
 
+    /// A verified transaction may be shared by the purchaser's family. Lore
+    /// grants it exactly like a directly purchased transaction when the product
+    /// is configured as Family Shareable in App Store Connect.
+    private(set) var hasFamilySharedAccess = false
+
+    /// True when StoreKit returned a transaction whose signature could not be
+    /// verified. The transaction never unlocks access, and restore reports a
+    /// verification problem rather than claiming there was nothing to restore.
+    private(set) var hasVerificationIssue = false
+
+    /// Service-wide guards prevent two sheets or surfaces from launching
+    /// overlapping App Store operations.
+    private(set) var isPurchaseInProgress = false
+    private(set) var isRestoreInProgress = false
+
     /// The long-lived `Transaction.updates` listener. Observation ignores this
     /// implementation detail, which also lets nonisolated deinit cancel it.
     @ObservationIgnored private var updatesTask: Task<Void, Never>?
+    @ObservationIgnored private var productLoadTask: Task<[Product], Error>?
 
     init() {}
 
@@ -114,24 +203,66 @@ final class StoreKitService {
 
     // MARK: - Products
 
-    /// Load the Lore+ products from the App Store (or the `.storekit`
-    /// configuration in the simulator). Best-effort: a failure leaves `products`
-    /// empty and the paywall falls back to its hardcoded price lines.
-    func loadProducts() async {
-        guard products.isEmpty else { return }
-        isLoadingProducts = true
-        lastError = nil
-        defer { isLoadingProducts = false }
-        do {
-            let loaded = try await Product.products(for: ProductID.all)
-            products = Dictionary(uniqueKeysWithValues: loaded.map { ($0.id, $0) })
-        } catch {
-            lastError = "Couldn't load subscription options. You can still read everything free."
+    /// Load localized products from the App Store (or the local StoreKit
+    /// configuration). Prices never fall back to hardcoded USD because doing so
+    /// can misstate the active storefront. `force` supports an explicit retry
+    /// after a network or App Store catalog failure.
+    func loadProducts(force: Bool = false) async {
+        if !force, productLoadState == .ready { return }
+
+        if let inFlight = productLoadTask {
+            do {
+                applyLoadedProducts(try await inFlight.value)
+            } catch {
+                applyProductLoadFailure()
+            }
+            return
         }
+
+        isLoadingProducts = true
+        productLoadState = .loading
+        lastError = nil
+        let task = Task { try await Product.products(for: ProductID.all) }
+        productLoadTask = task
+        defer {
+            productLoadTask = nil
+            isLoadingProducts = false
+        }
+
+        do {
+            applyLoadedProducts(try await task.value)
+        } catch {
+            applyProductLoadFailure()
+        }
+    }
+
+    private func applyLoadedProducts(_ loaded: [Product]) {
+        products = Dictionary(uniqueKeysWithValues: loaded.map { ($0.id, $0) })
+        let recurringCount = ProductID.requiredSubscriptions.filter { products[$0] != nil }.count
+        switch recurringCount {
+        case ProductID.requiredSubscriptions.count:
+            productLoadState = .ready
+        case 1:
+            productLoadState = .partial
+            lastError = "One membership option is temporarily unavailable. The available App Store option is safe to use."
+        default:
+            productLoadState = .unavailable
+            lastError = "Membership options aren't available from the App Store right now."
+        }
+    }
+
+    private func applyProductLoadFailure() {
+        products = [:]
+        productLoadState = .failed
+        lastError = "Couldn't load membership options from the App Store. Check your connection and try again."
     }
 
     /// The `Product` for a paywall plan, if loaded.
     func product(for id: String) -> Product? { products[id] }
+
+    var availableCoreProductIDs: [String] {
+        ProductID.subsAndLifetime.filter { products[$0] != nil }
+    }
 
     // MARK: - Entitlement read (the offline belt-and-suspenders)
 
@@ -160,42 +291,60 @@ final class StoreKitService {
     /// transaction's `offer`/`offerType`.
     private(set) var isInIntroPeriod = false
 
-    /// Recompute `ownedProductIDs` from `Transaction.currentEntitlements`. This
-    /// is the on-device truth: it works offline and survives an RC outage.
+    /// Recompute access from verified StoreKit transactions. Unverified rows
+    /// fail closed and are remembered so restore can explain the integrity
+    /// failure instead of incorrectly reporting an empty purchase history.
     func refreshEntitlements() async {
-        var owned: Set<String> = []
-        var trialing = false
+        var current: [StoreEntitlementSnapshot] = []
+        var history: [StoreEntitlementSnapshot] = []
+        var verificationIssue = false
+
         for await result in Transaction.currentEntitlements {
-            guard case .verified(let transaction) = result else { continue }
-            guard ProductID.subsAndLifetime.contains(transaction.productID) else { continue }
-            // Not revoked and (for subscriptions) not past expiry.
-            if transaction.revocationDate != nil { continue }
-            if let expiry = transaction.expirationDate, expiry < Date() { continue }
-            owned.insert(transaction.productID)
-            // `offer` (StoreKit 2, iOS 17.2+) or the legacy `offerType` tells us
-            // this is an intro/free-trial period. Guard the newer API by version.
-            if #available(iOS 17.2, *) {
-                if transaction.offer?.type == .introductory { trialing = true }
-            } else if transaction.offerType == .introductory {
-                trialing = true
+            switch result {
+            case .verified(let transaction):
+                current.append(snapshot(for: transaction))
+            case .unverified:
+                verificationIssue = true
             }
         }
-        ownedProductIDs = owned
-        isInIntroPeriod = trialing
 
-        // Trip Passes are non-renewing: they never appear in currentEntitlements,
-        // so scan the full transaction history and keep the latest purchase's
-        // access window (purchase date + 72h / 7d). Restores work because
-        // Transaction.all is receipt-backed.
-        var latestPassExpiry: Date?
         for await result in Transaction.all {
-            guard case .verified(let t) = result else { continue }
-            guard let window = ProductID.passDuration(t.productID) else { continue }
-            if t.revocationDate != nil { continue }
-            let expiry = t.purchaseDate.addingTimeInterval(window)
-            if latestPassExpiry == nil || expiry > latestPassExpiry! { latestPassExpiry = expiry }
+            switch result {
+            case .verified(let transaction):
+                guard ProductID.passDuration(transaction.productID) != nil else { continue }
+                history.append(snapshot(for: transaction))
+            case .unverified(let transaction, _):
+                if ProductID.all.contains(transaction.productID) {
+                    verificationIssue = true
+                }
+            }
         }
-        tripPassExpiresAt = latestPassExpiry
+
+        let resolution = StoreEntitlementResolver.resolve(
+            current: current,
+            history: history,
+            now: Date()
+        )
+        ownedProductIDs = resolution.ownedProductIDs
+        tripPassExpiresAt = resolution.tripPassExpiresAt
+        isInIntroPeriod = resolution.isInIntroPeriod
+        hasFamilySharedAccess = resolution.includesFamilySharedAccess
+        hasVerificationIssue = verificationIssue
+        if verificationIssue {
+            lastError = "Apple returned a purchase Lore couldn't verify. Restore purchases to try again."
+        }
+    }
+
+    private func snapshot(for transaction: Transaction) -> StoreEntitlementSnapshot {
+        StoreEntitlementSnapshot(
+            productID: transaction.productID,
+            purchaseDate: transaction.purchaseDate,
+            expirationDate: transaction.expirationDate,
+            revocationDate: transaction.revocationDate,
+            isUpgraded: transaction.isUpgraded,
+            isIntroductory: introductory(in: transaction),
+            ownership: transaction.ownershipType == .familyShared ? .familyShared : .purchased
+        )
     }
 
     // MARK: - Purchase
@@ -224,12 +373,22 @@ final class StoreKitService {
     /// contract (a `PurchaseOutcome`) stays, so the paywall wiring is untouched
     /// by that swap.
     func purchase(productID: String) async -> PurchaseOutcome {
+        guard !isPurchaseInProgress, !isRestoreInProgress else { return .inProgress }
+        guard AppStore.canMakePayments else {
+            return .failed(message: "Purchases are disabled on this device. Check Screen Time or Apple Account settings.")
+        }
+        guard ProductID.all.contains(productID) else {
+            return .failed(message: "That membership option isn't recognized. No purchase was started.")
+        }
+
+        isPurchaseInProgress = true
+        defer { isPurchaseInProgress = false }
         lastError = nil
         guard let product = products[productID] else {
             // Try a just-in-time load so a cold paywall can still transact.
-            await loadProducts()
+            await loadProducts(force: true)
             guard let loaded = products[productID] else {
-                return .failed(message: "That option isn't available right now. Try again.")
+                return .failed(message: "That option isn't available from the App Store right now. No purchase was started.")
             }
             return await purchase(product: loaded)
         }
@@ -242,7 +401,10 @@ final class StoreKitService {
             switch result {
             case .success(let verification):
                 guard case .verified(let transaction) = verification else {
-                    return .failed(message: "That purchase couldn't be verified. No charge was made.")
+                    hasVerificationIssue = true
+                    let message = "Apple completed the purchase, but Lore couldn't verify it. Try Restore Purchases; if access still doesn't appear, contact support."
+                    lastError = message
+                    return .failed(message: message)
                 }
                 let trialing = introductory(in: transaction)
                 await transaction.finish()
@@ -253,10 +415,12 @@ final class StoreKitService {
             case .pending:
                 return .pending
             @unknown default:
-                return .failed(message: "That didn't go through. No charge was made, try again.")
+                return .failed(message: "The App Store returned an unexpected result. Check Purchase History before trying again.")
             }
         } catch {
-            return .failed(message: "That didn't go through. No charge was made, try again.")
+            let message = "The App Store couldn't complete that request. Check your connection and Purchase History before trying again."
+            lastError = message
+            return .failed(message: message)
         }
     }
 
@@ -285,6 +449,11 @@ final class StoreKitService {
     /// TODO(P3): defer to `Purchases.shared.restorePurchases()` once RC is wired,
     /// so the restore also reconciles server-side.
     func restore() async -> RestoreOutcome {
+        guard !isRestoreInProgress, !isPurchaseInProgress else {
+            return .failed(message: "Another App Store request is already in progress.")
+        }
+        isRestoreInProgress = true
+        defer { isRestoreInProgress = false }
         lastError = nil
         do {
             try await AppStore.sync()
@@ -301,24 +470,44 @@ final class StoreKitService {
             return .failed(message: message)
         }
         await refreshEntitlements()
+        if hasVerificationIssue, !hasActiveEntitlement {
+            let message = "A purchase was found but couldn't be verified. Confirm your Apple Account, then try Restore Purchases again."
+            lastError = message
+            return .failed(message: message)
+        }
         return hasActiveEntitlement ? .restored : .nothingToRestore
     }
 
-    // MARK: - Intro-offer eligibility (7-day trial framing)
+    // MARK: - Intro-offer eligibility
 
-    /// Whether the user is eligible for the introductory (7-day free trial)
-    /// offer on a product's subscription group. Surface "Start 7-day free trial"
-    /// only when `true`; fall back to "Subscribe" copy otherwise, or the paywall
-    /// lies to a returning user (docs/16 §1).
+    /// Returns the actual free-trial duration only when this product currently
+    /// has a free-trial offer and the Apple Account is eligible for it. This
+    /// prevents stale local copy from promising an offer App Store Connect no
+    /// longer provides.
     ///
     /// TODO(P3): RevenueCat exposes this per-offering too; unify on one source
     /// when RC is wired.
-    func isEligibleForIntroOffer(productID: String) async -> Bool {
+    func eligibleFreeTrialDescription(productID: String) async -> String? {
         guard
             let product = products[productID],
-            let subscription = product.subscription
-        else { return false }
-        return await subscription.isEligibleForIntroOffer
+            let subscription = product.subscription,
+            let offer = subscription.introductoryOffer,
+            offer.paymentMode == .freeTrial,
+            await subscription.isEligibleForIntroOffer
+        else { return nil }
+        return Self.trialPeriodDescription(offer.period)
+    }
+
+    private static func trialPeriodDescription(_ period: Product.SubscriptionPeriod) -> String? {
+        let unit: String
+        switch period.unit {
+        case .day: unit = "day"
+        case .week: unit = "week"
+        case .month: unit = "month"
+        case .year: unit = "year"
+        @unknown default: return nil
+        }
+        return "\(period.value) \(unit)\(period.value == 1 ? "" : "s")"
     }
 
     // MARK: - Manage subscriptions
@@ -326,13 +515,31 @@ final class StoreKitService {
     /// The App Store product identifier that best represents the active Lore+
     /// grant, for a "Manage subscription" deep link. `nil` when nothing owned.
     var activeProductID: String? {
-        ownedProductIDs.first
+        [ProductID.annual, ProductID.monthly].first { ownedProductIDs.contains($0) }
+    }
+
+    enum AccessKind: Equatable {
+        case subscription
+        case lifetime
+        case tripPass
+        case none
+    }
+
+    var accessKind: AccessKind {
+        if activeProductID != nil { return .subscription }
+        if ownedProductIDs.contains(ProductID.lifetime) { return .lifetime }
+        if tripPassActive { return .tripPass }
+        return .none
     }
 
     // MARK: - Updates handler
 
     private func handle(_ result: VerificationResult<Transaction>) async {
-        guard case .verified(let transaction) = result else { return }
+        guard case .verified(let transaction) = result else {
+            hasVerificationIssue = true
+            lastError = "A purchase update arrived but couldn't be verified. Restore purchases to retry."
+            return
+        }
         // Finish any transaction we're told about so StoreKit stops replaying it.
         await transaction.finish()
         await refreshEntitlements()

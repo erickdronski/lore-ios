@@ -17,10 +17,21 @@ import Foundation
 actor WikipediaService {
     static let shared = WikipediaService()
 
-    /// `title → resolved portrait URL (or nil for a confirmed miss)`. `Optional`
-    /// value lets us distinguish "not looked up yet" (absent key) from "looked
-    /// up, no photo" (present key, nil value).
-    private var cache: [String: URL?] = [:]
+    private enum CacheEntry {
+        case portrait(URL)
+        case confirmedMissing
+    }
+
+    private enum Resolution {
+        case portrait(URL)
+        case confirmedMissing
+        case transientFailure
+    }
+
+    /// Successful portraits and confirmed no-image responses are memoized.
+    /// Network/server failures are deliberately not cached so scrolling back or
+    /// retrying later can recover without restarting the app.
+    private var cache: [String: CacheEntry] = [:]
     private let session: URLSession
 
     /// Durable `title → image URL` map written by city-pack downloads, so a
@@ -45,19 +56,30 @@ actor WikipediaService {
     func portraitURL(for title: String) async -> URL? {
         let key = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !key.isEmpty else { return nil }
-        if let cached = cache[key] { return cached }
+        if let cached = cache[key] {
+            switch cached {
+            case .portrait(let url): return url
+            case .confirmedMissing: return nil
+            }
+        }
 
         // A pack-persisted resolution answers offline (and skips the network).
         if let packed = loadPersistent()[key], let url = URL(string: packed) {
-            cache[key] = url
+            cache[key] = .portrait(url)
             return url
         }
 
         let resolved = await fetchPortraitURL(for: key)
-        // Never persist (or memoize) a miss that could be a network failure —
-        // only successful resolutions are cached across launches by packs.
-        cache[key] = resolved
-        return resolved
+        switch resolved {
+        case .portrait(let url):
+            cache[key] = .portrait(url)
+            return url
+        case .confirmedMissing:
+            cache[key] = .confirmedMissing
+            return nil
+        case .transientFailure:
+            return nil
+        }
     }
 
     /// Merge pack-resolved titles into the durable map (city-pack downloads).
@@ -80,8 +102,8 @@ actor WikipediaService {
 
     // MARK: - Network
 
-    private func fetchPortraitURL(for title: String) async -> URL? {
-        guard let url = Self.summaryURL(for: title) else { return nil }
+    private func fetchPortraitURL(for title: String) async -> Resolution {
+        guard let url = Self.summaryURL(for: title) else { return .confirmedMissing }
 
         var request = URLRequest(url: url)
         // Wikipedia asks REST clients to identify themselves; a descriptive UA
@@ -92,12 +114,13 @@ actor WikipediaService {
         do {
             let (data, response) = try await session.data(for: request)
             if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-                return nil
+                return http.statusCode == 404 ? .confirmedMissing : .transientFailure
             }
             let summary = try JSONDecoder().decode(WikiSummary.self, from: data)
-            return summary.portraitURL
+            if let url = summary.portraitURL { return .portrait(url) }
+            return .confirmedMissing
         } catch {
-            return nil
+            return .transientFailure
         }
     }
 

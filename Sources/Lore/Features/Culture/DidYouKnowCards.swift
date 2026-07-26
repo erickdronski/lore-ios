@@ -68,6 +68,7 @@ struct DidYouKnowCard: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ScaledMetric(relativeTo: .title3) private var headlineSize: CGFloat = 21
     @ScaledMetric(relativeTo: .title2) private var calloutSize: CGFloat = 26
+    @State private var showDetail = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -83,11 +84,16 @@ struct DidYouKnowCard: View {
             if fact.hasStat {
                 statCallout
             } else if let detail = fact.detail, !detail.isEmpty {
-                Text(detail)
-                    .font(LoreType.caption)
-                    .foregroundStyle(LoreColor.bone.opacity(0.7))
-                    .lineLimit(3)
-                    .fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(detail)
+                        .font(LoreType.caption)
+                        .foregroundStyle(LoreColor.bone.opacity(0.7))
+                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? 4 : 2)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button("Read the full story") { showDetail = true }
+                        .font(LoreType.button)
+                        .foregroundStyle(LoreColor.amber)
+                }
             }
 
             Spacer(minLength: 0)
@@ -112,6 +118,9 @@ struct DidYouKnowCard: View {
         )
         .loreElevation(.elev1)
         .accessibilityElement(children: .contain)
+        .sheet(isPresented: $showDetail) {
+            FactDetailSheet(fact: fact)
+        }
     }
 
     /// The headline number, set big in the display face, with its label beneath.
@@ -172,10 +181,96 @@ struct DidYouKnowCard: View {
                     }
                     .accessibilityLabel("Open the source for this fact")
                 }
+                ShareLink(item: shareText) {
+                    Image(systemName: "square.and.arrow.up")
+                        .font(LoreType.micro)
+                        .foregroundStyle(LoreColor.brass300)
+                }
+                .padding(.leading, 12)
+                .accessibilityLabel("Share this fact")
             }
         }
     }
 
+    private var shareText: String {
+        ([fact.fact, fact.detail] as [String?])
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n\n") + "\n\nDiscovered with Lore."
+    }
+
+}
+
+private struct FactDetailSheet: View {
+    let fact: CityFact
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    FactFieldMark(fact: fact)
+
+                    Text(fact.fact)
+                        .font(LoreType.display(size: 26, weight: .semibold))
+                        .foregroundStyle(LoreColor.bone)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityAddTraits(.isHeader)
+
+                    if let detail = fact.detail, !detail.isEmpty {
+                        Text(detail)
+                            .font(LoreType.body)
+                            .foregroundStyle(LoreColor.bone.opacity(0.84))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    if fact.hasStat {
+                        HStack(alignment: .firstTextBaseline, spacing: 10) {
+                            Text(fact.statValue ?? "")
+                                .font(LoreType.display(size: 30, weight: .bold))
+                                .foregroundStyle(LoreColor.amber)
+                            Text(fact.statLabel ?? "")
+                                .font(LoreType.caption)
+                                .foregroundStyle(LoreColor.brass300)
+                        }
+                    }
+
+                    HStack(spacing: 14) {
+                        if let source = fact.sourceURL {
+                            Link(destination: source) {
+                                Label("Source", systemImage: "link")
+                            }
+                        }
+                        ShareLink(item: shareText) {
+                            Label("Share", systemImage: "square.and.arrow.up")
+                        }
+                    }
+                    .font(LoreType.button)
+                    .foregroundStyle(LoreColor.amber)
+                }
+                .frame(maxWidth: 680, alignment: .leading)
+                .frame(maxWidth: .infinity)
+                .padding(24)
+            }
+            .background(LoreColor.ink900.ignoresSafeArea())
+            .navigationTitle("Field note")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    private var shareText: String {
+        ([fact.fact, fact.detail] as [String?])
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n\n") + "\n\nDiscovered with Lore."
+    }
 }
 
 /// Category is useful metadata, so the visual treatment encodes it consistently

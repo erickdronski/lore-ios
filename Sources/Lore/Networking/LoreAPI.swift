@@ -15,13 +15,29 @@ struct LoreAPI {
     private let session: URLSession
     private let decoder: JSONDecoder
 
-    init(session: URLSession = .shared) {
-        self.session = session
+    init(session: URLSession? = nil) {
+        self.session = session ?? Self.makeDefaultSession()
         self.decoder = JSONDecoder()
+    }
+
+    /// Lore owns response caching through `AtlasCache`, so the transport stays
+    /// deliberately small and predictable instead of layering URLCache over it.
+    /// Explicit timeouts keep a dead connection from turning into an endless
+    /// loading state while `waitsForConnectivity` still gives tunnels and hotel
+    /// Wi-Fi a fair chance to reconnect.
+    static func makeDefaultSession() -> URLSession {
+        let configuration = URLSessionConfiguration.default
+        configuration.waitsForConnectivity = true
+        configuration.timeoutIntervalForRequest = 30
+        configuration.timeoutIntervalForResource = 60
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        configuration.urlCache = nil
+        return URLSession(configuration: configuration)
     }
 
     enum APIError: LocalizedError {
         case badURL
+        case invalidResponse
         case http(status: Int, body: String)
         case decoding(Error)
         case encoding(Error)
@@ -29,13 +45,30 @@ struct LoreAPI {
         var errorDescription: String? {
             switch self {
             case .badURL:
-                return "Could not build the request URL."
-            case .http(let status, let body):
-                return "Server returned \(status): \(body)"
-            case .decoding(let error):
-                return "Could not read the server response: \(error.localizedDescription)"
-            case .encoding(let error):
-                return "Could not build the request body: \(error.localizedDescription)"
+                return "Lore couldn't create that request. Please try again."
+            case .invalidResponse:
+                return "Lore received an unexpected response. Please try again."
+            case .http(let status, _):
+                switch status {
+                case 401:
+                    return "Your session has expired. Sign in and try again."
+                case 403:
+                    return "That action isn't available for this account."
+                case 404:
+                    return "That story isn't available right now."
+                case 408, 504:
+                    return "The request timed out. Check your connection and try again."
+                case 429:
+                    return "Lore is receiving a lot of requests. Try again in a moment."
+                case 500...599:
+                    return "Lore's service is having trouble. Please try again shortly."
+                default:
+                    return "Lore couldn't complete that request. Please try again."
+                }
+            case .decoding:
+                return "Lore couldn't read that response. Please try again."
+            case .encoding:
+                return "Lore couldn't prepare that request. Please try again."
             }
         }
     }
@@ -598,8 +631,13 @@ struct LoreAPI {
     /// Execute a request, map non-2xx to `APIError.http`, decode the body into
     /// `T`. An empty body (204 / `return=minimal`) decodes into `EmptyResponse`.
     private func send<T: Decodable>(_ request: URLRequest) async throws -> T {
+        try Task.checkCancellation()
         let (data, response) = try await session.data(for: request)
-        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+        try Task.checkCancellation()
+        guard let http = response as? HTTPURLResponse else {
+            throw APIError.invalidResponse
+        }
+        if !(200..<300).contains(http.statusCode) {
             throw APIError.http(
                 status: http.statusCode,
                 body: String(data: data, encoding: .utf8) ?? ""
@@ -612,7 +650,15 @@ struct LoreAPI {
     /// (204 / `return=minimal`) decodes into `EmptyResponse`.
     private func decodeBody<T: Decodable>(_ data: Data) throws -> T {
         if T.self == EmptyResponse.self {
-            return EmptyResponse() as! T
+            guard let empty = EmptyResponse() as? T else {
+                throw APIError.decoding(
+                    DecodingError.typeMismatch(
+                        T.self,
+                        .init(codingPath: [], debugDescription: "Expected an empty response sentinel.")
+                    )
+                )
+            }
+            return empty
         }
         do {
             return try decoder.decode(T.self, from: data)

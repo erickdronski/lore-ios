@@ -80,9 +80,13 @@ struct VisitLogEntry: Decodable, Identifiable {
 /// for, so a visit becomes a memory, not just a greyed-out pin.
 struct JournalView: View {
     @Environment(VisitStore.self) private var visits
+    @Environment(AuthService.self) private var auth
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var editing: VisitLogEntry?
     @State private var appeared = false
+    @State private var searchText = ""
+    @State private var isLoadingIdentity = true
+    @State private var identityLoadError: String?
 
     private var noteCount: Int {
         visits.visitHistory.filter { $0.note?.isEmpty == false }.count
@@ -90,6 +94,16 @@ struct JournalView: View {
 
     private var photoCount: Int {
         visits.visitHistory.reduce(0) { $0 + $1.photoPaths.count }
+    }
+
+    private var filteredEntries: [VisitLogEntry] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return visits.visitHistory }
+        return visits.visitHistory.filter { entry in
+            ([entry.displayName, entry.displayCity, entry.displayKind, entry.note] as [String?])
+                .compactMap { $0 }
+                .contains { $0.localizedCaseInsensitiveContains(query) }
+        }
     }
 
     var body: some View {
@@ -104,7 +118,9 @@ struct JournalView: View {
                         text: "Sign in to keep a private journal of everywhere you've been and the notes you write.",
                         symbol: "person.crop.circle.badge.plus"
                     )
-                } else if !visits.historyLoaded {
+                } else if let error = identityLoadError {
+                    journalError(error)
+                } else if isLoadingIdentity || !visits.historyLoaded {
                     journalLoading
                 } else if visits.visitHistory.isEmpty {
                     hint(
@@ -113,28 +129,100 @@ struct JournalView: View {
                         symbol: "book.pages.fill"
                     )
                 } else {
+                    if visits.lastError == "Couldn't load your journal." {
+                        staleDataNotice
+                    }
                     journeySummary
-                    ForEach(Array(visits.visitHistory.enumerated()), id: \.element.id) { index, entry in
-                        memoryRow(entry, index: index, isLast: index == visits.visitHistory.count - 1)
-                            .revealBounce(
-                                isActive: appeared,
-                                delay: reduceMotion ? 0 : LoreMotion.staggerDelay(index: index),
-                                fromScale: 0.94
-                            )
+                    if filteredEntries.isEmpty {
+                        hint(
+                            title: "No matching memories",
+                            text: "Try a place, city, category, or a word from one of your notes.",
+                            symbol: "magnifyingglass"
+                        )
+                    } else {
+                        ForEach(Array(filteredEntries.enumerated()), id: \.element.id) { index, entry in
+                            memoryRow(entry, index: index, isLast: index == filteredEntries.count - 1)
+                                .revealBounce(
+                                    isActive: appeared,
+                                    delay: reduceMotion ? 0 : LoreMotion.staggerDelay(index: index),
+                                    fromScale: 0.94
+                                )
+                        }
                     }
                 }
             }
             .padding(16)
+            .frame(maxWidth: 820)
+            .frame(maxWidth: .infinity)
         }
         .background(LoreColor.ink950.ignoresSafeArea())
-        .task { await visits.loadHistory() }
+        .searchable(text: $searchText, prompt: "Search places, cities, and notes")
+        .task(id: auth.session?.user.id) { await loadCurrentIdentity() }
         .refreshable { await visits.loadHistory(force: true) }
         .onAppear { appeared = true }
+        .onChange(of: auth.session?.user.id) { _, _ in
+            editing = nil
+            searchText = ""
+        }
         .sheet(item: $editing) { entry in
             NoteEditorSheet(entry: entry) { note in
                 await visits.saveNote(placeID: entry.placeID, note: note)
             }
         }
+    }
+
+    @MainActor
+    private func loadCurrentIdentity() async {
+        let expectedUserID = auth.session?.user.id
+        isLoadingIdentity = expectedUserID != nil
+        identityLoadError = nil
+        await visits.loadHistory(force: true)
+        guard auth.session?.user.id == expectedUserID else { return }
+        isLoadingIdentity = false
+        if visits.lastError == "Couldn't load your journal." {
+            identityLoadError = visits.lastError
+        }
+    }
+
+    private func journalError(_ message: String) -> some View {
+        VStack(spacing: 14) {
+            Image(systemName: "icloud.slash")
+                .font(.system(size: 30, weight: .semibold))
+                .foregroundStyle(LoreColor.amber)
+            Text("Your journal couldn't sync")
+                .font(LoreType.displayM)
+                .foregroundStyle(LoreColor.bone)
+            Text(message)
+                .font(LoreType.body)
+                .foregroundStyle(LoreColor.bone.opacity(0.7))
+                .multilineTextAlignment(.center)
+            Button("Try again") {
+                Task { await loadCurrentIdentity() }
+            }
+            .font(LoreType.button)
+            .foregroundStyle(LoreColor.ink900)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 10)
+            .background(LoreColor.amber, in: Capsule())
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity)
+        .background(LoreColor.ink900, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+    }
+
+    private var staleDataNotice: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "arrow.triangle.2.circlepath.icloud")
+                .foregroundStyle(LoreColor.amber)
+            Text("Showing your last loaded memories. Pull to refresh when you're back online.")
+                .font(LoreType.caption)
+                .foregroundStyle(LoreColor.bone.opacity(0.76))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(LoreColor.ink800, in: RoundedRectangle(cornerRadius: 14))
+        .accessibilityElement(children: .combine)
     }
 
     private var journalMasthead: some View {
@@ -467,26 +555,43 @@ struct NoteEditorSheet: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(VisitStore.self) private var visits
+    @Environment(AuthService.self) private var auth
     @State private var text: String
     @State private var picked: PhotosPickerItem?
     @State private var uploading = false
     @State private var saving = false
     @State private var sheetError: String?
-    @State private var suppressShareChange = false
-    /// Opt-in public sharing; writes immediately (like photos), server-owned
-    /// moderation status.
+    @State private var persistedText: String
+    @State private var persistedShared: Bool
+    @State private var showDiscardConfirmation = false
+    @State private var showClearConfirmation = false
+    @State private var editingUserID: String?
+    /// Opt-in public sharing is committed with Save, after the visible draft.
     @State private var isShared: Bool
+
+    private let maximumCharacters = JournalDraftPolicy.maximumCharacters
+    private let maximumPhotos = 12
 
     init(entry: VisitLogEntry, onSave: @escaping (String) async -> Bool) {
         self.entry = entry
         self.onSave = onSave
         _text = State(initialValue: entry.note ?? "")
+        _persistedText = State(initialValue: JournalDraftPolicy.normalized(entry.note ?? ""))
+        _persistedShared = State(initialValue: entry.isShared)
         _isShared = State(initialValue: entry.isShared)
     }
 
     /// Live photos for this place from the store, so an upload shows immediately.
     private var photos: [String] {
         visits.visitHistory.first(where: { $0.placeID == entry.placeID })?.photoPaths ?? entry.photoPaths
+    }
+
+    private var normalizedText: String { JournalDraftPolicy.normalized(text) }
+    private var hasUnsavedChanges: Bool {
+        normalizedText != persistedText || isShared != persistedShared
+    }
+    private var validationMessage: String? {
+        JournalDraftPolicy.validationMessage(text: text, wantsToShare: isShared)
     }
 
     var body: some View {
@@ -512,6 +617,21 @@ struct NoteEditorSheet: View {
                         .accessibilityLabel("Field note")
 
                     HStack {
+                        if !normalizedText.isEmpty {
+                            Button("Clear note", role: .destructive) {
+                                showClearConfirmation = true
+                            }
+                            .font(LoreType.caption)
+                        }
+                        Spacer()
+                        Text("\(text.count)/\(maximumCharacters)")
+                            .font(LoreType.caption)
+                            .monospacedDigit()
+                            .foregroundStyle(text.count > maximumCharacters ? LoreColor.error : LoreColor.ink600)
+                            .accessibilityLabel("\(text.count) of \(maximumCharacters) characters")
+                    }
+
+                    HStack {
                         Label("PRIVATE PHOTOS", systemImage: "lock.fill")
                             .font(LoreType.label)
                             .tracking(0.6)
@@ -524,7 +644,7 @@ struct NoteEditorSheet: View {
                             }
                             .foregroundStyle(LoreColor.brass700)
                         }
-                        .disabled(uploading)
+                        .disabled(uploading || photos.count >= maximumPhotos)
                     }
                     if photos.isEmpty {
                         HStack(spacing: 10) {
@@ -549,9 +669,23 @@ struct NoteEditorSheet: View {
                         }
                     }
 
+                    Text(
+                        photos.count >= maximumPhotos
+                            ? "This memory has the maximum of \(maximumPhotos) private photos."
+                            : "Photos are private and save immediately when added, even if you cancel the note draft."
+                    )
+                    .font(LoreType.micro)
+                    .foregroundStyle(LoreColor.ink600)
+                    .fixedSize(horizontal: false, vertical: true)
+
                     shareSection
 
-                    if let sheetError {
+                    if let message = validationMessage {
+                        Label(message, systemImage: "exclamationmark.triangle.fill")
+                            .font(LoreType.caption)
+                            .foregroundStyle(LoreColor.error)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else if let sheetError {
                         Label(sheetError, systemImage: "exclamationmark.triangle.fill")
                             .font(LoreType.caption)
                             .foregroundStyle(LoreColor.error)
@@ -561,28 +695,46 @@ struct NoteEditorSheet: View {
                     Spacer(minLength: 0)
                 }
                 .padding(16)
+                .frame(maxWidth: 760)
+                .frame(maxWidth: .infinity)
             }
             .background(LoreColor.bone100)
             .navigationTitle("Your lore")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
-                        Task {
-                            saving = true
-                            sheetError = nil
-                            let saved = await onSave(text.trimmingCharacters(in: .whitespacesAndNewlines))
-                            saving = false
-                            if saved {
-                                dismiss()
-                            } else {
-                                sheetError = visits.lastError ?? "Couldn't save your note."
-                            }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        if hasUnsavedChanges {
+                            showDiscardConfirmation = true
+                        } else {
+                            dismiss()
                         }
                     }
-                    .disabled(saving || uploading)
                 }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        Task { await saveChanges() }
+                    }
+                    .disabled(saving || uploading || validationMessage != nil)
+                }
+            }
+            .interactiveDismissDisabled(hasUnsavedChanges || saving || uploading)
+            .confirmationDialog(
+                "Discard your unsaved changes?",
+                isPresented: $showDiscardConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Discard changes", role: .destructive) { dismiss() }
+                Button("Keep editing", role: .cancel) {}
+            }
+            .alert("Clear this field note?", isPresented: $showClearConfirmation) {
+                Button("Clear note", role: .destructive) {
+                    text = ""
+                    if isShared { isShared = false }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("The note is removed when you tap Save. A shared note will also become private.")
             }
             .onChange(of: picked) { _, item in
                 guard let item else { return }
@@ -600,7 +752,53 @@ struct NoteEditorSheet: View {
                     uploading = false
                 }
             }
+            .onAppear {
+                if editingUserID == nil { editingUserID = auth.session?.user.id }
+            }
+            .onChange(of: auth.session?.user.id) { _, newUserID in
+                guard let editingUserID, newUserID != editingUserID else { return }
+                dismiss()
+            }
         }
+    }
+
+    @MainActor
+    private func saveChanges() async {
+        guard validationMessage == nil else { return }
+        saving = true
+        sheetError = nil
+        defer { saving = false }
+
+        let desiredText = normalizedText
+        let desiredShared = isShared && !desiredText.isEmpty
+
+        // Privacy first: stop publishing before clearing or privatizing a note.
+        if persistedShared && !desiredShared {
+            guard await visits.setShared(placeID: entry.placeID, isPublic: false) else {
+                sheetError = visits.lastError ?? "Couldn't make that note private."
+                return
+            }
+            persistedShared = false
+            isShared = false
+        }
+
+        if desiredText != persistedText {
+            guard await onSave(desiredText) else {
+                sheetError = visits.lastError ?? "Couldn't save your note."
+                return
+            }
+            persistedText = desiredText
+        }
+
+        if desiredShared != persistedShared {
+            guard await visits.setShared(placeID: entry.placeID, isPublic: desiredShared) else {
+                sheetError = visits.lastError ?? "Your note saved, but its sharing setting didn't. Try Save again."
+                return
+            }
+            persistedShared = desiredShared
+        }
+
+        dismiss()
     }
 
     private var editorMasthead: some View {
@@ -650,7 +848,7 @@ struct NoteEditorSheet: View {
     }
 
     /// Opt-in community sharing (Guideline 1.2 pairs this with report + block
-    /// on the reading side). Default private; writes immediately like photos.
+    /// on the reading side). Default private; commits only when Save succeeds.
     private var shareSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Toggle(isOn: $isShared) {
@@ -661,27 +859,13 @@ struct NoteEditorSheet: View {
                     // v1 shares the NOTE only: journal photos live in a private
                     // bucket other readers can't load, so promising them here
                     // would be a lie until the public-photo path ships.
-                    Text("Your note appears on this place for every traveler, under your display name. Photos stay private to you.")
+                    Text("When you tap Save, your note appears on this place for every traveler under your display name. Photos stay private to you.")
                         .font(LoreType.caption)
                         .foregroundStyle(LoreColor.ink600)
                 }
             }
             .tint(LoreColor.brass700)
-            .onChange(of: isShared) { _, newValue in
-                if suppressShareChange {
-                    suppressShareChange = false
-                    return
-                }
-                Task {
-                    sheetError = nil
-                    let shared = await visits.setShared(placeID: entry.placeID, isPublic: newValue)
-                    if !shared {
-                        sheetError = visits.lastError ?? "Couldn't change sharing for that place."
-                        suppressShareChange = true
-                        isShared = !newValue
-                    }
-                }
-            }
+            .disabled(normalizedText.isEmpty && !isShared)
             if isShared {
                 Text("Keep it kind and true. Lore that other travelers report is hidden while we review it; abusive content is removed.")
                     .font(LoreType.caption)
@@ -702,8 +886,12 @@ struct NoteEditorSheet: View {
 
     /// Downscale + JPEG-encode the picked image so uploads stay small.
     static func downscaledJPEG(_ data: Data, maxDimension: CGFloat = 1600, quality: CGFloat = 0.8) -> Data? {
-        guard let image = UIImage(data: data) else { return nil }
-        let scale = min(1, maxDimension / max(image.size.width, image.size.height))
+        guard maxDimension.isFinite, maxDimension > 0,
+              quality.isFinite, (0...1).contains(quality),
+              let image = UIImage(data: data) else { return nil }
+        let longestEdge = max(image.size.width, image.size.height)
+        guard longestEdge.isFinite, longestEdge > 0 else { return nil }
+        let scale = min(1, maxDimension / longestEdge)
         let target = CGSize(width: image.size.width * scale, height: image.size.height * scale)
         let format = UIGraphicsImageRendererFormat.default()
         format.scale = 1
@@ -711,6 +899,24 @@ struct NoteEditorSheet: View {
             image.draw(in: CGRect(origin: .zero, size: target))
         }
         return rendered.jpegData(compressionQuality: quality)
+    }
+}
+
+enum JournalDraftPolicy {
+    static let maximumCharacters = 2_000
+
+    static func normalized(_ text: String) -> String {
+        text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    static func validationMessage(text: String, wantsToShare: Bool) -> String? {
+        if text.count > maximumCharacters {
+            return "Shorten this field note to \(maximumCharacters) characters before saving."
+        }
+        if wantsToShare && normalized(text).isEmpty {
+            return "Write a note before sharing it with other travelers."
+        }
+        return nil
     }
 }
 

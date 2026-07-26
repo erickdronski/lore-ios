@@ -53,6 +53,10 @@ final class ScannerCameraService: NSObject, AVCaptureMetadataOutputObjectsDelega
     /// the UI can show a first-class "enable in Settings" card instead of a
     /// permanently black viewfinder.
     var onPermissionDenied: (() -> Void)?
+    /// Called when permission exists but the device has no usable back camera or
+    /// the capture session cannot be configured (notably Simulator and camera
+    /// contention). This is distinct from denial and offers an in-app retry.
+    var onUnavailable: ((String) -> Void)?
     /// Still-photo output for the "AR postcard" capture (the un-fakeable hero
     /// image: the real facade + the Lore pin, composited in `ARCaptureSheet`).
     private let photoOutput = AVCapturePhotoOutput()
@@ -86,7 +90,9 @@ final class ScannerCameraService: NSObject, AVCaptureMetadataOutputObjectsDelega
         case .denied, .restricted:
             DispatchQueue.main.async { [weak self] in self?.onPermissionDenied?() }
         @unknown default:
-            break
+            DispatchQueue.main.async { [weak self] in
+                self?.onUnavailable?("The camera isn't available on this device right now.")
+            }
         }
     }
 
@@ -94,7 +100,13 @@ final class ScannerCameraService: NSObject, AVCaptureMetadataOutputObjectsDelega
         sessionQueue.async { [weak self] in
             guard let self else { return }
             self.wantsRunning = true
-            self.configureIfNeeded()
+            guard self.configureIfNeeded() else {
+                self.wantsRunning = false
+                DispatchQueue.main.async { [weak self] in
+                    self?.onUnavailable?("Lore couldn't start the back camera. Close other camera apps and try again.")
+                }
+                return
+            }
             if !self.session.isRunning {
                 self.session.startRunning()
             }
@@ -110,8 +122,9 @@ final class ScannerCameraService: NSObject, AVCaptureMetadataOutputObjectsDelega
         }
     }
 
-    private func configureIfNeeded() {
-        guard !configured else { return }
+    @discardableResult
+    private func configureIfNeeded() -> Bool {
+        if configured { return session.inputs.contains { $0 is AVCaptureDeviceInput } }
         session.beginConfiguration()
         defer { session.commitConfiguration() }
 
@@ -128,9 +141,18 @@ final class ScannerCameraService: NSObject, AVCaptureMetadataOutputObjectsDelega
             ),
             let input = try? AVCaptureDeviceInput(device: device),
             session.canAddInput(input)
-        else { return }
+        else { return false }
 
         session.addInput(input)
+        if (try? device.lockForConfiguration()) != nil {
+            if device.isFocusModeSupported(.continuousAutoFocus) {
+                device.focusMode = .continuousAutoFocus
+            }
+            if device.isExposureModeSupported(.continuousAutoExposure) {
+                device.exposureMode = .continuousAutoExposure
+            }
+            device.unlockForConfiguration()
+        }
 
         // The still-photo output for AR postcard capture. Preview keeps working
         // exactly as before; this just lets the user freeze a shareable frame.
@@ -163,19 +185,27 @@ final class ScannerCameraService: NSObject, AVCaptureMetadataOutputObjectsDelega
         // end of an interruption (a phone call, another app grabbing the camera),
         // so without this the preview stays permanently black after one.
         NotificationCenter.default.addObserver(
-            self, selector: #selector(handleSessionRecovery),
+            self, selector: #selector(handleSessionRecovery(_:)),
             name: .AVCaptureSessionRuntimeError, object: session)
         NotificationCenter.default.addObserver(
-            self, selector: #selector(handleSessionRecovery),
+            self, selector: #selector(handleSessionRecovery(_:)),
             name: .AVCaptureSessionInterruptionEnded, object: session)
         configured = true
+        return true
     }
 
     /// Re-start the session after a runtime error / interruption, but only if we
     /// still want it running (never fight a deliberate stop).
-    @objc private func handleSessionRecovery() {
+    @objc private func handleSessionRecovery(_ notification: Notification) {
         sessionQueue.async { [weak self] in
             guard let self, self.wantsRunning, self.configured, !self.session.isRunning else { return }
+            guard self.session.inputs.contains(where: { $0 is AVCaptureDeviceInput }) else {
+                self.wantsRunning = false
+                DispatchQueue.main.async { [weak self] in
+                    self?.onUnavailable?("The camera session ended unexpectedly. Try starting the scanner again.")
+                }
+                return
+            }
             self.session.startRunning()
         }
     }

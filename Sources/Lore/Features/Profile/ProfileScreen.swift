@@ -10,8 +10,12 @@ struct ProfileScreen: View {
     @Environment(AuthService.self) private var auth
     @Environment(EntitlementStore.self) private var entitlements
     @Environment(StoreKitService.self) private var store
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var showSignIn = false
     @State private var showPaywall = false
+    @State private var editingProfile: UserProfile?
+    @State private var showSignOutConfirmation = false
+    @State private var signingOut = false
     /// True when a signed-in profile load failed, so the row offers a retry
     /// instead of spinning "Loading your profile…" forever.
     @State private var profileLoadFailed = false
@@ -27,7 +31,16 @@ struct ProfileScreen: View {
                     .listRowSeparator(.hidden)
                     .accessibilityAddTraits(.isHeader)
 
-                if let profile = auth.profile {
+                if auth.isRestoring {
+                    Section {
+                        HStack(spacing: 12) {
+                            ProgressView()
+                            Text("Restoring your secure session…")
+                                .font(LoreType.body)
+                                .foregroundStyle(LoreColor.ink600)
+                        }
+                    }
+                } else if let profile = auth.profile {
                     signedInHeader(profile)
                 } else if auth.isSignedIn {
                     Section {
@@ -66,17 +79,23 @@ struct ProfileScreen: View {
                 if auth.isSignedIn {
                     Section {
                         Button(role: .destructive) {
-                            Task { await auth.signOut() }
+                            showSignOutConfirmation = true
                         } label: {
-                            Text("Sign out")
-                                .font(LoreType.button)
+                            HStack {
+                                Label("Sign out", systemImage: "rectangle.portrait.and.arrow.right")
+                                    .font(LoreType.button)
+                                Spacer()
+                                if signingOut { ProgressView() }
+                            }
                         }
+                        .disabled(signingOut)
                     }
                 }
             }
             .listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)
             .background(LoreColor.bone100.ignoresSafeArea())
+            .contentMargins(.horizontal, horizontalSizeClass == .regular ? 80 : 0, for: .scrollContent)
             .toolbar(.hidden, for: .navigationBar)
             .sheet(isPresented: $showSignIn) {
                 SignInView()
@@ -85,7 +104,29 @@ struct ProfileScreen: View {
             .sheet(isPresented: $showPaywall) {
                 PaywallView(entitlements: entitlements, store: store, auth: auth)
             }
+            .sheet(item: $editingProfile) { profile in
+                EditProfileView(profile: profile)
+                    .presentationDetents([.large])
+            }
+            .alert("Sign out of Lore?", isPresented: $showSignOutConfirmation) {
+                Button("Sign out", role: .destructive) {
+                    Task { await signOut() }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Your private account data stays safely synced. Any choices stored only on this device remain here until you remove Lore.")
+            }
             .task { await loadProfile() }
+            .refreshable {
+                guard auth.isSignedIn else { return }
+                profileLoadFailed = false
+                await auth.refreshProfile()
+                profileLoadFailed = auth.profile == nil
+            }
+            .onChange(of: auth.isSignedIn) { _, signedIn in
+                profileLoadFailed = false
+                if signedIn { Task { await loadProfile() } }
+            }
         }
         .background(LoreColor.bone100.ignoresSafeArea())
     }
@@ -100,6 +141,14 @@ struct ProfileScreen: View {
         if auth.profile == nil { profileLoadFailed = true }
     }
 
+    @MainActor
+    private func signOut() async {
+        guard !signingOut else { return }
+        signingOut = true
+        await auth.signOut()
+        signingOut = false
+    }
+
     // MARK: Signed out
 
     private var signedOutHeader: some View {
@@ -112,9 +161,9 @@ struct ProfileScreen: View {
                 // The 5.1.1 posture, stated to the user, not just the
                 // reviewer: reading is never gated on an account.
                 Text(
-                    "You don't need an account to read, the map, scanner, "
-                    + "cards, and dives all work signed out. An account adds "
-                    + "visits, your journal, Insight points, and Lore+."
+                    "You don't need an account to explore. The map, scanner, "
+                    + "cards, and free dives all work signed out. An account adds "
+                    + "synced visits, your private journal, Insight points, and Lore+."
                 )
                 .font(LoreType.body)
                 .foregroundStyle(LoreColor.ink600)
@@ -138,13 +187,13 @@ struct ProfileScreen: View {
 
     private func signedInHeader(_ profile: UserProfile) -> some View {
         Section {
-            HStack(spacing: 14) {
-                initialsBadge(profile)
+            HStack(alignment: .top, spacing: 14) {
+                ProfileAvatarView(profile: profile)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(profile.displayNameOrHandle)
                         .font(LoreType.display(size: 20, weight: .semibold))
                         .foregroundStyle(LoreColor.ink)
-                    if let handle = profile.handle, !handle.isEmpty {
+                    if profile.displayName != nil, let handle = profile.handle {
                         Text("@\(handle)")
                             .font(LoreType.caption)
                             .foregroundStyle(LoreColor.ink600)
@@ -156,9 +205,45 @@ struct ProfileScreen: View {
                     }
                 }
                 Spacer()
-                TrustBadge(tier: profile.trustTier)
+                VStack(alignment: .trailing, spacing: 10) {
+                    TrustBadge(tier: profile.trustTier)
+                    Button("Edit") { editingProfile = profile }
+                        .font(LoreType.caption.weight(.semibold))
+                        .foregroundStyle(LoreColor.brass700)
+                        .accessibilityLabel("Edit profile")
+                }
             }
             .padding(.vertical, 4)
+            .accessibilityElement(children: .contain)
+
+            if let bio = profile.bio {
+                Text(bio)
+                    .font(LoreType.body)
+                    .foregroundStyle(LoreColor.ink600)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if profile.completedIdentityFieldCount < 3 {
+                Button {
+                    editingProfile = profile
+                } label: {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Label("Complete your traveler card", systemImage: "person.crop.circle.badge.plus")
+                                .font(LoreType.caption.weight(.semibold))
+                            Spacer()
+                            Text("\(profile.completedIdentityFieldCount) of 3")
+                                .font(LoreType.caption)
+                        }
+                        ProgressView(value: profile.identityCompletionFraction)
+                            .tint(LoreColor.brass700)
+                    }
+                    .foregroundStyle(LoreColor.ink)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Traveler card \(Int(profile.identityCompletionFraction * 100)) percent complete")
+                .accessibilityHint("Opens profile editing")
+            }
 
             HStack {
                 Label("Insight", systemImage: "sparkles")
@@ -172,16 +257,6 @@ struct ProfileScreen: View {
         }
     }
 
-    private func initialsBadge(_ profile: UserProfile) -> some View {
-        ZStack {
-            Circle().fill(LoreColor.ink)
-            Text(String(profile.displayNameOrHandle.prefix(1)).uppercased())
-                .font(LoreType.display(size: 20, weight: .semibold))
-                .foregroundStyle(LoreColor.bone)
-        }
-        .frame(width: 48, height: 48)
-    }
-
     // MARK: Membership (Lore+ is live, not a "coming" stub)
 
     /// Lore+ is a real, purchasable membership, so this opens the live paywall
@@ -191,19 +266,22 @@ struct ProfileScreen: View {
     private var membershipSection: some View {
         Section("Membership") {
             if entitlements.isPlus {
-                HStack(spacing: 12) {
-                    Image(systemName: "crown.fill")
-                        .foregroundStyle(LoreColor.brass700)
-                        .frame(width: 24)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(entitlements.isTrialing ? "Lore+ (trial)" : "Lore+ member")
-                            .font(LoreType.body)
-                            .foregroundStyle(LoreColor.ink)
-                        Text("Unlimited dives, every tour, audio narration")
-                            .font(LoreType.caption)
-                            .foregroundStyle(LoreColor.ink600)
+                NavigationLink {
+                    SettingsView()
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "crown.fill")
+                            .foregroundStyle(LoreColor.brass700)
+                            .frame(width: 24)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(entitlements.isTrialing ? "Lore+ trial active" : "Lore+ member")
+                                .font(LoreType.body)
+                                .foregroundStyle(LoreColor.ink)
+                            Text("Manage access, billing, and offline packs")
+                                .font(LoreType.caption)
+                                .foregroundStyle(LoreColor.ink600)
+                        }
                     }
-                    Spacer()
                 }
             } else {
                 Button {
@@ -252,7 +330,7 @@ struct ProfileScreen: View {
             HStack {
                 Text("Version").font(LoreType.body)
                 Spacer()
-                Text(Self.versionLine)
+                Text(ProfileSupportLinks.versionLine)
                     .font(LoreType.caption)
                     .foregroundStyle(LoreColor.ink600)
             }
@@ -266,12 +344,6 @@ struct ProfileScreen: View {
         }
     }
 
-    private static var versionLine: String {
-        let info = Bundle.main.infoDictionary
-        let version = info?["CFBundleShortVersionString"] as? String ?? "0.1.0"
-        let build = info?["CFBundleVersion"] as? String ?? "1"
-        return "\(version) (\(build))"
-    }
 }
 
 /// Trust-tier chip (brand/DESIGN.md §7 `TrustBadge`): Curator earns Brass —
@@ -299,5 +371,6 @@ struct TrustBadge: View {
                         lineWidth: 1
                     )
             )
-    }
+            .accessibilityLabel("Trust level, \(tier)")
+}
 }

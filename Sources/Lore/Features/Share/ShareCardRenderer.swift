@@ -9,6 +9,8 @@ enum ShareCardRenderer {
     /// Render `content` sized to `size` points at `scale`x. Returns nil only if
     /// the renderer cannot produce an image (never expected for a laid-out view).
     static func image(_ content: some View, size: CGSize, scale: CGFloat = 3) -> UIImage? {
+        guard size.width.isFinite, size.height.isFinite, scale.isFinite,
+              size.width > 0, size.height > 0, scale > 0, scale <= 4 else { return nil }
         let renderer = ImageRenderer(
             content: content
                 .frame(width: size.width, height: size.height)

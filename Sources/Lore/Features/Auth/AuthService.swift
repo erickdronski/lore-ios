@@ -73,7 +73,9 @@ final class AuthService {
     private(set) var session: AuthSession? {
         didSet {
             if let session {
-                SessionStore.save(session)
+                if !SessionStore.save(session) {
+                    lastNotice = "You're signed in for now, but Lore couldn't securely remember this session."
+                }
             } else {
                 SessionStore.clear()
             }
@@ -95,28 +97,71 @@ final class AuthService {
     private static let maximumRefreshRetry: TimeInterval = 5 * 60
     @ObservationIgnored private var refreshTimerTask: Task<Void, Never>?
     @ObservationIgnored private var sessionRefreshTask: Task<Bool, Never>?
+    @ObservationIgnored private var sessionRefreshID: UUID?
+    @ObservationIgnored private let urlSession: URLSession
 
     /// Runs the `ASWebAuthenticationSession` for Supabase OAuth providers.
-    private let webAuth = WebAuthCoordinator()
+    @ObservationIgnored private let webAuth: WebAuthCoordinator
     /// The registered URL scheme (project.yml). `ASWebAuthenticationSession`
     /// intercepts this callback so Supabase's redirect lands back in the app.
     private static let oauthCallbackScheme = "lore"
     private static let oauthRedirect = "lore://auth-callback"
+    private static let oauthCallbackHost = "auth-callback"
+    private static let supportedOAuthProviders: Set<String> = ["google", "facebook"]
+    private static let requestTimeout: TimeInterval = 30
 
     var isSignedIn: Bool { session != nil }
 
+    init(
+        urlSession: URLSession = .shared,
+        webAuth: WebAuthCoordinator? = nil
+    ) {
+        self.urlSession = urlSession
+        self.webAuth = webAuth ?? WebAuthCoordinator()
+    }
+
     enum AuthError: LocalizedError {
         case http(status: Int, message: String)
+        case invalidOAuthCallback(String)
 
         var errorDescription: String? {
             switch self {
             case .http(_, let message): return message
+            case .invalidOAuthCallback(let message): return message
             }
         }
     }
 
+    static func normalizedEmail(_ value: String) -> String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    static func isValidEmail(_ value: String) -> Bool {
+        let email = normalizedEmail(value)
+        guard email.count <= 254,
+              let at = email.lastIndex(of: "@"),
+              at != email.startIndex else { return false }
+        let domain = email[email.index(after: at)...]
+        return domain.contains(".") && !domain.hasPrefix(".") && !domain.hasSuffix(".")
+    }
+
+    static func isValidNewPassword(_ value: String) -> Bool {
+        value.count >= 8 && value.count <= 128
+    }
+
     /// `POST /auth/v1/token?grant_type=password` with the anon `apikey`.
     func signIn(email: String, password: String) async {
+        lastError = nil
+        lastNotice = nil
+        let email = Self.normalizedEmail(email)
+        guard Self.isValidEmail(email) else {
+            lastError = "Enter a valid email address."
+            return
+        }
+        guard !password.isEmpty else {
+            lastError = "Enter your password."
+            return
+        }
         isBusy = true
         lastError = nil
         lastNotice = nil
@@ -127,9 +172,12 @@ final class AuthService {
                 resolvingAgainstBaseURL: false
             )
             components?.queryItems = [URLQueryItem(name: "grant_type", value: "password")]
-            guard let url = components?.url else { return }
+            guard let url = components?.url else {
+                throw AuthError.http(status: 0, message: "Lore couldn't create the secure sign-in request.")
+            }
 
             var request = URLRequest(url: url)
+            request.timeoutInterval = Self.requestTimeout
             request.httpMethod = "POST"
             request.setValue(Config.supabaseAnonKey, forHTTPHeaderField: "apikey")
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -137,7 +185,7 @@ final class AuthService {
                 ["email": email, "password": password]
             )
 
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await urlSession.data(for: request)
             if let http = response as? HTTPURLResponse,
                !(200..<300).contains(http.statusCode) {
                 let message = Self.errorMessage(from: data)
@@ -145,10 +193,9 @@ final class AuthService {
                 throw AuthError.http(status: http.statusCode, message: message)
             }
             let newSession = try JSONDecoder().decode(AuthSession.self, from: data)
-            session = newSession
-            await refreshProfile()
+            await completeAuthentication(with: newSession)
         } catch {
-            lastError = error.localizedDescription
+            recordFailure(error)
         }
     }
 
@@ -157,18 +204,30 @@ final class AuthService {
     /// in immediately; if it's on there is no token yet, so we tell the user to
     /// confirm. Accounts are required to buy Lore+ or contribute.
     func signUp(email: String, password: String) async {
+        lastError = nil
+        lastNotice = nil
+        let email = Self.normalizedEmail(email)
+        guard Self.isValidEmail(email) else {
+            lastError = "Enter a valid email address."
+            return
+        }
+        guard Self.isValidNewPassword(password) else {
+            lastError = "Create a password with 8 to 128 characters."
+            return
+        }
         isBusy = true
         lastError = nil
         lastNotice = nil
         defer { isBusy = false }
         do {
             var request = URLRequest(url: Config.authURL.appending(path: "signup"))
+            request.timeoutInterval = Self.requestTimeout
             request.httpMethod = "POST"
             request.setValue(Config.supabaseAnonKey, forHTTPHeaderField: "apikey")
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.httpBody = try JSONEncoder().encode(["email": email, "password": password])
 
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await urlSession.data(for: request)
             if let http = response as? HTTPURLResponse,
                !(200..<300).contains(http.statusCode) {
                 let message = Self.errorMessage(from: data)
@@ -177,13 +236,12 @@ final class AuthService {
             }
             if let newSession = try? JSONDecoder().decode(AuthSession.self, from: data),
                !newSession.accessToken.isEmpty {
-                session = newSession
-                await refreshProfile()
+                await completeAuthentication(with: newSession)
             } else {
                 lastNotice = "Account created. Check your email to confirm, then sign in."
             }
         } catch {
-            lastError = error.localizedDescription
+            recordFailure(error)
         }
     }
 
@@ -191,6 +249,13 @@ final class AuthService {
     /// screen. This works from any mail client without relying on an app deep
     /// link or a locally stored PKCE verifier.
     func sendPasswordReset(email: String) async {
+        lastError = nil
+        lastNotice = nil
+        let email = Self.normalizedEmail(email)
+        guard Self.isValidEmail(email) else {
+            lastError = "Enter the email address for your Lore account first."
+            return
+        }
         isBusy = true
         lastError = nil
         lastNotice = nil
@@ -217,12 +282,13 @@ final class AuthService {
             }
 
             var request = URLRequest(url: recoverURL)
+            request.timeoutInterval = Self.requestTimeout
             request.httpMethod = "POST"
             request.setValue(Config.supabaseAnonKey, forHTTPHeaderField: "apikey")
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.httpBody = try JSONEncoder().encode(["email": email])
 
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await urlSession.data(for: request)
             if let http = response as? HTTPURLResponse,
                !(200..<300).contains(http.statusCode) {
                 throw AuthError.http(
@@ -232,21 +298,38 @@ final class AuthService {
             }
             lastNotice = "If that email has an account, a reset link is on its way. Open it to choose a new password."
         } catch {
-            lastError = error.localizedDescription
+            recordFailure(error)
         }
     }
 
     /// Best-effort server-side revoke, then clear local state either way.
     func signOut() async {
-        if let token = await validAccessToken() {
+        lastError = nil
+        lastNotice = nil
+        let token = session?.accessToken
+        clearLocalSession()
+
+        if let token {
             var request = URLRequest(url: Config.authURL.appending(path: "logout"))
+            request.timeoutInterval = 10
             request.httpMethod = "POST"
             request.setValue(Config.supabaseAnonKey, forHTTPHeaderField: "apikey")
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-            _ = try? await URLSession.shared.data(for: request)
+            _ = try? await urlSession.data(for: request)
         }
+    }
+
+    private func clearLocalSession() {
+        refreshTimerTask?.cancel()
+        refreshTimerTask = nil
+        sessionRefreshTask?.cancel()
+        sessionRefreshTask = nil
+        sessionRefreshID = nil
+        webAuth.cancel()
         session = nil
         profile = nil
+        pendingAppleName = nil
+        pendingAppleEmail = nil
     }
 
     /// Permanently delete the account and all its data (App Store Guideline
@@ -259,6 +342,7 @@ final class AuthService {
         lastError = nil
         defer { isBusy = false }
         do {
+            let deletedUserID = session?.user.id
             guard let token = await validAccessToken() else {
                 lastError = "Your session has expired. Sign in and try again."
                 return false
@@ -274,23 +358,26 @@ final class AuthService {
                 lastError = "Couldn't delete your account. Please try again."
                 return false
             }
-            session = nil
-            profile = nil
+            clearLocalSession()
+            if let deletedUserID {
+                AppleProfileSeedStore.clear(userID: deletedUserID)
+            }
             return true
         } catch {
-            lastError = error.localizedDescription
+            recordFailure(error)
             return false
         }
     }
 
     private func performDeleteAccount(accessToken: String) async throws -> HTTPURLResponse {
         var request = URLRequest(url: Config.functionsURL.appending(path: "delete-account"))
+        request.timeoutInterval = Self.requestTimeout
         request.httpMethod = "POST"
         request.setValue(Config.supabaseAnonKey, forHTTPHeaderField: "apikey")
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = Data("{}".utf8)
-        let (_, response) = try await URLSession.shared.data(for: request)
+        let (_, response) = try await urlSession.data(for: request)
         guard let http = response as? HTTPURLResponse else {
             throw AuthError.http(status: 0, message: "The server returned an invalid response.")
         }
@@ -306,8 +393,10 @@ final class AuthService {
         defer { isRestoring = false }
         guard session == nil, let saved = SessionStore.load() else { return }
         session = saved
-        _ = await refreshSession()
-        await refreshProfile()
+        let refreshed = await refreshSession()
+        if refreshed || session?.isExpired == false {
+            await completePostAuthenticationSetup()
+        }
     }
 
     /// Exchange the current refresh token for a fresh GoTrue session
@@ -324,9 +413,14 @@ final class AuthService {
             guard let self else { return false }
             return await self.performSessionRefresh(refreshToken: refreshToken)
         }
+        let refreshID = UUID()
         sessionRefreshTask = task
+        sessionRefreshID = refreshID
         let refreshed = await task.value
-        sessionRefreshTask = nil
+        if sessionRefreshID == refreshID {
+            sessionRefreshTask = nil
+            sessionRefreshID = nil
+        }
         return refreshed
     }
 
@@ -340,17 +434,19 @@ final class AuthService {
             guard let url = components?.url else { return false }
 
             var request = URLRequest(url: url)
+            request.timeoutInterval = Self.requestTimeout
             request.httpMethod = "POST"
             request.setValue(Config.supabaseAnonKey, forHTTPHeaderField: "apikey")
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.httpBody = try JSONEncoder().encode(["refresh_token": refreshToken])
 
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await urlSession.data(for: request)
+            guard session?.refreshToken == refreshToken else { return false }
             if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
                 // Only an auth verdict kills the session. A 5xx or transient
                 // platform failure keeps it so foregrounding can retry.
                 if [400, 401, 403].contains(http.statusCode) {
-                    session = nil
+                    clearLocalSession()
                 }
                 return false
             }
@@ -379,8 +475,11 @@ final class AuthService {
     /// Called when the app becomes active; a suspended refresh timer may have
     /// missed its deadline while iOS froze the process.
     func refreshIfNeeded() async {
-        guard session?.expires(within: Self.refreshLeeway) == true else { return }
-        _ = await refreshSession()
+        if session?.expires(within: Self.refreshLeeway) == true {
+            _ = await refreshSession()
+        }
+        guard let current = session, !current.isExpired else { return }
+        await synchronizePendingOnboarding(for: current)
     }
 
     private func scheduleSessionRefresh() {
@@ -447,16 +546,21 @@ final class AuthService {
     /// web OAuth path already stood those up, the native path needs **no new
     /// Supabase console work** (docs/16 §2).
     ///
-    /// TODO(P1/server): on first authorization, upsert `fullName` + `email` to
-    /// `user_profile` immediately, Apple never sends them again (docs/16 §2).
-    /// This wants a `user_profile` write path (currently profile is read-only in
-    /// `LoreAPI`); scaffolded here as the seed values are carried through.
+    /// The one-time values are persisted immediately in
+    /// `AppleProfileSeedStore`. The server profile writer remains an external
+    /// dependency; until it exists, Lore does not risk losing them on relaunch.
     func signInWithApple(
         idToken: String,
         rawNonce: String,
         fullName: PersonNameComponents? = nil,
         email: String? = nil
     ) async {
+        lastError = nil
+        lastNotice = nil
+        guard !idToken.isEmpty, !rawNonce.isEmpty else {
+            lastError = "Apple sign-in returned incomplete credentials. Please try again."
+            return
+        }
         isBusy = true
         lastError = nil
         defer { isBusy = false }
@@ -466,9 +570,12 @@ final class AuthService {
                 resolvingAgainstBaseURL: false
             )
             components?.queryItems = [URLQueryItem(name: "grant_type", value: "id_token")]
-            guard let url = components?.url else { return }
+            guard let url = components?.url else {
+                throw AuthError.http(status: 0, message: "Lore couldn't create the Apple sign-in request.")
+            }
 
             var request = URLRequest(url: url)
+            request.timeoutInterval = Self.requestTimeout
             request.httpMethod = "POST"
             request.setValue(Config.supabaseAnonKey, forHTTPHeaderField: "apikey")
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -476,7 +583,7 @@ final class AuthService {
                 ["provider": "apple", "id_token": idToken, "nonce": rawNonce]
             )
 
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await urlSession.data(for: request)
             if let http = response as? HTTPURLResponse,
                !(200..<300).contains(http.statusCode) {
                 let message = Self.errorMessage(from: data)
@@ -484,15 +591,18 @@ final class AuthService {
                 throw AuthError.http(status: http.statusCode, message: message)
             }
             let newSession = try JSONDecoder().decode(AuthSession.self, from: data)
-            session = newSession
-            // Seed the name/email Apple only ever sends once. TODO(P1/server):
-            // persist to `user_profile` here once a write path exists, carried
-            // through so the wiring is ready.
             pendingAppleName = fullName
             pendingAppleEmail = email
-            await refreshProfile()
+            if let seed = AppleProfileSeed.make(
+                userID: newSession.user.id,
+                fullName: fullName,
+                email: email
+            ), !AppleProfileSeedStore.save(seed) {
+                lastNotice = "You're signed in, but Lore couldn't securely save Apple's one-time profile details."
+            }
+            await completeAuthentication(with: newSession)
         } catch {
-            lastError = error.localizedDescription
+            recordFailure(error)
         }
     }
 
@@ -510,6 +620,13 @@ final class AuthService {
     /// dashboard (client id + secret) and `lore://auth-callback` added to the
     /// Auth → URL Configuration redirect allowlist.
     func signInWithOAuth(provider: String) async {
+        lastError = nil
+        lastNotice = nil
+        let provider = provider.lowercased()
+        guard Self.supportedOAuthProviders.contains(provider) else {
+            lastError = "That sign-in provider isn't available in Lore."
+            return
+        }
         isBusy = true
         lastError = nil
         defer { isBusy = false }
@@ -522,22 +639,18 @@ final class AuthService {
                 URLQueryItem(name: "provider", value: provider),
                 URLQueryItem(name: "redirect_to", value: Self.oauthRedirect),
             ]
-            guard let authorizeURL = components?.url else { return }
+            guard let authorizeURL = components?.url else {
+                throw AuthError.http(status: 0, message: "Lore couldn't create the secure provider request.")
+            }
 
             let callback = try await webAuth.authenticate(
                 url: authorizeURL,
                 callbackScheme: Self.oauthCallbackScheme
             )
-
-            guard let tokens = Self.tokens(from: callback) else {
-                // Supabase can bounce an error back in the fragment instead.
-                lastError = Self.callbackError(from: callback)
-                    ?? "\(provider.capitalized) sign-in didn't complete. Please try again."
-                return
-            }
+            let tokens = try Self.oauthTokens(from: callback)
 
             let user = try await fetchUser(accessToken: tokens.access)
-            session = AuthSession(
+            let newSession = AuthSession(
                 accessToken: tokens.access,
                 refreshToken: tokens.refresh,
                 expiresIn: tokens.expiresIn,
@@ -545,11 +658,11 @@ final class AuthService {
                 tokenType: tokens.tokenType,
                 user: user
             )
-            await refreshProfile()
-        } catch is WebAuthCoordinator.WebAuthError {
-            // User dismissed the sheet, silent (not an error to surface).
+            await completeAuthentication(with: newSession)
+        } catch WebAuthCoordinator.WebAuthError.cancelled {
+            // Backing out is a successful cancellation, not a failed sign-in.
         } catch {
-            lastError = error.localizedDescription
+            recordFailure(error)
         }
     }
 
@@ -557,9 +670,10 @@ final class AuthService {
     /// (the OAuth callback carries only token strings, not the user object).
     private func fetchUser(accessToken: String) async throws -> AuthUser {
         var request = URLRequest(url: Config.authURL.appending(path: "user"))
+        request.timeoutInterval = Self.requestTimeout
         request.setValue(Config.supabaseAnonKey, forHTTPHeaderField: "apikey")
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await urlSession.data(for: request)
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
             throw AuthError.http(
                 status: http.statusCode,
@@ -571,20 +685,47 @@ final class AuthService {
 
     /// Parse the GoTrue tokens Supabase returns in the callback URL fragment
     /// (`…#access_token=…&refresh_token=…&expires_in=…&token_type=bearer`).
-    private static func tokens(
-        from url: URL
-    ) -> (access: String, refresh: String, expiresIn: Int, tokenType: String)? {
+    struct OAuthTokens: Equatable {
+        let access: String
+        let refresh: String
+        let expiresIn: Int
+        let tokenType: String
+    }
+
+    static func oauthTokens(from url: URL) throws -> OAuthTokens {
+        guard url.scheme?.lowercased() == oauthCallbackScheme,
+              url.host?.lowercased() == oauthCallbackHost,
+              url.user == nil,
+              url.password == nil else {
+            throw AuthError.invalidOAuthCallback(
+                "The sign-in provider returned to an unexpected address. Please try again."
+            )
+        }
+        if let callbackError = callbackError(from: url) {
+            throw AuthError.invalidOAuthCallback(callbackError)
+        }
         let fragment = URLComponents(url: url, resolvingAgainstBaseURL: false)?.fragment
             ?? url.fragment
-        guard let fragment else { return nil }
-        let pairs = fragment.split(separator: "&").reduce(into: [String: String]()) { dict, pair in
+        guard let fragment else {
+            throw AuthError.invalidOAuthCallback("Sign-in didn't return a secure session. Please try again.")
+        }
+        var pairs: [String: String] = [:]
+        for pair in fragment.split(separator: "&") {
             let kv = pair.split(separator: "=", maxSplits: 1).map(String.init)
-            if kv.count == 2 { dict[kv[0]] = kv[1].removingPercentEncoding ?? kv[1] }
+            guard kv.count == 2, pairs[kv[0]] == nil else {
+                throw AuthError.invalidOAuthCallback("Sign-in returned an invalid session. Please try again.")
+            }
+            pairs[kv[0]] = kv[1].removingPercentEncoding ?? kv[1]
         }
-        guard let access = pairs["access_token"], let refresh = pairs["refresh_token"] else {
-            return nil
+        guard let access = pairs["access_token"], !access.isEmpty,
+              let refresh = pairs["refresh_token"], !refresh.isEmpty,
+              let expiresIn = Int(pairs["expires_in"] ?? ""),
+              (1...604_800).contains(expiresIn),
+              let tokenType = pairs["token_type"],
+              tokenType.caseInsensitiveCompare("bearer") == .orderedSame else {
+            throw AuthError.invalidOAuthCallback("Sign-in returned an invalid session. Please try again.")
         }
-        return (access, refresh, Int(pairs["expires_in"] ?? "3600") ?? 3600, pairs["token_type"] ?? "bearer")
+        return OAuthTokens(access: access, refresh: refresh, expiresIn: expiresIn, tokenType: "bearer")
     }
 
     /// A human error Supabase may put in the callback fragment/query instead of tokens.
@@ -600,9 +741,60 @@ final class AuthService {
         return nil
     }
 
-    /// First-authorization Apple name, stashed until a `user_profile` write path
-    /// exists to persist it (docs/16 §2, Apple sends it only once).
-    /// TODO(P1/server): flush to `user_profile` and clear.
+    private func completeAuthentication(with newSession: AuthSession) async {
+        session = newSession
+        await completePostAuthenticationSetup()
+    }
+
+    private func completePostAuthenticationSetup() async {
+        guard let current = session, !current.isExpired else { return }
+        await synchronizePendingOnboarding(for: current)
+        await refreshProfile()
+    }
+
+    private func synchronizePendingOnboarding(for current: AuthSession) async {
+        guard OnboardingPrefsWriter.pendingSelection() != nil else { return }
+        do {
+            try await OnboardingPrefsWriter.flushPending(
+                userID: current.user.id,
+                accessToken: current.accessToken
+            )
+        } catch {
+            // Authentication succeeded. Keep the durable pending selection and
+            // retry on the next restore/foreground rather than failing sign-in.
+            lastNotice = "You're signed in. Your travel lens is saved here and will sync when the connection returns."
+        }
+    }
+
+    private func recordFailure(_ error: Error) {
+        guard let message = Self.userFacingMessage(for: error) else { return }
+        lastError = message
+    }
+
+    static func userFacingMessage(for error: Error) -> String? {
+        if error is CancellationError { return nil }
+        if let urlError = error as? URLError {
+            switch urlError.code {
+            case .cancelled:
+                return nil
+            case .notConnectedToInternet:
+                return "You're offline. Reconnect and try again."
+            case .timedOut, .networkConnectionLost:
+                return "The connection was interrupted. Please try again."
+            case .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed:
+                return "Lore couldn't reach the sign-in service. Please try again shortly."
+            default:
+                return "Lore couldn't complete that secure sign-in. Please try again."
+            }
+        }
+        if error is DecodingError {
+            return "The sign-in service returned an unreadable response. Please try again."
+        }
+        return error.localizedDescription
+    }
+
+    /// First-authorization Apple values for immediate UI use. The durable copy
+    /// lives in `AppleProfileSeedStore` until the profile endpoint consumes it.
     private(set) var pendingAppleName: PersonNameComponents?
     /// First-authorization Apple email (possibly private-relay), same lifecycle.
     private(set) var pendingAppleEmail: String?

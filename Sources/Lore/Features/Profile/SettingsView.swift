@@ -1,5 +1,8 @@
+import AVFoundation
+import CoreLocation
 import StoreKit
 import SwiftUI
+import UserNotifications
 
 /// Settings, pushed from Profile (TestFlight feedback #13: "Profile needs
 /// preferences, permissions, manage subscription, haptics").
@@ -19,14 +22,17 @@ struct SettingsView: View {
     /// `user_prefs.hidden_kinds` and re-filters the map + nearby lists live.
     @Environment(MapFilterStore.self) private var filters
     @Environment(AuthService.self) private var auth
+    @Environment(PushService.self) private var push
     @Environment(\.openURL) private var openURL
     @Environment(\.requestReview) private var requestReview
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
-    /// Account-deletion confirmation (App Store 5.1.1(v)).
-    @State private var showDeleteConfirm = false
-    @State private var deleting = false
-    @State private var deleteFailure: String?
+    @State private var showDeleteFlow = false
+    @State private var locationStatus: CLAuthorizationStatus = .notDetermined
+    @State private var cameraStatus: AVAuthorizationStatus = .notDetermined
+    @State private var requestingPermission: PermissionKind?
+    @State private var locationManager = CLLocationManager()
 
     /// The master haptics switch, read by `Haptics.play` via the same key.
     @AppStorage(Haptics.enabledDefaultsKey) private var hapticsEnabled = true
@@ -39,9 +45,6 @@ struct SettingsView: View {
     @State private var restoring = false
     @State private var restoreNote: String?
 
-    /// Apple's universal manage-subscriptions surface (no app id needed).
-    private let manageSubscriptionsURL = URL(string: "https://apps.apple.com/account/subscriptions")
-
     var body: some View {
         List {
             whatYouSeeSection
@@ -50,6 +53,7 @@ struct SettingsView: View {
             OfflinePacksSection()
             permissionsSection
             subscriptionSection
+            privacyDataSection
             aboutLegalSection
             if auth.isSignedIn { accountSection }
             #if DEBUG
@@ -59,30 +63,20 @@ struct SettingsView: View {
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
         .background(LoreColor.bone100)
+        .contentMargins(.horizontal, horizontalSizeClass == .regular ? 80 : 0, for: .scrollContent)
         .navigationTitle(L10n.t("settings.title"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.visible, for: .navigationBar)
-        .alert("Delete your account?", isPresented: $showDeleteConfirm) {
-            if let manageSubscriptionsURL {
-                Button("Manage Apple subscription") {
-                    openURL(manageSubscriptionsURL)
-                }
+        .sheet(isPresented: $showDeleteFlow) {
+            DeleteAccountView {
+                showDeleteFlow = false
+                dismiss()
             }
-            Button("Delete account", role: .destructive) {
-                Task { await deleteAccount() }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This permanently deletes your Lore account and private data, including visits, notes, journal photos, badges, and your Lore+ record. Published factual contributions may be retained without account attribution. Deleting your Lore account does not cancel an Apple subscription; manage it separately in your Apple ID subscription settings. This cannot be undone.")
+            .presentationDetents([.large])
         }
-        .alert("Account not deleted", isPresented: Binding(
-            get: { deleteFailure != nil },
-            set: { if !$0 { deleteFailure = nil } }
-        )) {
-            Button("Try again") { Task { await deleteAccount() } }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text(deleteFailure ?? "Please try again.")
+        .task { await refreshPermissionStatuses() }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
+            Task { await refreshPermissionStatuses() }
         }
     }
 
@@ -90,34 +84,26 @@ struct SettingsView: View {
 
     private var accountSection: some View {
         Section {
-            Button(role: .destructive) {
-                showDeleteConfirm = true
-            } label: {
-                HStack {
-                    Label("Delete account", systemImage: "trash")
-                        .foregroundStyle(LoreColor.error)
-                    Spacer()
-                    if deleting { ProgressView() }
+            if let email = auth.session?.user.email {
+                LabeledContent("Signed in as") {
+                    Text(email)
+                        .font(LoreType.caption)
+                        .foregroundStyle(LoreColor.ink600)
+                        .multilineTextAlignment(.trailing)
                 }
+                .font(LoreType.body)
+                .accessibilityElement(children: .combine)
             }
-            .disabled(deleting)
+
+            Button(role: .destructive) {
+                showDeleteFlow = true
+            } label: {
+                settingsRow("Delete account", icon: "trash", tint: LoreColor.error)
+            }
         } header: {
             Text("Account")
         } footer: {
-            Text("Deletes your Lore account and private data. Apple subscriptions must be cancelled separately.")
-        }
-    }
-
-    private func deleteAccount() async {
-        guard !deleting else { return }
-        deleting = true
-        deleteFailure = nil
-        let deleted = await auth.deleteAccount()
-        deleting = false
-        if deleted {
-            dismiss() // Session cleared, return to the signed-out profile.
-        } else {
-            deleteFailure = auth.lastError ?? "Couldn't delete your account. Please try again."
+            Text("Deletion requires a typed confirmation and a freshly verified secure session. Apple subscriptions must be cancelled separately.")
         }
     }
 
@@ -201,6 +187,13 @@ struct SettingsView: View {
                 }
                 .buttonStyle(.plain)
             }
+
+            if let error = filters.lastError {
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .font(LoreType.caption)
+                    .foregroundStyle(LoreColor.error)
+                    .accessibilityLabel("Preference save error. \(error)")
+            }
         } header: {
             Text("What you see")
         } footer: {
@@ -213,13 +206,25 @@ struct SettingsView: View {
     // MARK: Preferences
 
     private var preferencesSection: some View {
-        Section("Preferences") {
+        Section {
+            NavigationLink {
+                TravelPreferencesView()
+            } label: {
+                Label("Travel preferences", systemImage: "slider.horizontal.3")
+                    .font(LoreType.body)
+                    .foregroundStyle(LoreColor.ink)
+            }
+
             Toggle(isOn: $hapticsEnabled) {
                 Label("Haptic feedback", systemImage: "hand.tap")
                     .font(LoreType.body)
                     .foregroundStyle(LoreColor.ink)
             }
             .tint(LoreColor.brass700)
+        } header: {
+            Text("Preferences")
+        } footer: {
+            Text("Your travel lens and interests shape ranking across the map, scanner, and nearby stories. Haptics are stored on this device.")
         }
     }
 
@@ -227,40 +232,108 @@ struct SettingsView: View {
 
     private var permissionsSection: some View {
         Section {
-            permissionRow("Location", icon: "location.fill")
-            permissionRow("Camera", icon: "camera.fill")
+            if Config.pushNotificationsEnabled {
+                permissionRow(
+                    "Notifications",
+                    icon: "bell.badge.fill",
+                    status: notificationStatusLabel,
+                    isEnabled: push.isAuthorized,
+                    kind: .notifications
+                )
+            }
+
+            permissionRow(
+                "Location",
+                icon: "location.fill",
+                status: locationStatusLabel,
+                isEnabled: locationIsAuthorized,
+                kind: .location
+            )
+            permissionRow(
+                "Camera",
+                icon: "camera.fill",
+                status: cameraStatusLabel,
+                isEnabled: cameraStatus == .authorized,
+                kind: .camera
+            )
+
+            Button {
+                openSystemSettings()
+            } label: {
+                settingsRow("Open all iOS permissions", icon: "gearshape.fill", tint: LoreColor.ink)
+            }
+            .buttonStyle(.plain)
         } header: {
             Text("Permissions")
         } footer: {
-            Text("Opens the iOS Settings app, where Lore's location and camera access live.")
+            Text("Permissions are optional. The map works without Camera, and city browsing works without Location. Lore does not store a continuous camera feed or location history.")
                 .font(LoreType.caption)
                 .foregroundStyle(LoreColor.ink600)
         }
     }
 
-    private func permissionRow(_ label: String, icon: String) -> some View {
+    private func permissionRow(
+        _ label: String,
+        icon: String,
+        status: String,
+        isEnabled: Bool,
+        kind: PermissionKind
+    ) -> some View {
         Button {
-            if let url = URL(string: UIApplication.openSettingsURLString) {
-                openURL(url)
-            }
+            Task { await handlePermission(kind) }
         } label: {
-            settingsRow(label, icon: icon, tint: LoreColor.ink)
+            HStack(spacing: 12) {
+                Image(systemName: icon)
+                    .foregroundStyle(isEnabled ? LoreColor.brass700 : LoreColor.ink600)
+                    .frame(width: 24)
+                Text(label)
+                    .font(LoreType.body)
+                    .foregroundStyle(LoreColor.ink)
+                Spacer()
+                if requestingPermission == kind {
+                    ProgressView()
+                } else {
+                    Text(status)
+                        .font(LoreType.caption.weight(.semibold))
+                        .foregroundStyle(isEnabled ? LoreColor.brass700 : LoreColor.ink600)
+                    Image(systemName: kind.isUndetermined(
+                        notification: push.authorizationStatus,
+                        location: locationStatus,
+                        camera: cameraStatus
+                    ) ? "chevron.right" : "arrow.up.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(LoreColor.ink600)
+                }
+            }
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .disabled(requestingPermission != nil)
+        .accessibilityLabel("\(label), \(status)")
+        .accessibilityHint(kind.isUndetermined(
+            notification: push.authorizationStatus,
+            location: locationStatus,
+            camera: cameraStatus
+        ) ? "Requests permission" : "Opens iOS Settings")
     }
 
     // MARK: Subscription
 
     private var subscriptionSection: some View {
-        Section("Lore+") {
-            if entitlements.isPlus, let url = manageSubscriptionsURL {
-                Button {
-                    openURL(url)
-                } label: {
-                    settingsRow("Manage subscription", icon: "creditcard.fill", tint: LoreColor.brass700)
-                }
-                .buttonStyle(.plain)
+        Section {
+            LabeledContent("Lore+ status") {
+                Text(entitlements.isPlus ? (entitlements.isTrialing ? "Trial active" : "Active") : "No active access found")
+                    .font(LoreType.caption.weight(.semibold))
+                    .foregroundStyle(entitlements.isPlus ? LoreColor.brass700 : LoreColor.ink600)
             }
+            .font(LoreType.body)
+
+            Button {
+                openURL(ProfileSupportLinks.manageSubscriptions)
+            } label: {
+                settingsRow("Manage Apple subscription", icon: "creditcard.fill", tint: LoreColor.brass700)
+            }
+            .buttonStyle(.plain)
 
             Button {
                 Task { await restorePurchases() }
@@ -283,6 +356,10 @@ struct SettingsView: View {
                     .font(LoreType.caption)
                     .foregroundStyle(LoreColor.ink600)
             }
+        } header: {
+            Text("Lore+")
+        } footer: {
+            Text("Apple manages payment, cancellation, refunds, and billing details. Lore never receives your card number. Restore uses the Apple Account that made the purchase.")
         }
     }
 
@@ -303,6 +380,35 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: Privacy + data
+
+    private var privacyDataSection: some View {
+        Section {
+            NavigationLink {
+                PrivacyDataView()
+            } label: {
+                Label("Privacy & your data", systemImage: "hand.raised.fill")
+                    .font(LoreType.body)
+                    .foregroundStyle(LoreColor.ink)
+            }
+
+            Button {
+                guard let url = ProfileSupportLinks.supportRequestURL(
+                    accountEmail: auth.session?.user.email,
+                    version: ProfileSupportLinks.versionLine
+                ) else { return }
+                openURL(url)
+            } label: {
+                settingsRow("Email Lore Support", icon: "envelope.fill", tint: LoreColor.ink)
+            }
+            .buttonStyle(.plain)
+        } header: {
+            Text("Privacy & support")
+        } footer: {
+            Text("See what Lore processes, request access to account data, or get help with an account or purchase.")
+        }
+    }
+
     // MARK: About + legal
 
     /// Policies, support, a rate prompt, and the data attribution the licenses
@@ -310,9 +416,10 @@ struct SettingsView: View {
     /// live lore-web legal pages, the same ones the paywall points to.
     private var aboutLegalSection: some View {
         Section {
-            linkRow("Terms of Use", icon: "doc.text", urlString: "https://lore-web-liart.vercel.app/terms")
-            linkRow("Privacy Policy", icon: "hand.raised", urlString: "https://lore-web-liart.vercel.app/privacy")
-            linkRow("Support", icon: "questionmark.circle", urlString: "https://lore-web-liart.vercel.app/support")
+            linkRow("Terms of Use", icon: "doc.text", url: ProfileSupportLinks.terms)
+            linkRow("Privacy Policy", icon: "hand.raised", url: ProfileSupportLinks.privacy)
+            linkRow("Apple Standard EULA", icon: "checkmark.seal", url: ProfileSupportLinks.appleEULA)
+            linkRow("Support Center", icon: "questionmark.circle", url: ProfileSupportLinks.support)
             Button {
                 requestReview()
             } label: {
@@ -322,15 +429,15 @@ struct SettingsView: View {
         } header: {
             Text("About Lore")
         } footer: {
-            Text("Place data © OpenStreetMap contributors (ODbL). Stories draw on Wikipedia (CC BY-SA) and public-domain sources; map and imagery via Apple Maps. © 2026 Lore.")
+            Text("Lore \(ProfileSupportLinks.versionLine). Place data © OpenStreetMap contributors (ODbL). Stories draw on Wikipedia (CC BY-SA) and public-domain sources; map and imagery via Apple Maps. © 2026 Lore.")
                 .font(LoreType.caption)
                 .foregroundStyle(LoreColor.ink600)
         }
     }
 
-    private func linkRow(_ label: String, icon: String, urlString: String) -> some View {
+    private func linkRow(_ label: String, icon: String, url: URL) -> some View {
         Button {
-            if let url = URL(string: urlString) { openURL(url) }
+            openURL(url)
         } label: {
             settingsRow(label, icon: icon, tint: LoreColor.ink)
         }
@@ -370,5 +477,99 @@ struct SettingsView: View {
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(LoreColor.ink600)
         }
+    }
+
+    // MARK: Permission state
+
+    private enum PermissionKind: Equatable {
+        case notifications, location, camera
+
+        func isUndetermined(
+            notification: UNAuthorizationStatus,
+            location: CLAuthorizationStatus,
+            camera: AVAuthorizationStatus
+        ) -> Bool {
+            switch self {
+            case .notifications: return notification == .notDetermined
+            case .location: return location == .notDetermined
+            case .camera: return camera == .notDetermined
+            }
+        }
+    }
+
+    private var notificationStatusLabel: String {
+        switch push.authorizationStatus {
+        case .authorized: return "On"
+        case .provisional, .ephemeral: return "Quietly on"
+        case .denied: return "Off"
+        case .notDetermined: return "Not set"
+        @unknown default: return "Review"
+        }
+    }
+
+    private var locationIsAuthorized: Bool {
+        locationStatus == .authorizedWhenInUse || locationStatus == .authorizedAlways
+    }
+
+    private var locationStatusLabel: String {
+        switch locationStatus {
+        case .authorizedAlways: return "Always"
+        case .authorizedWhenInUse: return "While using"
+        case .denied: return "Off"
+        case .restricted: return "Restricted"
+        case .notDetermined: return "Not set"
+        @unknown default: return "Review"
+        }
+    }
+
+    private var cameraStatusLabel: String {
+        switch cameraStatus {
+        case .authorized: return "On"
+        case .denied: return "Off"
+        case .restricted: return "Restricted"
+        case .notDetermined: return "Not set"
+        @unknown default: return "Review"
+        }
+    }
+
+    @MainActor
+    private func refreshPermissionStatuses() async {
+        if Config.pushNotificationsEnabled {
+            await push.refreshAuthorizationStatus()
+        }
+        locationStatus = locationManager.authorizationStatus
+        cameraStatus = AVCaptureDevice.authorizationStatus(for: .video)
+    }
+
+    @MainActor
+    private func handlePermission(_ kind: PermissionKind) async {
+        guard requestingPermission == nil else { return }
+        guard kind.isUndetermined(
+            notification: push.authorizationStatus,
+            location: locationStatus,
+            camera: cameraStatus
+        ) else {
+            openSystemSettings()
+            return
+        }
+
+        requestingPermission = kind
+        defer { requestingPermission = nil }
+        switch kind {
+        case .notifications:
+            guard Config.pushNotificationsEnabled else { return }
+            await push.requestAuthorizationAndRegister()
+        case .location:
+            locationManager.requestWhenInUseAuthorization()
+            try? await Task.sleep(for: .milliseconds(450))
+        case .camera:
+            _ = await AVCaptureDevice.requestAccess(for: .video)
+        }
+        await refreshPermissionStatuses()
+    }
+
+    private func openSystemSettings() {
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        openURL(url)
     }
 }

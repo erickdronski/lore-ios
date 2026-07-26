@@ -21,6 +21,15 @@ final class NarrationService {
     private(set) var offered: Place?
     /// True while the synthesizer is actively speaking.
     private(set) var isSpeaking = false
+    /// True when an active narration is paused and can be resumed in place.
+    private(set) var isPaused = false
+    /// Actionable playback failure copy for the owning surface.
+    private(set) var playbackError: String?
+    /// Current narration speed. Studio audio updates immediately; TTS uses the
+    /// selected speed on its next utterance.
+    private(set) var playbackRate: Float = 1
+    var isActive: Bool { isSpeaking || isPaused }
+    var canSeek: Bool { player != nil }
     /// Identifies a short UI utterance so only its originating card shows Stop.
     private(set) var activeSpeechID: String?
     /// The place we last auto-offered, so a re-lock on the same building
@@ -29,16 +38,22 @@ final class NarrationService {
 
     private let synthesizer = AVSpeechSynthesizer()
     private let delegate = SpeechDelegate()
+    private var activeUtterance: AVSpeechUtterance?
 
     /// Player for pre-rendered studio narration (the `narration` bucket).
     private var player: AVPlayer?
     private var playerObservers: [NSObjectProtocol] = []
+    private var itemStatusObservation: NSKeyValueObservation?
+    private var interruptionObserver: NSObjectProtocol?
+    private var routeChangeObserver: NSObjectProtocol?
+    private var wasInterruptedWhileActive = false
     /// Fallback text if the audio file fails mid-flight (offline, moved).
     private var fallbackText: String?
 
     init() {
         delegate.owner = self
         synthesizer.delegate = delegate
+        observeAudioSession()
     }
 
     /// The ~20-second hook line for a place, docent voice. Prefers the authored
@@ -76,11 +91,14 @@ final class NarrationService {
         // Cancel any in-flight hook so a new lock speaks now, not queued behind
         // the old one (AVSpeechSynthesizer enqueues by default).
         if synthesizer.isSpeaking { synthesizer.stopSpeaking(at: .immediate) }
+        playbackError = nil
         configureSession()
         let utterance = AVSpeechUtterance(string: Self.hookText(for: place, register: register))
-        utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 0.96
+        utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 0.96 * playbackRate
         utterance.postUtteranceDelay = 0.2
+        activeUtterance = utterance
         isSpeaking = true
+        isPaused = false
         synthesizer.speak(utterance)
     }
 
@@ -93,11 +111,14 @@ final class NarrationService {
         guard !text.isEmpty else { return }
         stopPlayback()
         if synthesizer.isSpeaking { synthesizer.stopSpeaking(at: .immediate) }
+        playbackError = nil
         configureSession()
         let utterance = AVSpeechUtterance(string: text)
-        utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 0.94
+        utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 0.94 * playbackRate
         utterance.postUtteranceDelay = 0.15
+        activeUtterance = utterance
         isSpeaking = true
+        isPaused = false
         synthesizer.speak(utterance)
     }
 
@@ -107,13 +128,16 @@ final class NarrationService {
         guard !text.isEmpty else { return }
         stopPlayback()
         if synthesizer.isSpeaking { synthesizer.stopSpeaking(at: .immediate) }
+        playbackError = nil
         configureSession()
         let utterance = AVSpeechUtterance(string: text)
         utterance.voice = Self.voice(matching: languageName)
-        utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 0.86
+        utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 0.86 * playbackRate
         utterance.postUtteranceDelay = 0.1
+        activeUtterance = utterance
         activeSpeechID = id
         isSpeaking = true
+        isPaused = false
         synthesizer.speak(utterance)
     }
 
@@ -135,8 +159,10 @@ final class NarrationService {
     func playDossierAudio(_ url: URL, fallbackText: String? = nil) {
         offered = nil
         activeSpeechID = nil
+        activeUtterance = nil
         if synthesizer.isSpeaking { synthesizer.stopSpeaking(at: .immediate) }
         stopPlayback()
+        playbackError = nil
         configureSession()
         self.fallbackText = fallbackText
 
@@ -146,6 +172,10 @@ final class NarrationService {
         let item = AVPlayerItem(url: resolved)
         let player = AVPlayer(playerItem: item)
         self.player = player
+        itemStatusObservation = item.observe(\.status, options: [.new]) { [weak self] item, _ in
+            guard item.status == .failed else { return }
+            Task { @MainActor in self?.handlePlaybackFailure() }
+        }
 
         playerObservers.append(NotificationCenter.default.addObserver(
             forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main
@@ -162,17 +192,74 @@ final class NarrationService {
         })
 
         isSpeaking = true
-        player.play()
+        isPaused = false
+        player.playImmediately(atRate: playbackRate)
+    }
+
+    /// Pause without losing the listener's place. Works for both studio files
+    /// and on-device speech, and keeps the background audio session alive.
+    func pause() {
+        guard isSpeaking else { return }
+        let didPause: Bool
+        if let player {
+            player.pause()
+            didPause = true
+        } else {
+            didPause = synthesizer.pauseSpeaking(at: .word)
+        }
+        guard didPause else { return }
+        isSpeaking = false
+        isPaused = true
+    }
+
+    func resume() {
+        guard isPaused else { return }
+        configureSession()
+        let didResume: Bool
+        if let player {
+            player.playImmediately(atRate: playbackRate)
+            didResume = true
+        } else {
+            didResume = synthesizer.continueSpeaking()
+        }
+        guard didResume else { return }
+        isPaused = false
+        isSpeaking = true
+    }
+
+    /// Seek studio narration while clamping to the playable timeline. TTS does
+    /// not expose a safe time cursor, so the UI hides seek controls for it.
+    func skip(seconds: Double) {
+        guard let player, let item = player.currentItem else { return }
+        let current = player.currentTime().seconds
+        guard current.isFinite else { return }
+        let duration = item.duration.seconds
+        let upper = duration.isFinite ? max(duration - 0.25, 0) : current + max(seconds, 0)
+        let target = min(max(current + seconds, 0), upper)
+        player.seek(to: CMTime(seconds: target, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+    }
+
+    func cyclePlaybackRate() {
+        let rates: [Float] = [0.85, 1, 1.2, 1.5]
+        let index = rates.firstIndex(of: playbackRate) ?? 1
+        playbackRate = rates[(index + 1) % rates.count]
+        if let player, !isPaused {
+            player.playImmediately(atRate: playbackRate)
+        }
     }
 
     /// Audio file died mid-flight: degrade to TTS of the same narrative rather
     /// than ending in silence (the fallback is the old baseline, never worse).
     private func handlePlaybackFailure() {
+        guard player != nil else { return }
+        let text = fallbackText
         stopPlayback()
-        if let text = fallbackText, !text.isEmpty {
+        if let text, !text.isEmpty {
             fallbackText = nil
             speakDossier(text)
+            playbackError = "Studio audio was unavailable, so Lore switched to the on-device narrator."
         } else {
+            playbackError = "This narration couldn't be played. Try again when you have a connection."
             markStopped()
         }
     }
@@ -183,6 +270,8 @@ final class NarrationService {
             NotificationCenter.default.removeObserver(observer)
         }
         playerObservers.removeAll()
+        itemStatusObservation?.invalidate()
+        itemStatusObservation = nil
         player?.pause()
         player = nil
     }
@@ -195,19 +284,30 @@ final class NarrationService {
     /// Stop any in-flight narration (phone lowered, sheet opened, disappear).
     func stop() {
         stopPlayback()
+        activeUtterance = nil
         if synthesizer.isSpeaking {
             synthesizer.stopSpeaking(at: .immediate)
         }
         isSpeaking = false
+        isPaused = false
         activeSpeechID = nil
         offered = nil
+        fallbackText = nil
         deactivateSession()
     }
 
     fileprivate func markStopped() {
         isSpeaking = false
+        isPaused = false
+        activeUtterance = nil
         activeSpeechID = nil
+        fallbackText = nil
         deactivateSession()
+    }
+
+    fileprivate func speechDidStop(_ utterance: AVSpeechUtterance) {
+        guard activeUtterance === utterance else { return }
+        markStopped()
     }
 
     private static func voice(matching languageName: String?) -> AVSpeechSynthesisVoice? {
@@ -233,14 +333,62 @@ final class NarrationService {
 
     private func configureSession() {
         let session = AVAudioSession.sharedInstance()
-        try? session.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers, .mixWithOthers])
-        try? session.setActive(true, options: [])
+        do {
+            try session.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers, .mixWithOthers])
+            try session.setActive(true, options: [])
+        } catch {
+            playbackError = "Audio couldn't take control of the speaker. Check silent output or Bluetooth and try again."
+        }
     }
 
     /// Un-duck other apps once narration ends. A `.duckOthers` session must be
     /// explicitly deactivated or the user's music/podcast stays quiet forever.
     private func deactivateSession() {
         try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
+    }
+
+    private func observeAudioSession() {
+        let center = NotificationCenter.default
+        interruptionObserver = center.addObserver(
+            forName: AVAudioSession.interruptionNotification,
+            object: AVAudioSession.sharedInstance(),
+            queue: .main
+        ) { [weak self] note in
+            Task { @MainActor in self?.handleInterruption(note) }
+        }
+        routeChangeObserver = center.addObserver(
+            forName: AVAudioSession.routeChangeNotification,
+            object: AVAudioSession.sharedInstance(),
+            queue: .main
+        ) { [weak self] note in
+            Task { @MainActor in self?.handleRouteChange(note) }
+        }
+    }
+
+    private func handleInterruption(_ notification: Notification) {
+        guard let raw = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
+              let type = AVAudioSession.InterruptionType(rawValue: raw)
+        else { return }
+        switch type {
+        case .began:
+            wasInterruptedWhileActive = isActive
+            pause()
+        case .ended:
+            let rawOptions = notification.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
+            let shouldResume = AVAudioSession.InterruptionOptions(rawValue: rawOptions).contains(.shouldResume)
+            if wasInterruptedWhileActive && shouldResume { resume() }
+            wasInterruptedWhileActive = false
+        @unknown default:
+            wasInterruptedWhileActive = false
+        }
+    }
+
+    private func handleRouteChange(_ notification: Notification) {
+        guard let raw = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt,
+              AVAudioSession.RouteChangeReason(rawValue: raw) == .oldDeviceUnavailable
+        else { return }
+        pause()
+        playbackError = "Audio paused because your headphones or speaker disconnected."
     }
 }
 
@@ -254,13 +402,13 @@ private final class SpeechDelegate: NSObject, AVSpeechSynthesizerDelegate {
         _ synthesizer: AVSpeechSynthesizer,
         didFinish utterance: AVSpeechUtterance
     ) {
-        Task { @MainActor in owner?.markStopped() }
+        Task { @MainActor in owner?.speechDidStop(utterance) }
     }
 
     func speechSynthesizer(
         _ synthesizer: AVSpeechSynthesizer,
         didCancel utterance: AVSpeechUtterance
     ) {
-        Task { @MainActor in owner?.markStopped() }
+        Task { @MainActor in owner?.speechDidStop(utterance) }
     }
 }

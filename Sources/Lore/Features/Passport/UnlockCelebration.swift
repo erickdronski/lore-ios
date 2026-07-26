@@ -20,8 +20,7 @@ struct UnlockCelebration: View {
     @State private var index = 0
     @State private var bloom = false
     @State private var burst = false
-
-    private var reduceMotion: Bool { UIAccessibility.isReduceMotionEnabled }
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var current: Achievement? {
         unlocked.indices.contains(index) ? unlocked[index] : nil
@@ -38,6 +37,7 @@ struct UnlockCelebration: View {
                 .ignoresSafeArea()
                 .contentShape(Rectangle())
                 .onTapGesture { advance() }
+                .accessibilityHidden(true)
 
             if !reduceMotion {
                 ConfettiBurst(active: burst, tier: tier)
@@ -51,6 +51,12 @@ struct UnlockCelebration: View {
             }
         }
         .onAppear { beat() }
+        .onChange(of: unlocked.map(\.slug)) { _, _ in
+            index = 0
+            beat()
+        }
+        .accessibilityAddTraits(.isModal)
+        .accessibilityAction(.escape) { advance() }
         .transition(.opacity)
     }
 
@@ -89,6 +95,12 @@ struct UnlockCelebration: View {
             if achievement.points > 0 {
                 Label("+\(achievement.points) Insight", systemImage: "sparkles")
                     .font(LoreType.display(size: 16, weight: .semibold))
+                    .foregroundStyle(LoreColor.amber)
+            }
+
+            ShareLink(item: shareText(for: achievement)) {
+                Label("Share", systemImage: "square.and.arrow.up")
+                    .font(LoreType.button)
                     .foregroundStyle(LoreColor.amber)
             }
 
@@ -164,6 +176,10 @@ struct UnlockCelebration: View {
             target: target,
             unlockedAt: "now"
         )
+    }
+
+    private func shareText(for achievement: Achievement) -> String {
+        "I earned the \(achievement.name) achievement in Lore and collected +\(achievement.points) Insight."
     }
 }
 

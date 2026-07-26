@@ -17,6 +17,7 @@ final class NearMeLocationProvider: NSObject, CLLocationManagerDelegate {
 
     private(set) var location: CLLocation?
     private(set) var authorizationStatus: CLAuthorizationStatus = .notDetermined
+    private(set) var lastError: String?
 
     var isAuthorized: Bool {
         authorizationStatus == .authorizedWhenInUse
@@ -45,6 +46,7 @@ final class NearMeLocationProvider: NSObject, CLLocationManagerDelegate {
     /// Request permission (if needed) and begin updates. Safe to call on the
     /// shelf's `.onAppear`; idempotent.
     func start(requestPermission: Bool = true) {
+        lastError = nil
         authorizationStatus = manager.authorizationStatus
         if requestPermission && authorizationStatus == .notDetermined {
             manager.requestWhenInUseAuthorization()
@@ -63,6 +65,7 @@ final class NearMeLocationProvider: NSObject, CLLocationManagerDelegate {
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         authorizationStatus = manager.authorizationStatus
         if isAuthorized {
+            lastError = nil
             manager.startUpdatingLocation()
         }
     }
@@ -82,6 +85,7 @@ final class NearMeLocationProvider: NSObject, CLLocationManagerDelegate {
               latest.horizontalAccuracy <= 65,
               abs(latest.timestamp.timeIntervalSinceNow) <= 30
         else { return }
+        lastError = nil
         location = latest
     }
 
@@ -90,5 +94,11 @@ final class NearMeLocationProvider: NSObject, CLLocationManagerDelegate {
         didFailWithError error: Error
     ) {
         // Keep the last known fix; the shelf degrades to whatever it had.
+        guard location == nil else { return }
+        if let locationError = error as? CLError, locationError.code == .denied {
+            authorizationStatus = manager.authorizationStatus
+        } else {
+            lastError = "We couldn’t get a reliable location fix. You can retry or keep exploring the city map."
+        }
     }
 }

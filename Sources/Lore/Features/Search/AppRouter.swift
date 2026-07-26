@@ -96,18 +96,43 @@ final class AppRouter {
     /// another city when they tap a cross-city hit), records `lastRoute`, then
     /// hands off to the host's `onRoute`.
     func route(_ route: LoreRoute) {
+        let resolvedRoute: LoreRoute
         switch route {
         case .city(let slug):
+            guard let slug = Self.normalizedSlug(slug) else { return }
             selectedCity = slug
             userDidChooseCity = true
-        case .place(_, let city),
-             .story(_, let city),
-             .culture(_, let city),
-             .tour(_, let city):
-            if let city, !city.isEmpty { selectedCity = city }
+            resolvedRoute = .city(slug: slug)
+        case .place(let id, let city):
+            if let city = city.flatMap(Self.normalizedSlug) {
+                selectedCity = city
+                // A cross-city search result or deep link is an explicit choice,
+                // just like tapping the city switcher. Never let a later GPS fix
+                // silently pull the traveler back to another city.
+                userDidChooseCity = true
+            }
+            resolvedRoute = .place(id: id, city: city.flatMap(Self.normalizedSlug))
+        case .story(let id, let city):
+            if let city = city.flatMap(Self.normalizedSlug) {
+                selectedCity = city
+                userDidChooseCity = true
+            }
+            resolvedRoute = .story(id: id, city: city.flatMap(Self.normalizedSlug))
+        case .culture(let id, let city):
+            if let city = city.flatMap(Self.normalizedSlug) {
+                selectedCity = city
+                userDidChooseCity = true
+            }
+            resolvedRoute = .culture(id: id, city: city.flatMap(Self.normalizedSlug))
+        case .tour(let slug, let city):
+            if let city = city.flatMap(Self.normalizedSlug) {
+                selectedCity = city
+                userDidChooseCity = true
+            }
+            resolvedRoute = .tour(slug: slug, city: city.flatMap(Self.normalizedSlug))
         }
-        lastRoute = route
-        onRoute?(route)
+        lastRoute = resolvedRoute
+        onRoute?(resolvedRoute)
     }
 
     /// Convenience: route straight from a search hit.
@@ -125,7 +150,9 @@ final class AppRouter {
     /// so it silently re-scopes the map without a jump; a later explicit choice
     /// still wins because this checks `userDidChooseCity`.
     func autoSelectCity(_ slug: String) {
-        guard !userDidChooseCity, slug != selectedCity else { return }
+        guard let slug = Self.normalizedSlug(slug),
+              !userDidChooseCity,
+              slug != selectedCity else { return }
         selectedCity = slug
     }
 
@@ -141,18 +168,31 @@ final class AppRouter {
         guard url.scheme == "lore" else { return false }
         // `host` is the verb ("place"/"tour"/"map"); the first path component is
         // the identifier.
-        let verb = url.host
-        let ident = url.pathComponents.first(where: { $0 != "/" })
+        let verb = url.host?.lowercased()
+        let components = url.pathComponents.filter { $0 != "/" && !$0.isEmpty }
+        let ident = components.count == 1
+            ? components[0].removingPercentEncoding?.trimmingCharacters(in: .whitespacesAndNewlines)
+            : nil
+        let queryCity = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+            .queryItems?
+            .first(where: { $0.name.lowercased() == "city" })?
+            .value
+            .flatMap(Self.normalizedSlug)
         switch verb {
         case "place":
-            guard let ident else { return false }
-            route(.place(id: ident, city: nil))
+            guard let ident, !ident.isEmpty else { return false }
+            // Current widget builds predate city-bearing URLs. Their place-to-
+            // city context is recorded when the snapshot is published, while
+            // newer callers can provide `?city=paris` directly.
+            let city = queryCity ?? DeepLinkContextStore.city(forPlaceID: ident)
+            route(.place(id: ident, city: city))
             return true
         case "tour":
-            guard let ident else { return false }
-            route(.tour(slug: ident, city: nil))
+            guard let ident, !ident.isEmpty else { return false }
+            route(.tour(slug: ident, city: queryCity))
             return true
         case "map":
+            guard components.isEmpty else { return false }
             // Nothing to resolve, the host's onRoute for a city no-op keeps the
             // map foremost. Emit a city route to the current city to surface it.
             route(.city(slug: selectedCity))
@@ -160,5 +200,46 @@ final class AppRouter {
         default:
             return false
         }
+    }
+
+    private static func normalizedSlug(_ raw: String) -> String? {
+        let slug = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !slug.isEmpty,
+              slug.unicodeScalars.allSatisfy({
+                  CharacterSet.alphanumerics.contains($0) || $0 == "-"
+              }) else { return nil }
+        return slug
+    }
+}
+
+/// Small device-local bridge for city-less widget links. The widget snapshot
+/// already knows its city; retaining that context means `lore://place/{id}` can
+/// switch to the right city before the root resolves the place.
+enum DeepLinkContextStore {
+    private static let placeCitiesKey = "lore.deep-links.place-cities.v1"
+
+    static func remember(
+        city: String,
+        forPlaceIDs placeIDs: [String],
+        defaults: UserDefaults = .standard
+    ) {
+        let city = city.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !city.isEmpty else { return }
+        let entries = Dictionary(
+            uniqueKeysWithValues: placeIDs
+                .filter { !$0.isEmpty }
+                .map { ($0, city) }
+        )
+        defaults.set(entries, forKey: placeCitiesKey)
+    }
+
+    static func city(
+        forPlaceID placeID: String,
+        defaults: UserDefaults = .standard
+    ) -> String? {
+        guard !placeID.isEmpty,
+              let entries = defaults.dictionary(forKey: placeCitiesKey) as? [String: String]
+        else { return nil }
+        return entries[placeID]
     }
 }

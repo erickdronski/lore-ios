@@ -20,7 +20,38 @@ import Observation
 final class TourWalkGuide: NSObject, CLLocationManagerDelegate {
     /// Arrival radius in meters. Urban GPS is honestly ±10–30 m; 35 m means
     /// "standing in front of it" without demanding a perfect fix.
-    static let arrivalRadius: CLLocationDistance = 35
+    nonisolated static let arrivalRadius: CLLocationDistance = 35
+    /// A single urban-GPS jump must never advance a tour. Two consecutive,
+    /// reasonably accurate fixes inside the arrival ring earn the arrival.
+    nonisolated static let arrivalConfirmationFixes = 2
+    nonisolated static let maximumArrivalAccuracy: CLLocationAccuracy = 35
+
+    /// Pure arrival filter kept separate from Core Location so GPS-drift
+    /// behavior is deterministic and regression-testable.
+    struct ArrivalGate {
+        private(set) var qualifyingFixes = 0
+
+        mutating func consider(
+            distance: CLLocationDistance,
+            horizontalAccuracy: CLLocationAccuracy
+        ) -> Bool {
+            guard distance.isFinite,
+                  horizontalAccuracy.isFinite,
+                  horizontalAccuracy >= 0,
+                  horizontalAccuracy <= TourWalkGuide.maximumArrivalAccuracy,
+                  distance <= TourWalkGuide.arrivalRadius
+            else {
+                qualifyingFixes = 0
+                return false
+            }
+            qualifyingFixes += 1
+            return qualifyingFixes >= TourWalkGuide.arrivalConfirmationFixes
+        }
+
+        mutating func reset() {
+            qualifyingFixes = 0
+        }
+    }
 
     private let manager = CLLocationManager()
 
@@ -38,6 +69,8 @@ final class TourWalkGuide: NSObject, CLLocationManagerDelegate {
     /// Re-armed when the target changes; blocks duplicate arrivals per target.
     private var hasArrivedAtTarget = false
     private var lastGoodFix: CLLocation?
+    private var arrivalGate = ArrivalGate()
+    private var staleFixTask: Task<Void, Never>?
 
     var isAuthorized: Bool {
         authorizationStatus == .authorizedWhenInUse
@@ -84,6 +117,9 @@ final class TourWalkGuide: NSObject, CLLocationManagerDelegate {
         targetCoordinate = nil
         hasArrivedAtTarget = false
         lastGoodFix = nil
+        arrivalGate.reset()
+        staleFixTask?.cancel()
+        staleFixTask = nil
     }
 
     /// Aim the guide at a stop. Passing a new index re-arms arrival; passing
@@ -92,6 +128,7 @@ final class TourWalkGuide: NSObject, CLLocationManagerDelegate {
     func setTarget(index: Int, coordinate: CLLocationCoordinate2D?) {
         if targetIndex != index {
             hasArrivedAtTarget = false
+            arrivalGate.reset()
         }
         targetIndex = index
         targetCoordinate = coordinate
@@ -110,6 +147,9 @@ final class TourWalkGuide: NSObject, CLLocationManagerDelegate {
                 self.isGuiding = false
                 self.manager.stopUpdatingLocation()
                 self.distanceToTarget = nil
+                self.arrivalGate.reset()
+                self.staleFixTask?.cancel()
+                self.staleFixTask = nil
             }
         }
     }
@@ -142,23 +182,47 @@ final class TourWalkGuide: NSObject, CLLocationManagerDelegate {
         else { return }
         lastGoodFix = fix
         recomputeDistance()
+        scheduleFixExpiry(for: fix)
 
         guard isGuiding,
               !hasArrivedAtTarget,
               let targetIndex,
-              let distance = distanceToTarget,
-              distance <= Self.arrivalRadius
+              let distance = distanceToTarget
         else { return }
+        guard arrivalGate.consider(
+            distance: distance,
+            horizontalAccuracy: fix.horizontalAccuracy
+        ) else { return }
         hasArrivedAtTarget = true
         onArrive?(targetIndex)
     }
 
     private func recomputeDistance() {
-        guard let fix = lastGoodFix, let coordinate = targetCoordinate else {
+        guard let fix = lastGoodFix,
+              abs(fix.timestamp.timeIntervalSinceNow) <= 30,
+              let coordinate = targetCoordinate
+        else {
             distanceToTarget = nil
             return
         }
         let target = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
         distanceToTarget = fix.distance(from: target)
+    }
+
+    /// Core Location may stop delivering while the traveler stands still. Clear
+    /// the distance when its supporting fix expires so the UI and Live Activity
+    /// never preserve a stale number indefinitely.
+    private func scheduleFixExpiry(for fix: CLLocation) {
+        staleFixTask?.cancel()
+        let timestamp = fix.timestamp
+        staleFixTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(31))
+            guard let self, !Task.isCancelled,
+                  self.lastGoodFix?.timestamp == timestamp
+            else { return }
+            self.lastGoodFix = nil
+            self.distanceToTarget = nil
+            self.arrivalGate.reset()
+        }
     }
 }

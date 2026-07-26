@@ -14,7 +14,7 @@ struct LoreShareCard: View {
     let place: Place
     var format: Format = .story
 
-    enum Format {
+    enum Format: Hashable, Sendable {
         case story   // 1080x1920 at scale 3 (logical 360x640)
         case square  // 1080x1080 at scale 3 (logical 360x360)
 
@@ -23,6 +23,13 @@ struct LoreShareCard: View {
             switch self {
             case .story: return CGSize(width: 360, height: 640)
             case .square: return CGSize(width: 360, height: 360)
+            }
+        }
+
+        var accessibilityName: String {
+            switch self {
+            case .story: return "story"
+            case .square: return "square post"
             }
         }
     }
@@ -45,6 +52,8 @@ struct LoreShareCard: View {
                         .font(LoreType.display(size: format == .story ? 20 : 17, weight: .medium).italic())
                         .foregroundStyle(LoreColor.bone.opacity(0.86))
                         .lineSpacing(3)
+                        .lineLimit(format == .story ? 5 : 3)
+                        .minimumScaleFactor(0.78)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.top, 14)
                 }
@@ -96,6 +105,8 @@ struct LoreShareCard: View {
                     .font(.system(size: 11, weight: .semibold))
                     .tracking(2)
                     .foregroundStyle(LoreColor.bone.opacity(0.55))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
             }
             Spacer()
             medallion
@@ -124,10 +135,12 @@ struct LoreShareCard: View {
                 .lineLimit(4)
                 .minimumScaleFactor(0.6)
                 .fixedSize(horizontal: false, vertical: true)
-            Text(place.kind.capitalized)
+            Text(place.kind.replacingOccurrences(of: "_", with: " ").capitalized)
                 .font(.system(size: 12, weight: .semibold))
                 .tracking(1.5)
                 .foregroundStyle(LoreColor.amber)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
         }
     }
 

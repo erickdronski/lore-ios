@@ -154,13 +154,7 @@ final class GeoARSessionController: NSObject, VPSProvider {
 
         // Give-up timer: if we never reach localized, drop honestly to coarse
         // rather than leave the user staring at "Locking on".
-        localizeTimeout?.cancel()
-        localizeTimeout = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(15))
-            guard let self, !Task.isCancelled else { return }
-            if case .locked = self.state { return }
-            if self.state != .idle { self.state = .failed(.trackingLost) }
-        }
+        scheduleLocalizationTimeout()
     }
 
     func stop() {
@@ -181,6 +175,16 @@ final class GeoARSessionController: NSObject, VPSProvider {
     nonisolated func setViewport(_ size: CGSize) {
         frameQueue.async { [projector] in
             projector.viewportSize = size
+        }
+    }
+
+    private func scheduleLocalizationTimeout() {
+        localizeTimeout?.cancel()
+        localizeTimeout = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(15))
+            guard let self, !Task.isCancelled else { return }
+            if case .locked = self.state { return }
+            if self.state != .idle { self.state = .failed(.trackingLost) }
         }
     }
 }
@@ -254,6 +258,7 @@ extension GeoARSessionController: ARSessionDelegate {
             guard self.state != .idle else { return }
             self.session.run(ARGeoTrackingConfiguration(), options: [.resetTracking])
             self.state = .initializing
+            self.scheduleLocalizationTimeout()
         }
     }
 }

@@ -68,11 +68,18 @@ struct CitySwitcherView: View {
         case .loading:
             loadingSkeleton
         case .failed(let message):
-            ContentUnavailableView(
-                "Can't load cities",
-                systemImage: "building.2.crop.circle.badge.questionmark",
-                description: Text(message)
-            )
+            VStack(spacing: 14) {
+                ContentUnavailableView(
+                    "Can't load cities",
+                    systemImage: "building.2.crop.circle.badge.questionmark",
+                    description: Text(message)
+                )
+                Button("Try again") {
+                    Task { await model.retryLoad() }
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(LoreColor.ink)
+            }
         case .empty:
             ContentUnavailableView(
                 "No cities yet",
@@ -149,6 +156,12 @@ struct CitySwitcherView: View {
                                         planningSlugs.contains(city.slug)
                                             ? "Remove \(city.name) from trip planning"
                                             : "Pin \(city.name) for trip planning"
+                                    )
+                                    .accessibilityValue(
+                                        planningSlugs.contains(city.slug) ? "Saved" : "Not saved"
+                                    )
+                                    .accessibilityAddTraits(
+                                        planningSlugs.contains(city.slug) ? .isSelected : []
                                     )
                                 }
                                 .listRowBackground(LoreColor.bone50)
@@ -530,6 +543,12 @@ final class CitySwitcherModel {
         } catch {
             state = .failed("Check your connection and try again.")
         }
+    }
+
+    func retryLoad() async {
+        loaded = false
+        state = .loading
+        await load()
     }
 
     /// The sections to render after combining search, region, and private trip

@@ -1,6 +1,7 @@
 import CoreLocation
 import SwiftUI
 import UIKit
+import UserNotifications
 
 /// The first-run flow. A single full-screen cover, presented by the integrator
 /// on first launch (gate: `OnboardingStore.shouldPresent`). Four moments plus a
@@ -15,6 +16,8 @@ import UIKit
 /// navigation of its own; `onFinished` fires exactly once when the flow is done
 /// (whether completed or skipped) so the integrator can dismiss it.
 struct OnboardingView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
     @State var store: OnboardingStore
     /// The injected prefs writer (real one is `OnboardingPrefsWriter`).
     let prefsWriter: PrefsWriting
@@ -26,7 +29,7 @@ struct OnboardingView: View {
             OnboardingBackground()
 
             content
-                .transition(
+                .transition(reduceMotion ? .opacity :
                     .asymmetric(
                         insertion: .move(edge: .trailing).combined(with: .opacity),
                         removal: .move(edge: .leading).combined(with: .opacity)
@@ -35,17 +38,30 @@ struct OnboardingView: View {
                 .id(store.step)
         }
         .preferredColorScheme(.dark) // the sky is Ink; keep system chrome dark
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active else { return }
+            store.refreshLocationStatus()
+        }
     }
 
     @ViewBuilder
     private var content: some View {
         switch store.step {
         case .arrival:
-            ArrivalStep(store: store)
+            ArrivalStep(store: store, onSkip: skip)
         case .interests:
-            InterestsStep(store: store)
+            InterestsStep(store: store, onSkip: skip)
         case .location:
-            LocationStep(store: store)
+            LocationStep(store: store, onSkip: skip)
+        case .notifications:
+            if Config.pushNotificationsEnabled {
+                NotificationsStep(store: store, onSkip: skip)
+            } else {
+                // Defensive fallback for an already-live in-memory store. Draft
+                // restoration and navigation normalize this before rendering,
+                // but unavailable product promises must never flash on screen.
+                FinishStep(store: store, onDone: finish)
+            }
         case .finish:
             FinishStep(store: store, onDone: finish)
         }
@@ -54,12 +70,17 @@ struct OnboardingView: View {
     private func finish() {
         store.finish(onComplete: onFinished, prefsWriter: prefsWriter)
     }
+
+    private func skip() {
+        store.skip(onComplete: onFinished, prefsWriter: prefsWriter)
+    }
 }
 
 // MARK: - Step 1: Arrival (ELEVATION §5.1)
 
 private struct ArrivalStep: View {
     let store: OnboardingStore
+    let onSkip: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var appeared = false
 
@@ -68,7 +89,7 @@ private struct ArrivalStep: View {
             progress: store.progress,
             primaryTitle: "Begin",
             onBack: nil,
-            onSkip: { store.jumpToFinish() }, // "Skip" leaves onboarding with defaults
+            onSkip: onSkip,
             onPrimary: { store.advance() }
         ) {
             VStack(alignment: .leading, spacing: 20) {
@@ -111,10 +132,17 @@ private struct ArrivalStep: View {
 // MARK: - Step 2: Interests + persona (13 §4.1)
 
 private struct InterestsStep: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Bindable var store: OnboardingStore
+    let onSkip: () -> Void
 
     private var interests: [InterestMap.InterestMeta] {
         InterestMap.allInterests.map { InterestMap.meta(for: $0) }
+    }
+
+    private var personaColumns: [GridItem] {
+        let count = dynamicTypeSize.isAccessibilitySize ? 1 : 3
+        return Array(repeating: GridItem(.flexible(), spacing: 8), count: count)
     }
 
     var body: some View {
@@ -123,7 +151,7 @@ private struct InterestsStep: View {
             primaryTitle: "Continue",
             primaryEnabled: store.canAdvanceInterests,
             onBack: { store.back() },
-            onSkip: { store.jumpToFinish() },
+            onSkip: onSkip,
             onPrimary: { store.advance() }
         ) {
             VStack(alignment: .leading, spacing: 12) {
@@ -156,7 +184,7 @@ private struct InterestsStep: View {
                     .padding(.top, 6)
 
                 LazyVGrid(
-                    columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)],
+                    columns: personaColumns,
                     spacing: 8
                 ) {
                     ForEach(OnboardingContent.presets) { preset in
@@ -195,6 +223,7 @@ private struct InterestsStep: View {
 
 private struct LocationStep: View {
     let store: OnboardingStore
+    let onSkip: () -> Void
 
     private var isAuthorized: Bool {
         store.locationStatus == .authorizedWhenInUse || store.locationStatus == .authorizedAlways
@@ -206,7 +235,7 @@ private struct LocationStep: View {
             primaryTitle: "Continue",
             centered: true,
             onBack: { store.back() },
-            onSkip: { store.jumpToFinish() },
+            onSkip: onSkip,
             onPrimary: { store.advance() }
         ) {
             VStack(spacing: 16) {
@@ -225,12 +254,14 @@ private struct LocationStep: View {
                     title: "Use my location",
                     subtitle: "Center the map on you and aim the scanner. Only while the app is open.",
                     isOn: isAuthorized,
-                    isBusy: store.isRequestingPermission
-                ) { wantsOn in
-                    guard wantsOn else { return }
+                    isBusy: store.isRequestingPermission,
+                    actionTitle: locationActionTitle,
+                    actionEnabled: locationActionEnabled,
+                    accessibilityHint: locationActionHint
+                ) {
                     switch store.locationStatus {
                     case .notDetermined: store.requestLocation()
-                    case .denied, .restricted: OnboardingSettings.open()
+                    case .denied: OnboardingSettings.open()
                     default: break
                     }
                 }
@@ -250,6 +281,29 @@ private struct LocationStep: View {
         }
     }
 
+    private var locationActionTitle: String {
+        switch store.locationStatus {
+        case .authorizedWhenInUse, .authorizedAlways: return "Enabled"
+        case .denied: return "Settings"
+        case .restricted: return "Unavailable"
+        case .notDetermined: return "Enable"
+        @unknown default: return "Enable"
+        }
+    }
+
+    private var locationActionEnabled: Bool {
+        store.locationStatus == .notDetermined || store.locationStatus == .denied
+    }
+
+    private var locationActionHint: String {
+        switch store.locationStatus {
+        case .denied: return "Opens Lore's system settings so location can be enabled."
+        case .restricted: return "Location access is restricted on this device."
+        case .authorizedWhenInUse, .authorizedAlways: return "Location is enabled while using Lore."
+        default: return "Shows the system location permission request."
+        }
+    }
+
     private var footnoteColor: Color {
         switch store.locationStatus {
         case .authorizedWhenInUse, .authorizedAlways: return LoreColor.successDark
@@ -259,7 +313,94 @@ private struct LocationStep: View {
     }
 }
 
-// MARK: - Step 4: Finish
+// MARK: - Optional notifications
+
+private struct NotificationsStep: View {
+    let store: OnboardingStore
+    let onSkip: () -> Void
+
+    private var isAuthorized: Bool {
+        [.authorized, .provisional, .ephemeral].contains(store.notificationStatus)
+    }
+
+    var body: some View {
+        OnboardingScaffold(
+            progress: store.progress,
+            primaryTitle: "Continue",
+            centered: true,
+            onBack: { store.back() },
+            onSkip: onSkip,
+            onPrimary: { store.advance() }
+        ) {
+            VStack(spacing: 16) {
+                PermissionCard(
+                    symbol: "bell.badge.fill",
+                    title: OnboardingContent.notificationsTitle,
+                    message: OnboardingContent.notificationsBody,
+                    footnote: notificationFootnote,
+                    footnoteColor: footnoteColor
+                )
+
+                PermissionToggleRow(
+                    symbol: "bell.badge.fill",
+                    title: "Story nudges",
+                    subtitle: "A rare tap when you wander near something great. Off unless you turn it on.",
+                    isOn: isAuthorized,
+                    isBusy: store.isRequestingPermission,
+                    actionTitle: notificationActionTitle,
+                    actionEnabled: notificationActionEnabled,
+                    accessibilityHint: notificationActionHint
+                ) {
+                    switch store.notificationStatus {
+                    case .notDetermined: Task { await store.requestNotifications() }
+                    case .denied: OnboardingSettings.open()
+                    default: break
+                    }
+                }
+            }
+            .animation(LoreMotion.tap, value: store.notificationStatus)
+            .task { await store.refreshNotificationStatus() }
+        }
+    }
+
+    private var notificationFootnote: String? {
+        switch store.notificationStatus {
+        case .authorized, .provisional, .ephemeral:
+            return "You'll get the occasional great-story nudge."
+        case .denied:
+            return "All good, Lore stays quiet. Turn nudges on anytime in Settings."
+        default:
+            return nil
+        }
+    }
+
+    private var notificationActionTitle: String {
+        switch store.notificationStatus {
+        case .authorized, .provisional, .ephemeral: return "Enabled"
+        case .denied: return "Settings"
+        case .notDetermined: return "Enable"
+        @unknown default: return "Unavailable"
+        }
+    }
+
+    private var notificationActionEnabled: Bool {
+        store.notificationStatus == .notDetermined || store.notificationStatus == .denied
+    }
+
+    private var notificationActionHint: String {
+        switch store.notificationStatus {
+        case .denied: return "Opens Lore's system settings so notifications can be enabled."
+        case .authorized, .provisional, .ephemeral: return "Story notifications are enabled."
+        default: return "Shows the system notification permission request."
+        }
+    }
+
+    private var footnoteColor: Color {
+        isAuthorized ? LoreColor.successDark : LoreColor.bone.opacity(0.6)
+    }
+}
+
+// MARK: - Finish
 
 private struct FinishStep: View {
     let store: OnboardingStore
@@ -293,14 +434,6 @@ private struct FinishStep: View {
 
                 // A quiet recap of what the flow captured.
                 selectionRecap
-
-                if let error = store.finishError {
-                    Text("Saved on this device. We'll sync your prefs when the connection's back. (\(error))")
-                        .font(LoreType.caption)
-                        .foregroundStyle(LoreColor.bone.opacity(0.55))
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.top, 4)
-                }
 
                 // Reading never needs an account, but an account syncs your
                 // Passport across devices and unlocks Lore+. Discoverable here.
@@ -348,7 +481,8 @@ private struct FinishStep: View {
                         .font(LoreType.caption)
                         .foregroundStyle(LoreColor.bone.opacity(0.85))
                         .padding(.horizontal, 10)
-                        .frame(height: 28)
+                        .padding(.vertical, 6)
+                        .frame(minHeight: 28)
                         .background(Capsule().fill(LoreColor.bone.opacity(0.08)))
                 }
             }

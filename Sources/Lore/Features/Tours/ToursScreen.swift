@@ -51,9 +51,15 @@ struct ToursScreen: View {
                 case .loading:
                     ForEach(0..<4, id: \.self) { _ in SkeletonRow() }
                 case .failed(let message):
-                    Text(message)
-                        .font(LoreType.caption)
-                        .foregroundStyle(LoreColor.ink600)
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(message)
+                            .font(LoreType.caption)
+                            .foregroundStyle(LoreColor.ink600)
+                        Button("Try loading tours again") {
+                            Task { await model.load(city: router.selectedCity, force: true) }
+                        }
+                        .font(LoreType.button)
+                    }
                 case .empty:
                     Text("Curated walks are landing city by city. Your 1-hour walk above already works wherever we have stories.")
                         .font(LoreType.caption)
@@ -134,14 +140,18 @@ struct ToursScreen: View {
                 Task {
                     do {
                         if let tour = try await model.oneHourTour(city: city, durationMin: minutes) {
-                            generatedTour = tour
+                            if router.selectedCity == city { generatedTour = tour }
                         } else {
-                            oneHourError = "There aren't enough stops in \(cityLabel(city)) yet for a full walk. Try another city."
+                            if router.selectedCity == city {
+                                oneHourError = "There aren't enough stops in \(cityLabel(city)) yet for a full walk. Try another city."
+                            }
                         }
                     } catch {
-                        oneHourError = "Couldn't build your walk. Check your connection and try again."
+                        if router.selectedCity == city {
+                            oneHourError = "Couldn't build your walk. Check your connection and try again."
+                        }
                     }
-                    generatingCity = nil
+                    if generatingCity == city { generatingCity = nil }
                 }
             }
 
@@ -490,20 +500,27 @@ final class ToursModel {
     /// The city the current `toursByCity` was loaded for, so a re-scope reloads
     /// and the same city doesn't refetch.
     private var loadedCity: String?
+    private var loadRequestID = UUID()
 
     var cities: [String] { toursByCity.keys.sorted() }
 
     /// Load the curated tours for `city`. Reloads when the city changes;
     /// re-selecting the same city is a no-op.
-    func load(city: String) async {
-        guard city != loadedCity else { return }
+    func load(city: String, force: Bool = false) async {
+        guard force || city != loadedCity else { return }
+        let requestID = UUID()
+        loadRequestID = requestID
         state = .loading
         do {
             let tours = try await LoreAPI.shared.tours(city: city)
+            guard loadRequestID == requestID else { return }
             toursByCity = Dictionary(grouping: tours, by: \.city)
             loadedCity = city
             state = tours.isEmpty ? .empty : .loaded
         } catch {
+            guard loadRequestID == requestID else { return }
+            loadedCity = city
+            toursByCity = [:]
             state = .failed("Check your connection and try again.")
         }
     }

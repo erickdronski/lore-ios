@@ -34,7 +34,9 @@ struct Entitlement: Codable, Identifiable, Hashable {
         self.status = status
     }
 
-    /// Entitlement lifecycle states. `active` and `trialing` unlock Lore+.
+    /// Entitlement lifecycle states. Billing grace remains entitled while
+    /// Apple retries payment; expiration and cancellation fail closed unless
+    /// StoreKit still reports a current transaction for the paid-through term.
     enum Status: String, Codable, Hashable {
         case active
         case trialing
@@ -51,9 +53,10 @@ struct Entitlement: Codable, Identifiable, Hashable {
         }
     }
 
-    /// True when this grant currently confers access (the only two states the
-    /// backend contract says open Lore+).
+    /// True when this grant currently confers access. A billing grace period is
+    /// paid access under Apple's subscription lifecycle and must not strand a
+    /// traveler while the App Store retries payment.
     var isActive: Bool {
-        status == .active || status == .trialing
+        status == .active || status == .trialing || status == .gracePeriod
     }
 }

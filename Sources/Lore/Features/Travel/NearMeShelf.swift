@@ -1,5 +1,6 @@
 import CoreLocation
 import SwiftUI
+import UIKit
 
 /// "Around you right now", the near-me shelf (task requirement 4, and the
 /// first-night arrival flow's §5.4 answer to *"what am I surrounded by?"*). A
@@ -34,6 +35,8 @@ struct NearMeShelf: View {
     var theme: CityTheme? = nil
 
     @State private var provider = NearMeLocationProvider()
+    @Environment(MapFilterStore.self) private var filters
+    @Environment(\.openURL) private var openURL
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Flips once per shelf population so the cards cascade in (LUXURY-MOTION §6).
     @State private var appeared = false
@@ -169,23 +172,39 @@ struct NearMeShelf: View {
     // MARK: Degraded states
 
     private var locationPrompt: some View {
-        HStack(spacing: 12) {
-            Image(systemName: provider.isDenied ? "location.slash.fill" : "location.magnifyingglass")
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(LoreColor.amber)
-                .frame(width: 38, height: 38)
-                .background(Circle().fill(LoreColor.ink900))
-            VStack(alignment: .leading, spacing: 2) {
-                Text(provider.isDenied ? "Location is resting" : "Finding your block")
-                    .font(LoreType.button)
-                    .foregroundStyle(LoreColor.bone)
-                Text(provider.isDenied
-                     ? "Turn on location to reveal nearby field notes."
-                     : "Measuring the closest stories and landmarks…")
-                    .font(LoreType.caption)
-                    .foregroundStyle(LoreColor.bone.opacity(0.7))
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 12) {
+                Image(systemName: provider.isDenied ? "location.slash.fill" : "location.magnifyingglass")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(LoreColor.amber)
+                    .frame(width: 38, height: 38)
+                    .background(Circle().fill(LoreColor.ink900))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(locationPromptTitle)
+                        .font(LoreType.button)
+                        .foregroundStyle(LoreColor.bone)
+                    Text(locationPromptMessage)
+                        .font(LoreType.caption)
+                        .foregroundStyle(LoreColor.bone.opacity(0.7))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer()
             }
-            Spacer()
+
+            if provider.isDenied {
+                Button("Open Location Settings") {
+                    guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+                    openURL(url)
+                }
+                .font(LoreType.button)
+                .foregroundStyle(LoreColor.amber)
+            } else if provider.lastError != nil {
+                Button("Try location again") {
+                    provider.start(requestPermission: true)
+                }
+                .font(LoreType.button)
+                .foregroundStyle(LoreColor.amber)
+            }
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -201,14 +220,45 @@ struct NearMeShelf: View {
                 }
         )
         .padding(.horizontal, 16)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
     }
 
     private var emptyState: some View {
-        Text("No places nearby yet. Pan the map to explore.")
-            .font(LoreType.caption)
-            .foregroundStyle(LoreColor.bone.opacity(0.7))
-            .padding(.horizontal, 16)
+        HStack(spacing: 10) {
+            Image(systemName: filters.hasActiveFilter ? "line.3.horizontal.decrease.circle" : "map")
+                .foregroundStyle(LoreColor.amber)
+            Text(emptyStateMessage)
+                .font(LoreType.caption)
+                .foregroundStyle(LoreColor.bone.opacity(0.76))
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 4)
+            if filters.hasActiveFilter {
+                Button("Clear filters") { filters.clear() }
+                    .font(LoreType.button)
+                    .foregroundStyle(LoreColor.amber)
+            }
+        }
+        .padding(.horizontal, 16)
+        .frame(minHeight: 44)
+        .accessibilityElement(children: .contain)
+    }
+
+    private var locationPromptTitle: String {
+        if provider.isDenied { return "Location is resting" }
+        if provider.lastError != nil { return "Location unavailable" }
+        return "Finding your block"
+    }
+
+    private var locationPromptMessage: String {
+        if provider.isDenied { return "Turn on location to reveal nearby field notes." }
+        if let error = provider.lastError { return error }
+        return "Measuring the closest stories and landmarks…"
+    }
+
+    private var emptyStateMessage: String {
+        if filters.hasActiveFilter { return "No nearby places match this view." }
+        if places.isEmpty { return "No field notes are published here yet." }
+        return "You’re outside this city’s nearby range. Explore its map or switch cities."
     }
 }
 

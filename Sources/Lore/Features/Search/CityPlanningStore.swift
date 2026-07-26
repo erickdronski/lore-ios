@@ -9,7 +9,21 @@ enum CityPlanningStore {
         userID: String?,
         defaults: UserDefaults = .standard
     ) -> Set<String> {
-        Set(defaults.stringArray(forKey: key(userID: userID)) ?? [])
+        var saved = normalized(defaults.stringArray(forKey: key(userID: userID)) ?? [])
+
+        // Planning is useful before account creation. Claim those private guest
+        // plans on the first signed-in read rather than making a new member pin
+        // the same trip twice, then clear the unowned guest bucket.
+        if userID != nil {
+            let guestKey = key(userID: nil)
+            let guest = normalized(defaults.stringArray(forKey: guestKey) ?? [])
+            if !guest.isEmpty {
+                saved.formUnion(guest)
+                defaults.set(saved.sorted(), forKey: key(userID: userID))
+                defaults.removeObject(forKey: guestKey)
+            }
+        }
+        return saved
     }
 
     @discardableResult
@@ -19,6 +33,7 @@ enum CityPlanningStore {
         defaults: UserDefaults = .standard
     ) -> Set<String> {
         var saved = cities(userID: userID, defaults: defaults)
+        guard let slug = normalized([slug]).first else { return saved }
         if saved.contains(slug) {
             saved.remove(slug)
         } else {
@@ -30,5 +45,12 @@ enum CityPlanningStore {
 
     private static func key(userID: String?) -> String {
         "\(prefix).\(userID ?? "guest")"
+    }
+
+    private static func normalized(_ slugs: [String]) -> Set<String> {
+        Set(slugs.compactMap { raw in
+            let slug = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            return slug.isEmpty ? nil : slug
+        })
     }
 }

@@ -39,6 +39,11 @@ struct CultureView: View {
                         .foregroundStyle(LoreColor.bone)
                 } description: {
                     Text(message).foregroundStyle(LoreColor.ink600)
+                } actions: {
+                    Button("Try again") {
+                        Task { await model.load(city: city, force: true) }
+                    }
+                    .tint(LoreColor.amber)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             case .empty:
@@ -52,7 +57,7 @@ struct CultureView: View {
         // horizontal seam above "Meet {City}."
         .toolbar(.hidden, for: .navigationBar)
         .preferredColorScheme(.dark)
-        .task { await model.load(city: city) }
+        .task(id: city) { await model.load(city: city) }
         .onAppear {
             if reduceMotion {
                 glowRisen = true
@@ -125,6 +130,12 @@ struct CultureView: View {
             // make static indices awkward, so we cascade the ones that exist.
             StaggeredReveal(spacing: 32) {
                 header.staggerChild(index: 0)
+
+                if let warning = model.loadWarning {
+                    partialDataNotice(warning)
+                        .padding(.horizontal, 16)
+                        .staggerChild(index: 1)
+                }
 
                 if !model.quotes.isEmpty {
                     CultureQuoteCard(quotes: model.quotes)
@@ -199,6 +210,8 @@ struct CultureView: View {
                 Color.clear.frame(height: 24)
             }
             .padding(.top, 8)
+            .frame(maxWidth: 980)
+            .frame(maxWidth: .infinity)
             .background(alignment: .top) {
                 // The city's signature wash, scrolling away with the header.
                 CityThemeWash(theme: model.theme)
@@ -222,6 +235,34 @@ struct CultureView: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.horizontal, 16)
+    }
+
+    private func partialDataNotice(_ message: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "wifi.exclamationmark")
+                .foregroundStyle(LoreColor.amber)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Some stories are still arriving")
+                    .font(LoreType.button)
+                    .foregroundStyle(LoreColor.bone)
+                Text(message)
+                    .font(LoreType.caption)
+                    .foregroundStyle(LoreColor.bone.opacity(0.7))
+            }
+            Spacer(minLength: 8)
+            Button("Retry") {
+                Task { await model.load(city: city, force: true) }
+            }
+            .font(LoreType.button)
+            .foregroundStyle(LoreColor.amber)
+        }
+        .padding(14)
+        .background(LoreColor.ink800, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(LoreColor.amber.opacity(0.24), lineWidth: 1)
+        )
+        .accessibilityElement(children: .contain)
     }
 
     /// Lingo as a two-row horizontal shelf of flip cards (compact, horizontal
@@ -261,6 +302,11 @@ struct CultureView: View {
                 + "\(model.cityDisplayName(for: city)) land with the seed."
             )
             .foregroundStyle(LoreColor.ink600)
+        } actions: {
+            Button("Check again") {
+                Task { await model.load(city: city, force: true) }
+            }
+            .tint(LoreColor.amber)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -279,49 +325,67 @@ struct PersonBioSheet: View {
     private let diameter: CGFloat = 132
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 16) {
-                portrait
-                    .padding(.top, 24)
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 16) {
+                    portrait
+                        .padding(.top, 24)
 
-                Text(person.headline)
-                    .font(LoreType.display(size: 28, weight: .semibold))
-                    .foregroundStyle(LoreColor.bone)
-                    .multilineTextAlignment(.center)
-
-                if let attribution = person.attribution {
-                    Text(attribution)
-                        .font(LoreType.caption)
-                        .foregroundStyle(LoreColor.brass300)
+                    Text(person.headline)
+                        .font(LoreType.display(size: 28, weight: .semibold))
+                        .foregroundStyle(LoreColor.bone)
                         .multilineTextAlignment(.center)
-                }
+                        .accessibilityAddTraits(.isHeader)
 
-                if let body = person.body {
-                    Text(body)
-                        .font(LoreType.body)
-                        .foregroundStyle(LoreColor.bone.opacity(0.85))
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.top, 4)
-                }
-
-                if let wiki = wikipediaURL {
-                    Link(destination: wiki) {
-                        Label("Read on Wikipedia", systemImage: "safari")
-                            .font(LoreType.button)
-                            .foregroundStyle(LoreColor.ink900)
-                            .padding(.horizontal, 18)
-                            .padding(.vertical, 10)
-                            .background(Capsule().fill(LoreColor.amber))
+                    if let attribution = person.attribution {
+                        Text(attribution)
+                            .font(LoreType.caption)
+                            .foregroundStyle(LoreColor.brass300)
+                            .multilineTextAlignment(.center)
                     }
-                    .padding(.top, 8)
-                }
 
-                Spacer(minLength: 24)
+                    if let body = person.body {
+                        Text(body)
+                            .font(LoreType.body)
+                            .foregroundStyle(LoreColor.bone.opacity(0.85))
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.top, 4)
+                    }
+
+                    HStack(spacing: 10) {
+                        if let source = person.cultureSourceURL ?? wikipediaURL {
+                            Link(destination: source) {
+                                Label("Source", systemImage: "link")
+                            }
+                        }
+
+                        ShareLink(item: shareText) {
+                            Label("Share", systemImage: "square.and.arrow.up")
+                        }
+                    }
+                    .font(LoreType.button)
+                    .foregroundStyle(LoreColor.ink900)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(Capsule().fill(LoreColor.amber))
+                    .padding(.top, 8)
+
+                    Spacer(minLength: 24)
+                }
+                .frame(maxWidth: 680)
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 24)
             }
-            .frame(maxWidth: .infinity)
-            .padding(.horizontal, 24)
+            .background(LoreColor.ink900.ignoresSafeArea())
+            .navigationTitle("City profile")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
         }
-        .background(LoreColor.ink900.ignoresSafeArea())
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
         .task {
@@ -359,6 +423,13 @@ struct PersonBioSheet: View {
         else { return nil }
         return URL(string: "https://en.wikipedia.org/wiki/\(encoded)")
     }
+
+    private var shareText: String {
+        ([person.headline, person.attribution, person.body] as [String?])
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n\n") + "\n\nDiscovered with Lore."
+    }
 }
 
 // MARK: - Model
@@ -374,6 +445,7 @@ final class CultureModel {
     }
 
     private(set) var state: State = .loading
+    private(set) var loadWarning: String?
 
     /// The full culture set for the city, split by register once on load.
     private(set) var quotes: [CityCulture] = []
@@ -407,6 +479,8 @@ final class CultureModel {
     }
 
     private var cityNames: [String: String] = [:]
+    private var loadedCity: String?
+    private var activeLoadID = UUID()
 
     private static func prettyCitySlug(_ slug: String) -> String {
         slug
@@ -415,51 +489,88 @@ final class CultureModel {
             .joined(separator: " ")
     }
 
-    func load(city: String) async {
-        guard case .loading = state else { return }
-        do {
-            // Best-effort proper city name + facts + theme + flavor sections
-            // (all non-fatal if they fail).
-            async let citiesTask = try? LoreAPI.shared.cities()
-            async let factsTask = try? LoreAPI.shared.cityFacts(city: city)
-            async let themeTask = try? LoreAPI.shared.cityTheme(city: city)
-            async let sectionsTask = try? LoreAPI.shared.citySections(city: city)
-            let rows = try await LoreAPI.shared.culture(city: city)
-            if let cities = await citiesTask {
-                cityNames = Dictionary(
-                    cities.map { ($0.slug, $0.name) },
-                    uniquingKeysWith: { first, _ in first }
-                )
+    func load(city: String, force: Bool = false) async {
+        guard force || loadedCity != city else { return }
+
+        let loadID = UUID()
+        activeLoadID = loadID
+        state = .loading
+        loadWarning = nil
+        quotes = []
+        people = []
+        lingo = []
+        sayings = []
+        facts = []
+        stats = []
+        theme = nil
+        flavor = []
+
+        async let citiesTask = try? LoreAPI.shared.cities()
+        async let cultureTask = try? LoreAPI.shared.culture(city: city)
+        async let factsTask = try? LoreAPI.shared.cityFacts(city: city)
+        async let themeTask = try? LoreAPI.shared.cityTheme(city: city)
+        async let sectionsTask = try? LoreAPI.shared.citySections(city: city)
+
+        let (cities, rows, loadedFacts, loadedTheme, sections) = await (
+            citiesTask, cultureTask, factsTask, themeTask, sectionsTask
+        )
+        guard activeLoadID == loadID else { return }
+
+        guard rows != nil || loadedFacts != nil || sections != nil else {
+            state = .failed("Check your connection and try again.")
+            return
+        }
+
+        if let cities {
+            cityNames = Dictionary(
+                cities.map { ($0.slug, $0.name) },
+                uniquingKeysWith: { first, _ in first }
+            )
+        }
+
+        let cultureRows = rows ?? []
+        quotes = cultureRows.filter { $0.kind == .quote }
+        people = cultureRows.filter { $0.kind == .person }
+        lingo = cultureRows.filter { $0.kind == .slang }
+        sayings = cultureRows.filter { $0.kind == .saying }
+
+        facts = loadedFacts ?? []
+        stats = facts.filter(\.hasStat)
+        theme = loadedTheme
+
+        flavor = Dictionary(grouping: sections ?? [], by: \.kind)
+            .map {
+                (kind: $0.key, entries: $0.value.sorted {
+                    let leftSort = $0.sort ?? 100
+                    let rightSort = $1.sort ?? 100
+                    return leftSort == rightSort
+                        ? $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
+                        : leftSort < rightSort
+                })
+            }
+            .sorted {
+                let (a, b) = (SectionKindMeta.order(for: $0.kind), SectionKindMeta.order(for: $1.kind))
+                return a == b ? $0.kind < $1.kind : a < b
             }
 
-            quotes = rows.filter { $0.kind == .quote }
-            people = rows.filter { $0.kind == .person }
-            lingo = rows.filter { $0.kind == .slang }
-            sayings = rows.filter { $0.kind == .saying }
-
-            facts = await factsTask ?? []
-            stats = facts.filter(\.hasStat)
-
-            theme = (await themeTask) ?? nil
-            let sections = (await sectionsTask) ?? []
-            flavor = Dictionary(grouping: sections, by: \.kind)
-                .map {
-                    (kind: $0.key, entries: $0.value.sorted {
-                        let leftSort = $0.sort ?? 100
-                        let rightSort = $1.sort ?? 100
-                        return leftSort == rightSort
-                            ? $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
-                            : leftSort < rightSort
-                    })
-                }
-                .sorted {
-                    let (a, b) = (SectionKindMeta.order(for: $0.kind), SectionKindMeta.order(for: $1.kind))
-                    return a == b ? $0.kind < $1.kind : a < b
-                }
-
-            state = (rows.isEmpty && facts.isEmpty && sections.isEmpty) ? .empty : .loaded
-        } catch {
-            state = .failed("Check your connection and try again.")
+        let unavailable = [rows == nil, loadedFacts == nil, sections == nil].filter { $0 }.count
+        if unavailable > 0 {
+            loadWarning = "Lore is showing everything available now. Retry when your connection improves to complete this city guide."
         }
+
+        loadedCity = city
+        state = (cultureRows.isEmpty && facts.isEmpty && (sections ?? []).isEmpty) ? .empty : .loaded
+    }
+}
+
+extension CityCulture {
+    var cultureSourceURL: URL? {
+        for raw in [links.website, source] {
+            guard let raw, let url = URL(string: raw),
+                  let scheme = url.scheme?.lowercased(),
+                  ["http", "https"].contains(scheme), url.host != nil else { continue }
+            return url
+        }
+        return nil
     }
 }

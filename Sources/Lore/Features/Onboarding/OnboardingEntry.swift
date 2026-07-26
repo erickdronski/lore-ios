@@ -47,16 +47,28 @@ struct OnboardingPresenter: ViewModifier {
         self.forcePresent = forcePresent
         let store = OnboardingStore(forcePresent: forcePresent)
         _store = State(initialValue: store)
-        _isPresented = State(initialValue: store.shouldPresent)
+        // Existing accounts must finish Keychain restoration + server-gate
+        // resolution before presentation, otherwise onboarding flashes over a
+        // returning user's app and can accept choices for the wrong identity.
+        _isPresented = State(initialValue: forcePresent && store.shouldPresent)
     }
 
     /// The real prefs writer, reading the session lazily so it always sees the
     /// latest token (the user could sign in mid-flow).
     private var prefsWriter: PrefsWriting {
         OnboardingPrefsWriter {
-            guard let session = auth.session, !session.isExpired else { return nil }
+            // Preserve the identity even if its access token just expired. The
+            // immediate write may fail and retry after refresh, but the staged
+            // choice must never be mislabeled as a guest choice.
+            guard let session = auth.session else { return nil }
             return (userID: session.user.id, accessToken: session.accessToken)
         }
+    }
+
+    private var gateIdentity: String {
+        if forcePresent { return "forced" }
+        if auth.isRestoring { return "restoring" }
+        return auth.session?.user.id ?? "guest"
     }
 
     func body(content: Content) -> some View {
@@ -66,13 +78,28 @@ struct OnboardingPresenter: ViewModifier {
                     isPresented = false
                 }
             }
-            .task {
-                // Fold the server pref into the gate: if this account already
-                // onboarded (fresh install, existing user), don't present.
-                guard store.shouldPresent, let token = await auth.validAccessToken() else { return }
-                let prefs = try? await LoreAPI.shared.userPrefs(accessToken: token)
-                store.resolveGate(serverPrefs: prefs)
-                if !store.shouldPresent { isPresented = false }
-            }
+            .task(id: gateIdentity) { await resolvePresentationGate() }
+    }
+
+    private func resolvePresentationGate() async {
+        guard store.shouldPresent else {
+            isPresented = false
+            return
+        }
+        if forcePresent {
+            isPresented = true
+            return
+        }
+        // The task restarts when restoration changes this identity to a guest
+        // or user id. Do not make a first-launch decision while it is unknown.
+        guard !auth.isRestoring else { return }
+
+        guard let token = await auth.validAccessToken() else {
+            isPresented = store.shouldPresent
+            return
+        }
+        let prefs = try? await LoreAPI.shared.userPrefs(accessToken: token)
+        store.resolveGate(serverPrefs: prefs)
+        isPresented = store.shouldPresent
     }
 }

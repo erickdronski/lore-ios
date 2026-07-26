@@ -1,4 +1,5 @@
 import CoreLocation
+import Foundation
 import SwiftUI
 
 /// Lore, every place has a story.
@@ -169,6 +170,10 @@ struct RootTabView: View {
     @State private var routedStory: Story?
     @State private var routedTour: Tour?
     @State private var routeError: String?
+    /// Search and deep-link resolution is latest-wins. Without cancellation, a
+    /// slow result from the previous city can arrive after a newer tap and open
+    /// the wrong sheet over the traveler's current context.
+    @State private var routeTask: Task<Void, Never>?
     /// A city whose "Meet {City}" culture surface is presented.
     @State private var meetCity: String?
     /// Whether the sign-in nudge is up (raised by a signed-out visit toggle).
@@ -268,6 +273,10 @@ struct RootTabView: View {
             #if DEBUG
             presentScreenshotStageIfNeeded()
             #endif
+        }
+        .onDisappear {
+            routeTask?.cancel()
+            routeTask = nil
         }
         // Follow the user's location to the nearest city on launch, unless they
         // have chosen one. Resolves once, then leaves the city under user control.
@@ -543,20 +552,23 @@ struct RootTabView: View {
     /// AppRouter doc calls for, no feature view navigates on its own.
     private func installRouter() {
         router.onRoute = { route in
+            routeTask?.cancel()
+            routeTask = nil
+            routeError = nil
             switch route {
             case .city:
                 // `AppRouter` already updated `selectedCity`; jump to the map so
                 // the switch is visible.
                 selection = .map
             case .place(let id, _):
-                Task { await openPlace(id: id) }
+                routeTask = Task { await openPlace(id: id) }
             case .story(let id, _):
-                Task { await openStory(id: id) }
+                routeTask = Task { await openStory(id: id) }
             case .culture(_, let cityScoped):
                 meetCity = cityScoped ?? router.selectedCity
             case .tour(let slug, _):
                 selection = .tours
-                Task { await openTour(slug: slug) }
+                routeTask = Task { await openTour(slug: slug) }
             }
         }
     }
@@ -575,29 +587,56 @@ struct RootTabView: View {
         // Try the city the router is scoped to first (the common case), then a
         // broad fetch is unnecessary, `place_explore` is city-filtered, and the
         // router already followed a cross-city hit's `city` into `selectedCity`.
-        let places = (try? await LoreAPI.shared.places(city: router.selectedCity)) ?? []
-        if let match = places.first(where: { $0.id == id }) {
-            routedPlace = RoutedPlace(place: match)
-        } else {
-            routeError = "That place isn't available right now."
+        do {
+            let places = try await LoreAPI.shared.places(city: router.selectedCity)
+            try Task.checkCancellation()
+            if let match = places.first(where: { $0.id == id }) {
+                routedPlace = RoutedPlace(place: match)
+            } else {
+                routeError = "That place is no longer available in this city."
+            }
+        } catch is CancellationError {
+            return
+        } catch let error as URLError where error.code == .cancelled {
+            return
+        } catch {
+            routeError = error.localizedDescription
         }
     }
 
     private func openStory(id: String) async {
-        let stories = (try? await LoreAPI.shared.stories(city: router.selectedCity)) ?? []
-        if let match = stories.first(where: { $0.id == id }) {
-            routedStory = match
-        } else {
-            routeError = "That story isn't available right now."
+        do {
+            let stories = try await LoreAPI.shared.stories(city: router.selectedCity)
+            try Task.checkCancellation()
+            if let match = stories.first(where: { $0.id == id }) {
+                routedStory = match
+            } else {
+                routeError = "That story is no longer available in this city."
+            }
+        } catch is CancellationError {
+            return
+        } catch let error as URLError where error.code == .cancelled {
+            return
+        } catch {
+            routeError = error.localizedDescription
         }
     }
 
     private func openTour(slug: String) async {
-        let tours = (try? await LoreAPI.shared.tours(city: router.selectedCity)) ?? []
-        if let match = tours.first(where: { $0.slug == slug }) {
-            routedTour = match
-        } else {
-            routeError = "That tour isn't available right now."
+        do {
+            let tours = try await LoreAPI.shared.tours(city: router.selectedCity)
+            try Task.checkCancellation()
+            if let match = tours.first(where: { $0.slug == slug }) {
+                routedTour = match
+            } else {
+                routeError = "That tour is no longer available in this city."
+            }
+        } catch is CancellationError {
+            return
+        } catch let error as URLError where error.code == .cancelled {
+            return
+        } catch {
+            routeError = error.localizedDescription
         }
     }
 

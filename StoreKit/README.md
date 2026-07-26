@@ -19,13 +19,28 @@ One subscription group **Lore+** with the two live products, matching
 > Source of truth = `StoreKitService.ProductID` + `StoreKit/Lore.storekit`. App Store Connect product IDs/prices MUST match these exactly, or `Product.products(for:)` returns nothing and purchases fail.
 
 Because both products share one subscription group, intro-offer eligibility is
-per-group — exactly what `StoreKitService.isEligibleForIntroOffer(productID:)`
-reads and what the paywall CTA branches on.
+per-group. `StoreKitService.eligibleFreeTrialDescription(productID:)` also
+requires a current free-trial offer and derives its duration before the paywall
+CTA promises one.
 
-## Wiring it into the scheme (Xcode-gated — cannot be done from CLT)
+## iOS payment compliance
 
-There is **no Xcode on the build machine** (Command Line Tools only), so this
-step is a to-do for the first machine with Xcode, after `xcodegen generate`:
+Lore+ unlocks digital features and content inside the iOS app. Under App Store
+Review Guideline 3.1.1, that purchase path uses Apple In-App Purchase through
+StoreKit 2. The 2026-07 premium audit found no Stripe SDK, checkout URL, billing
+portal, or Stripe API call in the iOS app. Do not add a Stripe purchase button
+to this paywall without a separately reviewed storefront/entitlement strategy.
+
+The runtime accepts a verified transaction whose StoreKit `ownershipType` is
+Family Shared. The local products currently have `familyShareable: false`,
+matching the conservative launch configuration. Enabling Family Sharing is an
+App Store Connect business decision and must be mirrored here for testing; do
+not flip only one side.
+
+## Wiring it into the scheme
+
+The generated shared `Lore` scheme does not currently reference this file. On a
+development machine, after `xcodegen generate`:
 
 1. Xcode → **Product → Scheme → Edit Scheme… → Run → Options**.
 2. **StoreKit Configuration** → select `StoreKit/Lore.storekit`.
@@ -37,7 +52,8 @@ step is a to-do for the first machine with Xcode, after `xcodegen generate`:
    and read "Subscribe").
 
 The internal UUIDs here are placeholders; Xcode fills real ones on first open.
-The `productID`s and prices are the load-bearing values and are correct as-is.
+The `productID`s are load-bearing. The paywall displays only StoreKit's
+localized `Product.displayPrice`, never the numeric values in this README.
 
 ## Relationship to RevenueCat (the P3 server-side truth)
 

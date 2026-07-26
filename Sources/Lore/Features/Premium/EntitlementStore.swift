@@ -1,6 +1,53 @@
 import Foundation
 import Observation
 
+struct CachedEntitlementRecord: Codable, Equatable {
+    let entitlement: Entitlement
+    let verifiedAt: Date
+}
+
+enum EntitlementCachePolicy {
+    /// A short resilience window prevents a transient backend outage from
+    /// locking out a traveler while still bounding stale server grants. Native
+    /// StoreKit transactions remain the longer-lived offline source of truth.
+    static let maximumAge: TimeInterval = 72 * 60 * 60
+
+    static func usable(
+        _ record: CachedEntitlementRecord?,
+        for userID: String?,
+        now: Date
+    ) -> Entitlement? {
+        guard let record,
+              let userID,
+              record.entitlement.userID == userID,
+              record.entitlement.isActive,
+              now.timeIntervalSince(record.verifiedAt) >= 0,
+              now.timeIntervalSince(record.verifiedAt) <= maximumAge
+        else { return nil }
+        return record.entitlement
+    }
+
+    /// Supabase access tokens are signed JWTs. Decoding the subject here does
+    /// not establish trust; it only identity-binds an already local cache to
+    /// the same authenticated session and prevents account crossover.
+    static func userID(fromJWT token: String) -> String? {
+        let parts = token.split(separator: ".")
+        guard parts.count >= 2 else { return nil }
+        var encoded = String(parts[1])
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+        encoded += String(repeating: "=", count: (4 - encoded.count % 4) % 4)
+        guard let data = Data(base64Encoded: encoded),
+              let payload = try? JSONDecoder().decode(JWTPayload.self, from: data)
+        else { return nil }
+        return payload.sub
+    }
+
+    private struct JWTPayload: Decodable {
+        let sub: String
+    }
+}
+
 /// The single source of truth for "is this user Lore+?" across the app.
 ///
 /// It reads the signed-in user's `entitlements` rows (RLS: own rows only) and
@@ -23,10 +70,10 @@ import Observation
 /// offline packs, audio narration. Scanning, Layer-1 cards, and the first three
 /// dives are never gated (that generosity lives in `DiveMeter`, not here).
 ///
-/// **Failing open vs. closed.** Reads fail *closed*: a network error or a
-/// signed-out user leaves `isPlus == false`, so we never hand out Lore+ we
-/// can't confirm. But the app stays fully usable without it, a free user is a
-/// first-class citizen, not a locked-out one.
+/// **Offline resilience.** Verified StoreKit transactions are the durable local
+/// truth. A server grant is also cached for at most 72 hours and only reused by
+/// a JWT whose subject matches that grant's user id. Signed-out, mismatched,
+/// expired, unknown, or inactive cache entries fail closed.
 ///
 /// Lifecycle mirrors `AuthService`: `@Observable @MainActor`, one instance,
 /// handed down the environment. Views read `store.isPlus`; the paywall calls
@@ -35,6 +82,10 @@ import Observation
 @Observable
 @MainActor
 final class EntitlementStore {
+    private enum CacheKey {
+        static let verifiedEntitlement = "lore.premium.cachedEntitlement.v1"
+    }
+
     /// The grant currently on file, if we've loaded one. `nil` before the first
     /// load, or when the user has no entitlement row at all.
     private(set) var entitlement: Entitlement?
@@ -54,6 +105,15 @@ final class EntitlementStore {
     /// never as a blocking error.
     private(set) var lastError: String?
 
+    /// True only while a fresh, identity-matched server snapshot is carrying
+    /// access through a backend outage. Useful for transparent member UI.
+    private(set) var isUsingCachedEntitlement = false
+
+    private let defaults: UserDefaults
+    @ObservationIgnored private let now: () -> Date
+    private var cachedRecord: CachedEntitlementRecord?
+    private var activeCachedEntitlement: Entitlement?
+
     /// The one question the rest of the app asks. `active` or `trialing` on any
     /// grant opens every Lore+ surface; everything else (including no grant, a
     /// signed-out user, or an unconfirmed read) leaves it closed.
@@ -71,8 +131,9 @@ final class EntitlementStore {
         if EntitlementStore.devForcePlus { return true }
         #endif
         let server = entitlement?.isActive ?? false
+        let cached = activeCachedEntitlement?.isActive ?? false
         let onDevice = storeKit?.hasActiveEntitlement ?? false
-        return server || onDevice
+        return server || cached || onDevice
     }
 
     #if DEBUG
@@ -91,11 +152,22 @@ final class EntitlementStore {
     /// Unions the server status with StoreKit's introductory-period read so the
     /// trial framing shows even when only the on-device path knows about it.
     var isTrialing: Bool {
-        (entitlement?.status == .trialing) || (storeKit?.isInIntroPeriod ?? false)
+        (entitlement?.status == .trialing)
+            || (activeCachedEntitlement?.status == .trialing)
+            || (storeKit?.isInIntroPeriod ?? false)
     }
 
-    init(entitlement: Entitlement? = nil) {
+    init(
+        entitlement: Entitlement? = nil,
+        defaults: UserDefaults = .standard,
+        now: @escaping () -> Date = Date.init
+    ) {
         self.entitlement = entitlement
+        self.defaults = defaults
+        self.now = now
+        if let data = defaults.data(forKey: CacheKey.verifiedEntitlement) {
+            cachedRecord = try? JSONDecoder().decode(CachedEntitlementRecord.self, from: data)
+        }
     }
 
     /// Load the user's entitlement. Pass the current access token (from
@@ -111,20 +183,36 @@ final class EntitlementStore {
 
         guard let accessToken else {
             entitlement = nil
+            activeCachedEntitlement = nil
+            isUsingCachedEntitlement = false
             lastError = nil
             return
         }
+        let currentUserID = EntitlementCachePolicy.userID(fromJWT: accessToken)
+        activeCachedEntitlement = nil
+        isUsingCachedEntitlement = false
         isRefreshing = true
         lastError = nil
         defer { isRefreshing = false }
         do {
             entitlement = try await LoreAPI.shared.entitlement(accessToken: accessToken)
+            activeCachedEntitlement = nil
+            if let entitlement {
+                persist(entitlement, verifiedAt: now())
+            } else if cachedRecord?.entitlement.userID == currentUserID {
+                removeCachedRecord()
+            }
         } catch {
-            // Fail closed: keep whatever we last knew is NOT correct here —
-            // if we can't confirm, we must not keep a stale "plus". Drop to
-            // free; the surfaces stay usable, the paywall stays honest.
             entitlement = nil
-            lastError = "Couldn't verify your membership. You can still use everything free."
+            activeCachedEntitlement = EntitlementCachePolicy.usable(
+                cachedRecord,
+                for: currentUserID,
+                now: now()
+            )
+            isUsingCachedEntitlement = activeCachedEntitlement != nil
+            lastError = isUsingCachedEntitlement
+                ? "You're offline. Lore+ is using your recently verified membership for up to 72 hours."
+                : "Couldn't verify your membership. Free Lore remains available while you reconnect."
         }
     }
 
@@ -135,6 +223,8 @@ final class EntitlementStore {
     /// (docs/16 §1 offline belt-and-suspenders).
     func clear() {
         entitlement = nil
+        activeCachedEntitlement = nil
+        isUsingCachedEntitlement = false
         lastError = nil
         isRefreshing = false
     }
@@ -153,5 +243,20 @@ final class EntitlementStore {
             entitlement: "lore_plus",
             status: trialing ? .trialing : .active
         )
+    }
+
+    private func persist(_ entitlement: Entitlement, verifiedAt: Date) {
+        let record = CachedEntitlementRecord(entitlement: entitlement, verifiedAt: verifiedAt)
+        cachedRecord = record
+        if let data = try? JSONEncoder().encode(record) {
+            defaults.set(data, forKey: CacheKey.verifiedEntitlement)
+        }
+    }
+
+    private func removeCachedRecord() {
+        cachedRecord = nil
+        activeCachedEntitlement = nil
+        isUsingCachedEntitlement = false
+        defaults.removeObject(forKey: CacheKey.verifiedEntitlement)
     }
 }

@@ -30,6 +30,7 @@ struct VisitToggle: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var pulse = false
+    @State private var errorMessage: String?
 
     private var visited: Bool { store.hasVisited(place.id) }
     private var inFlight: Bool { store.isInFlight(place.id) }
@@ -54,8 +55,15 @@ struct VisitToggle: View {
         .scaleEffect(pulse && !reduceMotion ? 1.06 : 1.0)
         .animation(LoreMotion.bloom, value: visited)
         .accessibilityLabel(Text(accessibilityLabel))
+        .accessibilityValue(Text(inFlight ? "Saving" : (visited ? "Visited" : "Not visited")))
         .accessibilityAddTraits(visited ? [.isSelected, .isButton] : .isButton)
         .accessibilityHint(Text(visited ? "" : "Marks this place as visited and earns badges."))
+        .alert("Couldn't mark this visit", isPresented: errorBinding) {
+            Button("Try again") { tap() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(errorMessage ?? "Check your connection and try again.")
+        }
     }
 
     // MARK: Pieces
@@ -127,12 +135,20 @@ struct VisitToggle: View {
             case .signedOut:
                 Haptics.play(.meterGate)
                 onNeedsSignIn()
-            case .failed:
+            case .failed(let message):
                 // Never silent: a warning tap so a failed write is felt, not
                 // invisible (the schema-drift bug hid behind a bare `break`).
                 Haptics.play(.meterGate)
+                errorMessage = message
             }
         }
+    }
+
+    private var errorBinding: Binding<Bool> {
+        Binding(
+            get: { errorMessage != nil },
+            set: { if !$0 { errorMessage = nil } }
+        )
     }
 
     /// The single 1.2× celebratory pulse + Brass ring, then settle (§6).

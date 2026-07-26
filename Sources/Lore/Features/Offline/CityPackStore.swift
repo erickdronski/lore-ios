@@ -41,6 +41,12 @@ enum PackImageStore {
             try? FileManager.default.removeItem(at: directory.appending(path: k))
         }
     }
+
+    static func byteCount(forKey key: String) -> Int64 {
+        let file = directory.appending(path: key)
+        let values = try? file.resourceValues(forKeys: [.fileSizeKey])
+        return Int64(values?.fileSize ?? 0)
+    }
 }
 
 // MARK: - CityPackStore
@@ -58,6 +64,50 @@ final class CityPackStore {
         var imageBytes: Int64
         var imageKeys: [String]
         var pinnedURLs: [String]
+        var mediaCount: Int
+        var missingMediaCount: Int
+
+        var isComplete: Bool { missingMediaCount == 0 }
+
+        init(
+            downloadedAt: Date,
+            placeCount: Int,
+            imageBytes: Int64,
+            imageKeys: [String],
+            pinnedURLs: [String],
+            mediaCount: Int = 0,
+            missingMediaCount: Int = 0
+        ) {
+            self.downloadedAt = downloadedAt
+            self.placeCount = placeCount
+            self.imageBytes = imageBytes
+            self.imageKeys = imageKeys
+            self.pinnedURLs = pinnedURLs
+            self.mediaCount = mediaCount
+            self.missingMediaCount = missingMediaCount
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case downloadedAt, placeCount, imageBytes, imageKeys, pinnedURLs
+            case mediaCount, missingMediaCount
+        }
+
+        init(from decoder: Decoder) throws {
+            let values = try decoder.container(keyedBy: CodingKeys.self)
+            downloadedAt = try values.decode(Date.self, forKey: .downloadedAt)
+            placeCount = try values.decode(Int.self, forKey: .placeCount)
+            imageBytes = try values.decode(Int64.self, forKey: .imageBytes)
+            imageKeys = try values.decode([String].self, forKey: .imageKeys)
+            pinnedURLs = try values.decode([String].self, forKey: .pinnedURLs)
+            mediaCount = try values.decodeIfPresent(Int.self, forKey: .mediaCount) ?? imageKeys.count
+            missingMediaCount = try values.decodeIfPresent(Int.self, forKey: .missingMediaCount) ?? 0
+        }
+
+        mutating func reconcileStoredMedia(validKeys: Set<String>, bytes: Int64) {
+            mediaCount = max(mediaCount, imageKeys.count)
+            missingMediaCount = max(missingMediaCount, mediaCount - validKeys.count)
+            imageBytes = bytes
+        }
     }
 
     enum PackState: Equatable {
@@ -77,7 +127,7 @@ final class CityPackStore {
 
     private(set) var packs: [String: CityPack] = [:]
     private(set) var downloading: [String: Double] = [:]
-    private(set) var lastError: String?
+    private(set) var errorsByCity: [String: String] = [:]
 
     private let manifestFile: URL = {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -89,7 +139,13 @@ final class CityPackStore {
     init() {
         if let data = try? Data(contentsOf: manifestFile),
            let decoded = try? JSONDecoder().decode([String: CityPack].self, from: data) {
-            packs = decoded
+            packs = decoded.mapValues { stored in
+                var pack = stored
+                let validKeys = Set(pack.imageKeys.filter { PackImageStore.byteCount(forKey: $0) > 0 })
+                let bytes = validKeys.reduce(Int64(0)) { $0 + PackImageStore.byteCount(forKey: $1) }
+                pack.reconcileStoredMedia(validKeys: validKeys, bytes: bytes)
+                return pack
+            }
         }
     }
 
@@ -99,13 +155,17 @@ final class CityPackStore {
         return .none
     }
 
+    func error(for city: String) -> String? { errorsByCity[city] }
+    func isDownloading(_ city: String) -> Bool { downloading[city] != nil }
+
     /// Download (or refresh) a city pack. JSON pinning is ~60% of the bar,
     /// images the rest. Concurrent downloads of different cities are fine;
     /// re-calling for an in-flight city is a no-op.
     func download(city: String) async {
         guard downloading[city] == nil else { return }
         downloading[city] = 0.01
-        lastError = nil
+        errorsByCity[city] = nil
+        defer { downloading[city] = nil }
         do {
             // Phase 1: pin all JSON. Unit count = 7 endpoints + one per place
             // (dive+facts tick together via onUnit in pinCityPack).
@@ -120,78 +180,113 @@ final class CityPackStore {
             // Phase 2: resolve + pack hero images (skips titles with no
             // image), then the dives' studio narration files — same store,
             // same removal lifecycle, so a deleted pack cleans up its audio.
-            var imageKeys: [String] = []
-            var imageBytes: Int64 = 0
+            try Task.checkCancellation()
+            var mediaURLs = Set(pin.audioURLs)
             var titleMap: [String: URL] = [:]
             let titles = pin.wikipediaTitles
-            let mediaTotal = titles.count + pin.audioURLs.count
-            var mediaDone = 0
-            for title in titles {
+            for (index, title) in titles.enumerated() {
+                try Task.checkCancellation()
                 if let url = await WikipediaService.shared.portraitURL(for: title) {
                     titleMap[title] = url
-                    if PackImageStore.localURL(for: url) == nil,
-                       let (data, response) = try? await URLSession.shared.data(from: url),
-                       (response as? HTTPURLResponse).map({ (200..<300).contains($0.statusCode) }) ?? false,
-                       let key = try? PackImageStore.store(data, for: url) {
-                        imageKeys.append(key)
-                        imageBytes += Int64(data.count)
-                    } else if let key = PackImageStore.localURL(for: url).map({ _ in PackImageStore.key(for: url) }) {
-                        imageKeys.append(key)
-                    }
+                    mediaURLs.insert(url)
                 }
-                mediaDone += 1
-                downloading[city] = 0.6 + (Double(mediaDone) / Double(max(mediaTotal, 1))) * 0.4
+                downloading[city] = 0.6 + (Double(index + 1) / Double(max(titles.count, 1))) * 0.1
             }
             await WikipediaService.shared.persistTitles(titleMap)
 
-            for url in pin.audioURLs {
-                if PackImageStore.localURL(for: url) == nil {
-                    if let (data, response) = try? await URLSession.shared.data(from: url),
-                       (response as? HTTPURLResponse).map({ (200..<300).contains($0.statusCode) }) ?? false,
-                       let key = try? PackImageStore.store(data, for: url) {
-                        imageKeys.append(key)
-                        imageBytes += Int64(data.count)
-                    }
+            var imageKeys = Set<String>()
+            var imageBytes: Int64 = 0
+            var missingMediaCount = 0
+            let orderedMedia = mediaURLs.sorted { $0.absoluteString < $1.absoluteString }
+            for (index, url) in orderedMedia.enumerated() {
+                try Task.checkCancellation()
+                if let packed = await packMedia(url) {
+                    if imageKeys.insert(packed.key).inserted { imageBytes += packed.bytes }
                 } else {
-                    imageKeys.append(PackImageStore.key(for: url))
+                    missingMediaCount += 1
                 }
-                mediaDone += 1
-                downloading[city] = 0.6 + (Double(mediaDone) / Double(max(mediaTotal, 1))) * 0.4
+                downloading[city] = 0.7 + (Double(index + 1) / Double(max(orderedMedia.count, 1))) * 0.3
             }
 
-            packs[city] = CityPack(
+            let newPack = CityPack(
                 downloadedAt: Date(),
                 placeCount: pin.places.count,
                 imageBytes: imageBytes,
-                imageKeys: imageKeys,
-                pinnedURLs: pin.pinnedURLs
+                imageKeys: imageKeys.sorted(),
+                pinnedURLs: pin.pinnedURLs,
+                mediaCount: orderedMedia.count,
+                missingMediaCount: missingMediaCount
             )
-            saveManifest()
+            let previous = packs[city]
+            var updated = packs
+            updated[city] = newPack
+            try saveManifest(updated)
+            packs = updated
+            await removeSupersededFiles(previous: previous, replacement: newPack, city: city)
         } catch {
-            lastError = "Couldn't download \(Self.label(city)). Check your connection and try again."
+            if !(error is CancellationError) {
+                errorsByCity[city] = "Couldn't finish \(Self.label(city)). Check your connection and try again."
+            }
         }
-        downloading[city] = nil
     }
 
     /// Remove a pack: drop pinned JSON + images not shared with another pack.
     func remove(city: String) async {
+        guard downloading[city] == nil else {
+            errorsByCity[city] = "Wait for the current refresh to finish before removing this pack."
+            return
+        }
         guard let pack = packs[city] else { return }
         let otherKeys = Set(packs.filter { $0.key != city }.values.flatMap(\.imageKeys))
         let otherURLs = Set(packs.filter { $0.key != city }.values.flatMap(\.pinnedURLs))
-        PackImageStore.remove(keys: pack.imageKeys.filter { !otherKeys.contains($0) })
-        await AtlasCache.shared.unpin(urlStrings: pack.pinnedURLs.filter { !otherURLs.contains($0) })
-        packs[city] = nil
-        saveManifest()
+        var updated = packs
+        updated[city] = nil
+        do {
+            try saveManifest(updated)
+            packs = updated
+            PackImageStore.remove(keys: pack.imageKeys.filter { !otherKeys.contains($0) })
+            await AtlasCache.shared.unpin(urlStrings: pack.pinnedURLs.filter { !otherURLs.contains($0) })
+            errorsByCity[city] = nil
+        } catch {
+            errorsByCity[city] = "Couldn't update offline storage. Try removing the pack again."
+        }
     }
 
     static func label(_ slug: String) -> String {
         slug.replacingOccurrences(of: "-", with: " ").capitalized
     }
 
-    private func saveManifest() {
-        if let data = try? JSONEncoder().encode(packs) {
-            try? data.write(to: manifestFile, options: .atomic)
+    private func saveManifest(_ value: [String: CityPack]) throws {
+        let data = try JSONEncoder().encode(value)
+        try data.write(to: manifestFile, options: .atomic)
+    }
+
+    private func packMedia(_ url: URL) async -> (key: String, bytes: Int64)? {
+        let key = PackImageStore.key(for: url)
+        if PackImageStore.localURL(for: url) != nil {
+            return (key, PackImageStore.byteCount(forKey: key))
         }
+        guard let (data, response) = try? await URLSession.shared.data(from: url),
+              (response as? HTTPURLResponse).map({ (200..<300).contains($0.statusCode) }) ?? false,
+              !data.isEmpty,
+              (try? PackImageStore.store(data, for: url)) != nil
+        else { return nil }
+        return (key, Int64(data.count))
+    }
+
+    private func removeSupersededFiles(previous: CityPack?, replacement: CityPack, city: String) async {
+        guard let previous else { return }
+        let sharedKeys = Set(packs.filter { $0.key != city }.values.flatMap(\.imageKeys))
+        let replacementKeys = Set(replacement.imageKeys)
+        PackImageStore.remove(keys: previous.imageKeys.filter {
+            !replacementKeys.contains($0) && !sharedKeys.contains($0)
+        })
+
+        let sharedURLs = Set(packs.filter { $0.key != city }.values.flatMap(\.pinnedURLs))
+        let replacementURLs = Set(replacement.pinnedURLs)
+        await AtlasCache.shared.unpin(urlStrings: previous.pinnedURLs.filter {
+            !replacementURLs.contains($0) && !sharedURLs.contains($0)
+        })
     }
 }
 
@@ -252,10 +347,10 @@ struct CityPackButton: View {
             ProgressView(value: progress)
                 .progressViewStyle(.circular)
                 .tint(LoreColor.brass700)
-        case .downloaded:
-            Image(systemName: "checkmark.circle.fill")
+        case .downloaded(let pack):
+            Image(systemName: pack.isComplete ? "checkmark.circle.fill" : "exclamationmark.arrow.circlepath")
                 .font(.system(size: 18))
-                .foregroundStyle(LoreColor.brass700)
+                .foregroundStyle(pack.isComplete ? LoreColor.brass700 : LoreColor.error)
         case .none:
             Image(systemName: "arrow.down.circle")
                 .font(.system(size: 18))
@@ -266,17 +361,24 @@ struct CityPackButton: View {
     private var title: String {
         switch packStore.state(for: city) {
         case .downloading: return "Downloading \(CityPackStore.label(city))…"
-        case .downloaded: return "\(CityPackStore.label(city)) is saved offline"
+        case .downloaded(let pack):
+            return pack.isComplete
+                ? "\(CityPackStore.label(city)) is saved offline"
+                : "\(CityPackStore.label(city)) needs a refresh"
         case .none: return "Download \(CityPackStore.label(city))"
         }
     }
 
     private var subtitle: String {
+        if let error = packStore.error(for: city) { return error }
         switch packStore.state(for: city) {
         case .downloading(let progress):
             return "\(Int(progress * 100))% — stories, tours, and photos"
         case .downloaded(let pack):
-            return "\(pack.placeCount) places ready without signal. Tap to refresh."
+            if pack.missingMediaCount > 0 {
+                return "Stories are saved; \(pack.missingMediaCount) audio or photo files still need a connection. Tap to retry."
+            }
+            return "\(pack.placeCount) places and \(pack.mediaCount) media files ready without signal. Tap to refresh."
         case .none:
             return "Every story, tour, and photo — works with no signal."
         }
@@ -285,8 +387,14 @@ struct CityPackButton: View {
     private var accessibilityText: String {
         switch packStore.state(for: city) {
         case .downloading(let p): return "Downloading city pack, \(Int(p * 100)) percent"
-        case .downloaded: return "City pack saved offline. Tap to refresh."
-        case .none: return "Download \(CityPackStore.label(city)) for offline use, a Lore Plus feature"
+        case .downloaded(let pack):
+            return pack.isComplete
+                ? "City pack saved offline. Tap to refresh."
+                : "City stories are saved, but \(pack.missingMediaCount) media files need a refresh. Tap to retry."
+        case .none:
+            return entitlements.isPlus
+                ? "Download \(CityPackStore.label(city)) for offline use"
+                : "Download \(CityPackStore.label(city)) for offline use, a Lore Plus feature"
         }
     }
 }
@@ -314,12 +422,23 @@ struct OfflinePacksSection: View {
                             Text("\(pack.placeCount) places · \(byteLabel(pack.imageBytes)) · \(pack.downloadedAt.formatted(date: .abbreviated, time: .omitted))")
                                 .font(LoreType.caption)
                                 .foregroundStyle(LoreColor.ink600)
+                            if pack.missingMediaCount > 0 {
+                                Text("\(pack.missingMediaCount) media files need refresh")
+                                    .font(LoreType.caption)
+                                    .foregroundStyle(LoreColor.error)
+                            }
+                            if let error = packStore.error(for: city) {
+                                Text(error)
+                                    .font(LoreType.caption)
+                                    .foregroundStyle(LoreColor.error)
+                            }
                         }
                         Spacer()
                         Button("Remove", role: .destructive) {
                             Task { await packStore.remove(city: city) }
                         }
                         .font(LoreType.caption)
+                        .disabled(packStore.isDownloading(city))
                     }
                 }
             }

@@ -44,6 +44,8 @@ final class AppleSignInCoordinator: NSObject {
     enum AppleSignInError: LocalizedError {
         case cancelled
         case missingIdentityToken
+        case secureRandomUnavailable
+        case alreadyInProgress
         case failed(String)
 
         var errorDescription: String? {
@@ -52,6 +54,10 @@ final class AppleSignInCoordinator: NSObject {
                 return nil  // user backed out, not an error to surface
             case .missingIdentityToken:
                 return "Apple didn't return a sign-in token. Try again."
+            case .secureRandomUnavailable:
+                return "Lore couldn't start a secure Apple sign-in. Please try again."
+            case .alreadyInProgress:
+                return "Apple sign-in is already in progress."
             case .failed(let message):
                 return message
             }
@@ -63,11 +69,14 @@ final class AppleSignInCoordinator: NSObject {
     private var currentRawNonce: String?
     /// Self-retain across the async request so the delegate stays alive.
     private var strongSelf: AppleSignInCoordinator?
+    private var controller: ASAuthorizationController?
 
     /// Begin the flow. Suspends until the user completes or cancels the system
     /// sheet. Throws `AppleSignInError` (`.cancelled` carries a nil message).
     func signIn() async throws -> AppleCredential {
-        let rawNonce = Self.randomNonceString()
+        guard continuation == nil else { throw AppleSignInError.alreadyInProgress }
+        try Task.checkCancellation()
+        let rawNonce = try Self.randomNonceString()
         currentRawNonce = rawNonce
         strongSelf = self
 
@@ -79,18 +88,32 @@ final class AppleSignInCoordinator: NSObject {
         let controller = ASAuthorizationController(authorizationRequests: [request])
         controller.delegate = self
         controller.presentationContextProvider = self
+        self.controller = controller
 
-        return try await withCheckedThrowingContinuation { (cont: CheckedContinuation<AppleCredential, Error>) -> Void in
-            self.continuation = cont
-            controller.performRequests()
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (cont: CheckedContinuation<AppleCredential, Error>) -> Void in
+                self.continuation = cont
+                if Task.isCancelled {
+                    self.finish(.failure(AppleSignInError.cancelled))
+                } else {
+                    controller.performRequests()
+                }
+            }
+        } onCancel: {
+            Task { @MainActor [weak self] in self?.cancel() }
         }
         // NB: the resume happens in the delegate callbacks below.
+    }
+
+    func cancel() {
+        finish(.failure(AppleSignInError.cancelled))
     }
 
     private func finish(_ result: Result<AppleCredential, Error>) {
         let cont = continuation
         continuation = nil
         currentRawNonce = nil
+        controller = nil
         strongSelf = nil
         switch result {
         case .success(let credential): cont?.resume(returning: credential)
@@ -101,7 +124,7 @@ final class AppleSignInCoordinator: NSObject {
     // MARK: - Nonce
 
     /// A cryptographically-random nonce string (Apple's recommended generator).
-    private static func randomNonceString(length: Int = 32) -> String {
+    static func randomNonceString(length: Int = 32) throws -> String {
         precondition(length > 0)
         let charset = Array("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-._")
         var result = ""
@@ -110,8 +133,7 @@ final class AppleSignInCoordinator: NSObject {
             var randoms = [UInt8](repeating: 0, count: 16)
             let status = SecRandomCopyBytes(kSecRandomDefault, randoms.count, &randoms)
             if status != errSecSuccess {
-                // Fallback that still yields a usable nonce if SecRandom fails.
-                randoms = (0..<16).map { _ in UInt8.random(in: 0...255) }
+                throw AppleSignInError.secureRandomUnavailable
             }
             for random in randoms where remaining > 0 {
                 if random < charset.count {
@@ -124,7 +146,7 @@ final class AppleSignInCoordinator: NSObject {
     }
 
     /// SHA-256 of the nonce, hex-encoded, what goes in the Apple request.
-    private static func sha256(_ input: String) -> String {
+    static func sha256(_ input: String) -> String {
         let hashed = SHA256.hash(data: Data(input.utf8))
         return hashed.map { String(format: "%02x", $0) }.joined()
     }
@@ -137,6 +159,7 @@ extension AppleSignInCoordinator: ASAuthorizationControllerDelegate {
         controller: ASAuthorizationController,
         didCompleteWithAuthorization authorization: ASAuthorization
     ) {
+        guard controller === self.controller else { return }
         guard
             let credential = authorization.credential as? ASAuthorizationAppleIDCredential
         else {
@@ -167,6 +190,7 @@ extension AppleSignInCoordinator: ASAuthorizationControllerDelegate {
         controller: ASAuthorizationController,
         didCompleteWithError error: Error
     ) {
+        guard controller === self.controller else { return }
         if let authError = error as? ASAuthorizationError, authError.code == .canceled {
             finish(.failure(AppleSignInError.cancelled))
         } else {

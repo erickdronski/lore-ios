@@ -21,6 +21,10 @@ enum WidgetPublisher {
     /// reload only fires when the projected snapshot actually changed.
     @MainActor
     static func publishNearby(_ ranked: [RankedPlace], city: String) {
+        DeepLinkContextStore.remember(
+            city: city,
+            forPlaceIDs: ranked.prefix(3).map(\.place.id)
+        )
         let places = ranked.prefix(3).map { r in
             LoreWidgetSnapshot.Place(
                 id: r.place.id,

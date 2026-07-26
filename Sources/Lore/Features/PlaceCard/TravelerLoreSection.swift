@@ -16,12 +16,15 @@ struct TravelerLoreSection: View {
     @Environment(AuthService.self) private var auth
 
     @State private var entries: [PublicLore] = []
-    @State private var loaded = false
+    @State private var phase: Phase = .loading
     @State private var showAll = false
     /// Entries reported this session, hidden optimistically with a thank-you.
     @State private var reportedIDs: Set<String> = []
     /// The entry a report dialog is open for.
     @State private var reporting: PublicLore?
+    @State private var actionError: String?
+
+    private enum Phase { case loading, empty, failed, loaded }
 
     /// How many entries render inline on the card before "See all".
     private static let inlineCount = 3
@@ -31,14 +34,17 @@ struct TravelerLoreSection: View {
             if !visibleEntries.isEmpty {
                 section
             } else {
-                // A zero-size anchor, NOT an absent view: `.task` only fires on
-                // a view that appears, and an empty Group never appears — which
-                // would mean the fetch below never runs and the section could
-                // never learn it has entries to show.
-                Color.clear.frame(width: 0, height: 0)
+                switch phase {
+                case .loading:
+                    loadingCard
+                case .failed:
+                    recoveryCard
+                case .empty, .loaded:
+                    Color.clear.frame(width: 0, height: 0)
+                }
             }
         }
-        .task(id: placeID) { await load() }
+        .task(id: "\(placeID)|\(auth.session?.user.id ?? "guest")") { await load() }
         .sheet(isPresented: $showAll) { allSheet }
         .confirmationDialog(
             "Report this lore?",
@@ -48,6 +54,11 @@ struct TravelerLoreSection: View {
             reportButtons
         } message: {
             Text("Reported lore is hidden while we review it.")
+        }
+        .alert("Traveler lore action failed", isPresented: actionErrorBinding) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(actionError ?? "Check your connection and try again.")
         }
     }
 
@@ -62,18 +73,57 @@ struct TravelerLoreSection: View {
     }
 
     private func load() async {
+        if entries.isEmpty { phase = .loading }
         let token = await auth.validAccessToken()
         do {
-            entries = try await LoreAPI.shared.publicLore(placeID: placeID, accessToken: token)
+            let loaded = try await LoreAPI.shared.publicLore(placeID: placeID, accessToken: token)
+            guard !Task.isCancelled else { return }
+            entries = loaded
+            phase = loaded.isEmpty ? .empty : .loaded
         } catch {
             // Quiet in production (the section just self-hides); loud in DEBUG
             // so a contract drift with `lore_public` can never fail silently.
             #if DEBUG
             print("TravelerLore load failed for \(placeID): \(error)")
             #endif
-            entries = []
+            guard !Task.isCancelled else { return }
+            if entries.isEmpty { phase = .failed }
         }
-        loaded = true
+    }
+
+    private var loadingCard: some View {
+        HStack(spacing: 10) {
+            ShimmerBlock(width: 34, height: 34, cornerRadius: 17, fill: LoreColor.bone300)
+            VStack(alignment: .leading, spacing: 7) {
+                ShimmerBlock(width: 130, height: 11, cornerRadius: 4, fill: LoreColor.bone300)
+                ShimmerBlock(height: 13, cornerRadius: 4, fill: LoreColor.bone200)
+            }
+        }
+        .padding(14)
+        .background(LoreColor.bone200, in: RoundedRectangle(cornerRadius: 14))
+        .accessibilityLabel("Loading traveler lore")
+    }
+
+    private var recoveryCard: some View {
+        HStack(spacing: 10) {
+            LoreArtworkMedallion(kind: .quote, diameter: 34)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Traveler notes unavailable")
+                    .font(LoreType.button)
+                    .foregroundStyle(LoreColor.ink)
+                Text("Retry to hear from people who came before you.")
+                    .font(LoreType.caption)
+                    .foregroundStyle(LoreColor.ink600)
+            }
+            Spacer(minLength: 6)
+            Button("Retry") { Task { await load() } }
+                .font(LoreType.button)
+                .foregroundStyle(LoreColor.brass700)
+        }
+        .padding(14)
+        .background(LoreColor.bone200, in: RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(LoreColor.brass700.opacity(0.2)))
+        .accessibilityElement(children: .contain)
     }
 
     // MARK: Card section
@@ -242,7 +292,11 @@ struct TravelerLoreSection: View {
     private func report(_ entry: PublicLore, reason: String) async {
         reporting = nil
         guard let token = await auth.validAccessToken(),
-              let reporterID = auth.session?.user.id else { return }
+              let reporterID = auth.session?.user.id else {
+            actionError = "Your session expired. Sign in again to report this lore."
+            onNeedsSignIn()
+            return
+        }
         do {
             try await TravelReads.reportLore(
                 visitID: entry.id, reason: reason, reporterID: reporterID, accessToken: token
@@ -251,12 +305,17 @@ struct TravelerLoreSection: View {
             reportedIDs.insert(entry.id)
         } catch {
             // Leave the row visible; the reader can retry from the menu.
+            actionError = "We couldn’t send that report. The note remains visible so you can retry."
         }
     }
 
     private func block(_ entry: PublicLore) async {
         guard let token = await auth.validAccessToken(),
-              let blockerID = auth.session?.user.id else { return }
+              let blockerID = auth.session?.user.id else {
+            actionError = "Your session expired. Sign in again to block this traveler."
+            onNeedsSignIn()
+            return
+        }
         do {
             try await TravelReads.blockAuthor(
                 blockerID: blockerID, blockedID: entry.authorID, accessToken: token
@@ -267,6 +326,14 @@ struct TravelerLoreSection: View {
             await load()
         } catch {
             // Non-fatal; the row stays until a retry succeeds.
+            actionError = "We couldn’t block this traveler. Their notes remain visible so you can retry."
         }
+    }
+
+    private var actionErrorBinding: Binding<Bool> {
+        Binding(
+            get: { actionError != nil },
+            set: { if !$0 { actionError = nil } }
+        )
     }
 }

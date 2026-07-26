@@ -16,6 +16,7 @@ struct StreetViewSection: View {
     @Environment(\.openURL) private var openURL
     @State private var image: UIImage?
     @State private var phase: Phase = .loading
+    @State private var activeRequestKey: String?
 
     private enum Phase { case loading, loaded, hidden }
 
@@ -28,7 +29,7 @@ struct StreetViewSection: View {
 
     var body: some View {
         content
-            .task(id: "\(coordinate.latitude),\(coordinate.longitude)") { await load() }
+            .task(id: requestKey) { await load(key: requestKey) }
     }
 
     @ViewBuilder
@@ -85,7 +86,11 @@ struct StreetViewSection: View {
         }
     }
 
-    private func load() async {
+    private var requestKey: String { "\(coordinate.latitude),\(coordinate.longitude)" }
+
+    private func load(key: String) async {
+        activeRequestKey = key
+        image = nil
         phase = .loading
         var comps = URLComponents(
             url: Config.functionsURL.appending(path: "streetview"),
@@ -98,11 +103,13 @@ struct StreetViewSection: View {
         guard let url = comps?.url else { phase = .hidden; return }
 
         var request = URLRequest(url: url)
+        request.timeoutInterval = 12
         // Harmless if the proxy is public; keeps parity with the rest of the API.
         request.setValue(Config.supabaseAnonKey, forHTTPHeaderField: "apikey")
 
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
+            guard activeRequestKey == key, !Task.isCancelled else { return }
             guard
                 let http = response as? HTTPURLResponse,
                 http.statusCode == 200,
@@ -114,6 +121,7 @@ struct StreetViewSection: View {
             image = ui
             phase = .loaded
         } catch {
+            guard activeRequestKey == key, !Task.isCancelled else { return }
             phase = .hidden
         }
     }

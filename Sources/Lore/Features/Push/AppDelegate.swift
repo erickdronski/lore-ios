@@ -24,7 +24,11 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         // is requested later, from onboarding (docs/16 §5, never at cold launch).
         Task { @MainActor in
             push.becomeNotificationCenterDelegate()
-            await push.refreshAuthorizationStatus()
+            // Once the release capability is enabled, a prior grant survives
+            // launches and APNs can refresh its token without another prompt.
+            await push.refreshAuthorizationStatus(
+                registerIfAuthorized: Config.pushNotificationsEnabled
+            )
         }
         return true
     }

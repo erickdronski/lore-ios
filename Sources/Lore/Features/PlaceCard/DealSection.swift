@@ -21,18 +21,25 @@ struct DealSection: View {
 
     @State private var deals: [Deal] = []
     @State private var showPaywall = false
+    @State private var phase: Phase = .loading
+
+    private enum Phase { case loading, empty, failed, loaded }
 
     var body: some View {
         Group {
-            if deals.isEmpty {
-                // Zero-size anchor so `.task` fires even while empty — an
-                // absent view never appears, and a task that never runs could
-                // never discover the offers (same trap as TravelerLoreSection).
+            switch phase {
+            case .loading:
+                loadingCard
+            case .empty:
                 Color.clear.frame(width: 0, height: 0)
-            } else if entitlements.isPlus {
-                section
-            } else {
-                lockedTeaser
+            case .failed:
+                recoveryCard
+            case .loaded:
+                if entitlements.isPlus {
+                    section
+                } else {
+                    lockedTeaser
+                }
             }
         }
         .task(id: placeID) { await load() }
@@ -42,7 +49,54 @@ struct DealSection: View {
     }
 
     private func load() async {
-        deals = (try? await LoreAPI.shared.deals(placeID: placeID)) ?? []
+        phase = .loading
+        do {
+            let loaded = try await LoreAPI.shared.deals(placeID: placeID)
+            guard !Task.isCancelled else { return }
+            // A malformed URL would otherwise create an outward-arrow row that
+            // does nothing. Invalid offers are not usable premium inventory.
+            deals = loaded.filter { deal in
+                guard let scheme = deal.dealURL?.scheme?.lowercased() else { return false }
+                return scheme == "http" || scheme == "https"
+            }
+            phase = deals.isEmpty ? .empty : .loaded
+        } catch {
+            guard !Task.isCancelled else { return }
+            deals = []
+            phase = .failed
+        }
+    }
+
+    private var loadingCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ShimmerBlock(width: 160, height: 13, cornerRadius: 5, fill: LoreColor.bone300)
+            ShimmerBlock(height: 54, cornerRadius: 12, fill: LoreColor.bone200)
+        }
+        .padding(14)
+        .background(LoreColor.bone200, in: RoundedRectangle(cornerRadius: 16))
+        .accessibilityLabel("Loading visit offers")
+    }
+
+    private var recoveryCard: some View {
+        HStack(spacing: 11) {
+            LoreArtworkMedallion(kind: .offer, diameter: 36)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Visit offers unavailable")
+                    .font(LoreType.button)
+                    .foregroundStyle(LoreColor.ink)
+                Text("Your place guide still works. Retry when you’re online.")
+                    .font(LoreType.caption)
+                    .foregroundStyle(LoreColor.ink600)
+            }
+            Spacer(minLength: 6)
+            Button("Retry") { Task { await load() } }
+                .font(LoreType.button)
+                .foregroundStyle(LoreColor.brass700)
+        }
+        .padding(14)
+        .background(LoreColor.bone200, in: RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(LoreColor.brass700.opacity(0.22)))
+        .accessibilityElement(children: .contain)
     }
 
     /// Offers folded into their families, in the app's stable order.

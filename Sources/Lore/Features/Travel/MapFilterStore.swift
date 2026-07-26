@@ -51,9 +51,20 @@ final class MapFilterStore {
     /// `(userID, accessToken)` or `nil` when signed out, a closure to stay
     /// decoupled from the auth type, like the other Travel stores.
     private let credentials: () -> (userID: String, accessToken: String)?
+    private let writeHiddenKinds: ([String], String, String) async throws -> Void
 
-    init(credentials: @escaping () -> (userID: String, accessToken: String)?) {
+    init(
+        credentials: @escaping () -> (userID: String, accessToken: String)?,
+        writeHiddenKinds: @escaping ([String], String, String) async throws -> Void = { kinds, userID, token in
+            try await TravelReads.updateHiddenKinds(
+                kinds,
+                userID: userID,
+                accessToken: token
+            )
+        }
+    ) {
         self.credentials = credentials
+        self.writeHiddenKinds = writeHiddenKinds
     }
 
     // MARK: - Seeding
@@ -63,9 +74,14 @@ final class MapFilterStore {
     func adopt(prefs: UserPrefs?) {
         if let prefs {
             hiddenKinds = prefs.hiddenKindSet
-        } else if let pending = UserDefaults.standard.stringArray(forKey: Self.pendingHiddenKindsKey) {
-            hiddenKinds = Set(pending)
+        } else {
+            // Session changes must not leak the previous account's filters into
+            // signed-out browsing. Only an explicit guest stash survives.
+            hiddenKinds = Set(
+                UserDefaults.standard.stringArray(forKey: Self.pendingHiddenKindsKey) ?? []
+            )
         }
+        lastError = nil
         rebuildCategories()
     }
 
@@ -73,8 +89,9 @@ final class MapFilterStore {
     /// so chips are data-driven (never a dead category). Preserves any hidden
     /// state and keeps a stable, human order.
     func syncCategories(from places: [Place]) {
-        let kinds = Set(places.map(\.kind))
-        knownKinds.formUnion(kinds)
+        // Replace rather than union: chips describe the current city, not every
+        // category encountered during the entire session.
+        availableKinds = Set(places.map(\.kind))
         rebuildCategories()
     }
 
@@ -120,26 +137,57 @@ final class MapFilterStore {
         persist()
     }
 
+    /// Retry a failed server write without changing the current filter state.
+    func retryPersistence() {
+        lastError = nil
+        persist()
+    }
+
     // MARK: - Persistence
 
+    private var persistenceRevision = 0
+    private var persistenceTask: Task<Void, Never>?
+
     private func persist() {
-        let kinds = Array(hiddenKinds).sorted()
-        guard let creds = credentials() else {
-            // Signed out: stash for a post-sign-in flush.
-            UserDefaults.standard.set(kinds, forKey: Self.pendingHiddenKindsKey)
-            return
+        persistenceRevision += 1
+        guard persistenceTask == nil else { return }
+        persistenceTask = Task { [weak self] in
+            // Coalesce a quick run across the horizontal chip row, then serialize
+            // writes. If the traveler changes another chip while one PATCH is in
+            // flight, the final state is sent immediately after it.
+            try? await Task.sleep(for: .milliseconds(180))
+            await self?.persistenceLoop()
         }
-        Task {
-            do {
-                try await TravelReads.updateHiddenKinds(
-                    kinds,
-                    userID: creds.userID,
-                    accessToken: creds.accessToken
-                )
-                lastError = nil
-                UserDefaults.standard.removeObject(forKey: Self.pendingHiddenKindsKey)
-            } catch {
-                lastError = "Couldn't save your filters."
+    }
+
+    private func persistenceLoop() async {
+        while true {
+            let revision = persistenceRevision
+            let kinds = Array(hiddenKinds).sorted()
+
+            if let creds = credentials() {
+                do {
+                    try await writeHiddenKinds(
+                        kinds,
+                        creds.userID,
+                        creds.accessToken
+                    )
+                    UserDefaults.standard.removeObject(forKey: Self.pendingHiddenKindsKey)
+                    if revision == persistenceRevision { lastError = nil }
+                } catch {
+                    if revision == persistenceRevision {
+                        lastError = "Couldn't save your filters."
+                    }
+                }
+            } else {
+                // Signed out: stash for a post-sign-in flush.
+                UserDefaults.standard.set(kinds, forKey: Self.pendingHiddenKindsKey)
+                if revision == persistenceRevision { lastError = nil }
+            }
+
+            guard revision != persistenceRevision else {
+                persistenceTask = nil
+                return
             }
         }
     }
@@ -157,14 +205,11 @@ final class MapFilterStore {
 
     // MARK: - Category catalog
 
-    /// Every kind seen so far (from prefs + loaded places).
-    private var knownKinds: Set<String> = []
+    /// Kinds present in the currently loaded city.
+    private var availableKinds: Set<String> = []
 
     private func rebuildCategories() {
-        // Ensure any already-hidden kind still shows as a (toggled-off) chip
-        // even if no place of that kind is currently loaded.
-        knownKinds.formUnion(hiddenKinds)
-        let cats = knownKinds.map { KindCategory(kind: $0) }
+        let cats = availableKinds.map { KindCategory(kind: $0) }
         categories = cats.sorted { lhs, rhs in
             let lo = KindCategory.order.firstIndex(of: lhs.kind) ?? Int.max
             let ro = KindCategory.order.firstIndex(of: rhs.kind) ?? Int.max

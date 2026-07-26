@@ -68,8 +68,9 @@ final class LocationHeadingProvider: NSObject, CLLocationManagerDelegate {
     override init() {
         super.init()
         manager.delegate = self
-        manager.desiredAccuracy = kCLLocationAccuracyBest
-        manager.headingFilter = 2 // degrees between callbacks, cheap smoothing
+        manager.desiredAccuracy = kCLLocationAccuracyNearestTenMeters
+        manager.distanceFilter = 3
+        manager.headingFilter = 3 // degrees between callbacks, enough for coarse labels
         // The scanner is an active foreground camera experience. Automatic
         // pausing can otherwise expire a stationary user's last good fix and
         // falsely tell them to step outside after a few seconds.
@@ -96,6 +97,9 @@ final class LocationHeadingProvider: NSObject, CLLocationManagerDelegate {
         manager.stopUpdatingHeading()
         motion.stopDeviceMotionUpdates()
         cameraPitchDeg = nil
+        location = nil
+        headingDegrees = -1
+        headingAccuracy = -1
     }
 
     /// Gravity → camera pitch, low-passed. CMDeviceMotion.gravity is in G
@@ -147,7 +151,8 @@ final class LocationHeadingProvider: NSObject, CLLocationManagerDelegate {
         // it were the user's current position.
         guard let fix = locations.last else { return }
         let age = -fix.timestamp.timeIntervalSinceNow
-        guard age < Self.deliveredFixMaxAge,
+        guard age >= -1,
+              age < Self.deliveredFixMaxAge,
               fix.horizontalAccuracy > 0,
               fix.horizontalAccuracy < 100
         else { return }
@@ -168,6 +173,10 @@ final class LocationHeadingProvider: NSObject, CLLocationManagerDelegate {
         let value = newHeading.trueHeading >= 0
             ? newHeading.trueHeading
             : newHeading.magneticHeading
+        guard value.isFinite, value >= 0,
+              newHeading.headingAccuracy.isFinite,
+              newHeading.headingAccuracy >= 0
+        else { return }
         headingDegrees = value
         headingAccuracy = newHeading.headingAccuracy
     }

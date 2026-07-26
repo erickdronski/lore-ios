@@ -48,9 +48,17 @@ struct DiveView: View {
                             .font(LoreType.body)
                             .foregroundStyle(LoreColor.ink600)
                     case .failed(let message):
-                        Text(message)
-                            .font(LoreType.body)
-                            .foregroundStyle(LoreColor.errorDark)
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text(message)
+                                .font(LoreType.body)
+                                .foregroundStyle(LoreColor.errorDark)
+                            Button("Try dossier again") {
+                                Task { _ = await model.load(placeID: place.id) }
+                            }
+                            .font(LoreType.button)
+                            .foregroundStyle(LoreColor.amber)
+                            .accessibilityHint("Retries loading this place’s full story")
+                        }
                     case .loaded(let dive):
                         diveBody(dive)
                     }
@@ -67,7 +75,7 @@ struct DiveView: View {
         }
         .background(LoreColor.ink950.ignoresSafeArea())
         .onDisappear { narration.stop() }
-        .task {
+        .task(id: place.id) {
             // Dive-open gate (docs/00 §7): members and free users with dives left
             // open normally. Spend a free dive only after real dossier content
             // loads; an empty or failed request must not consume the allowance.
@@ -293,7 +301,9 @@ struct DiveView: View {
             }
 
             if case .loaded(let dive) = model.state {
-                if let website = dive.links.website, let url = URL(string: website) {
+                if let website = dive.links.website,
+                   let url = URL(string: website),
+                   ["http", "https"].contains(url.scheme?.lowercased() ?? "") {
                     Link(destination: url) {
                         LinkRow(icon: "link", title: "Official site", subtitle: url.host())
                     }
@@ -362,19 +372,26 @@ final class DiveModel {
     }
 
     private(set) var state: State = .loading
+    private var activeRequestID: UUID?
 
     /// Returns true only when a real dossier loaded, used by DiveMeter so empty
     /// and failed requests never consume a free daily dive.
     func load(placeID: String) async -> Bool {
+        let requestID = UUID()
+        activeRequestID = requestID
+        state = .loading
         do {
             if let dive = try await LoreAPI.shared.dive(placeID: placeID) {
+                guard activeRequestID == requestID, !Task.isCancelled else { return false }
                 state = .loaded(dive)
                 return true
             } else {
+                guard activeRequestID == requestID, !Task.isCancelled else { return false }
                 state = .empty
                 return false
             }
         } catch {
+            guard activeRequestID == requestID, !Task.isCancelled else { return false }
             state = .failed("Couldn't load this dossier, check your connection.")
             return false
         }

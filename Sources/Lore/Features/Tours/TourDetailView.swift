@@ -26,6 +26,7 @@ struct TourDetailView: View {
     /// Pre-rendered studio narration for the current stop, when its dive has
     /// one (tools/narration). Preferred over TTS by every play path.
     @State private var currentAudioURL: URL?
+    @State private var narrativeLoadFailed = false
     /// Hands-free geofenced guiding (Lore+): auto-advance + auto-play as the
     /// walker reaches each stop. Foreground-only v1 (When-In-Use permission).
     @State private var walkGuide = TourWalkGuide()
@@ -43,6 +44,9 @@ struct TourDetailView: View {
     @State private var didRestoreProgress = false
     /// Full-screen completion beat at the final stop.
     @State private var showCompletion = false
+    /// A completed walk opens as a keepsake until the traveler explicitly starts
+    /// it again; merely browsing its stops must not erase the completion seal.
+    @State private var wasCompleted = false
 
     /// A premium curated walk the current viewer hasn't unlocked.
     private var isLocked: Bool { tour.isPremium && !entitlements.isPlus }
@@ -64,6 +68,7 @@ struct TourDetailView: View {
                     // notes, and audio resolve to a lock.
                     lockedTourPreview
                 } else {
+                    if wasCompleted { completedTourBanner }
                     progressRail
                     // See the whole walk first: every stop laid out in order, the
                     // current one highlighted. A tour that starts with a map reads
@@ -101,6 +106,7 @@ struct TourDetailView: View {
             restoreProgress()
             await loadNarrative()
             focusRouteMap()
+            retargetGuide()
         }
         // Push each stop change into the Live Activity so the Lock Screen /
         // Dynamic Island track the walk (docs/16 §8). No-op when not running.
@@ -113,6 +119,11 @@ struct TourDetailView: View {
         // A moving walker updates the Lock-Screen distance live while guiding.
         .onChange(of: walkGuide.distanceToTarget) { _, _ in
             syncLiveActivity()
+        }
+        .onChange(of: entitlements.isPlus) { _, isPlus in
+            guard !isPlus else { return }
+            narration.stop()
+            walkGuide.stop()
         }
         // End the activity if the user leaves the tour screen without finishing.
         .onDisappear { liveActivity.end(); narration.stop(); walkGuide.stop() }
@@ -203,41 +214,52 @@ struct TourDetailView: View {
     /// what it does, with a caption, and reads as an optional extra.
     @ViewBuilder
     private var liveActivityControl: some View {
-        if !tour.stops.isEmpty && liveActivity.areActivitiesEnabled {
+        if !tour.stops.isEmpty {
             VStack(alignment: .leading, spacing: 6) {
-                Button {
-                    Haptics.play(.chipTap)
-                    if liveActivity.isRunning {
-                        liveActivity.end()
-                    } else {
-                        startLiveActivity()
-                    }
-                } label: {
-                    Label(
-                        liveActivity.isRunning ? "Pinned to Lock Screen · tap to stop" : "Pin tour to Lock Screen",
-                        systemImage: liveActivity.isRunning ? "checkmark.circle.fill" : "lock.iphone"
-                    )
-                    .font(LoreType.button)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 44)
-                    .background(
-                        liveActivity.isRunning ? LoreColor.brass700 : LoreColor.bone200,
-                        in: Capsule()
-                    )
-                    .foregroundStyle(liveActivity.isRunning ? LoreColor.bone : LoreColor.ink)
-                    .overlay {
-                        if !liveActivity.isRunning {
-                            Capsule().strokeBorder(LoreColor.ink.opacity(0.15), lineWidth: 1)
+                if liveActivity.areActivitiesEnabled {
+                    Button {
+                        Haptics.play(.chipTap)
+                        if liveActivity.isRunning {
+                            liveActivity.end()
+                        } else {
+                            startLiveActivity()
+                        }
+                    } label: {
+                        Label(
+                            liveActivity.isRunning ? "Pinned to Lock Screen · tap to stop" : "Pin tour to Lock Screen",
+                            systemImage: liveActivity.isRunning ? "checkmark.circle.fill" : "lock.iphone"
+                        )
+                        .font(LoreType.button)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 44)
+                        .background(
+                            liveActivity.isRunning ? LoreColor.brass700 : LoreColor.bone200,
+                            in: Capsule()
+                        )
+                        .foregroundStyle(liveActivity.isRunning ? LoreColor.bone : LoreColor.ink)
+                        .overlay {
+                            if !liveActivity.isRunning {
+                                Capsule().strokeBorder(LoreColor.ink.opacity(0.15), lineWidth: 1)
+                            }
                         }
                     }
+                    .buttonStyle(.pressable)
+                } else {
+                    Label("Lock Screen companion unavailable", systemImage: "iphone.slash")
+                        .font(LoreType.button)
+                        .foregroundStyle(LoreColor.ink600)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(13)
+                        .background(LoreColor.bone200, in: RoundedRectangle(cornerRadius: 13))
                 }
-                .buttonStyle(.pressable)
 
-                Text(liveActivity.isRunning
+                Text(liveActivity.startFailure?.message ?? (liveActivity.isRunning
                     ? "Your current stop now shows on the Lock Screen and Dynamic Island as you walk."
-                    : "Optional. Keeps your current stop on the Lock Screen and Dynamic Island so you can glance at it without opening Lore. Shows on a real iPhone, not the Simulator.")
+                    : (liveActivity.areActivitiesEnabled
+                        ? "Optional. Keeps your current stop on the Lock Screen and Dynamic Island so you can glance at it without opening Lore. Shows on a real iPhone, not the Simulator."
+                        : TourLiveActivityController.StartFailure.disabled.message)))
                     .font(LoreType.micro)
-                    .foregroundStyle(LoreColor.ink600)
+                    .foregroundStyle(liveActivity.startFailure == .systemRejected ? LoreColor.error : LoreColor.ink600)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -631,8 +653,52 @@ struct TourDetailView: View {
     }
 
     private var progressFraction: Double {
+        if wasCompleted { return 1 }
         guard !tour.stops.isEmpty else { return 0 }
         return Double(stopIndex + 1) / Double(tour.stops.count)
+    }
+
+    private var completedTourBanner: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 12) {
+                completedTourLabel
+                Spacer()
+                walkAgainButton
+            }
+            VStack(alignment: .leading, spacing: 12) {
+                completedTourLabel
+                walkAgainButton
+            }
+        }
+        .padding(14)
+        .background(LoreColor.bone50, in: RoundedRectangle(cornerRadius: 15))
+        .accessibilityElement(children: .contain)
+    }
+
+    private var completedTourLabel: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "checkmark.seal.fill")
+                .font(.system(size: 24))
+                .foregroundStyle(LoreColor.success)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Walk completed")
+                    .font(LoreType.button)
+                    .foregroundStyle(LoreColor.ink)
+                Text("Your trail seal is saved. Start again whenever you want a fresh guided pass.")
+                    .font(LoreType.caption)
+                    .foregroundStyle(LoreColor.ink600)
+            }
+        }
+    }
+
+    private var walkAgainButton: some View {
+        Button("Walk again") {
+            TourProgressStore.restart(tourSlug: tour.slug, userID: auth.session?.user.id)
+            wasCompleted = false
+            stopIndex = 0
+        }
+        .font(LoreType.caption)
+        .buttonStyle(.bordered)
     }
 
     @ViewBuilder
@@ -727,38 +793,118 @@ struct TourDetailView: View {
     /// affordance that opens the paywall.
     @ViewBuilder
     private var audioControl: some View {
-        Button {
-            if entitlements.isPlus {
-                Haptics.play(.chipTap)
-                if narration.isSpeaking { narration.stop() }
-                else if currentNarrative != nil || currentAudioURL != nil {
-                    narration.narrateDossier(text: currentNarrative, audioURL: currentAudioURL)
+        VStack(alignment: .leading, spacing: 8) {
+            Button {
+                if entitlements.isPlus {
+                    Haptics.play(.chipTap)
+                    if narration.isPaused {
+                        narration.resume()
+                    } else if narration.isSpeaking {
+                        narration.pause()
+                    } else if currentNarrative != nil || currentAudioURL != nil {
+                        narration.narrateDossier(text: currentNarrative, audioURL: currentAudioURL)
+                    } else if narrativeLoadFailed {
+                        Task { await loadNarrative() }
+                    }
+                } else {
+                    showPaywall = true
                 }
-            } else {
-                showPaywall = true
-            }
-        } label: {
-            HStack(spacing: 10) {
-                Image(systemName: narration.isSpeaking ? "stop.circle.fill" : "headphones")
-                    .font(.system(size: 18))
-                Text(narration.isSpeaking ? "Stop audio" : "Play this stop")
-                    .font(LoreType.button)
-                Spacer()
-                if !entitlements.isPlus {
-                    Image(systemName: "lock.fill").font(.system(size: 12, weight: .semibold))
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: narration.isPaused ? "play.circle.fill" : (narration.isSpeaking ? "pause.circle.fill" : "headphones"))
+                        .font(.system(size: 18))
+                    Text(audioButtonTitle)
+                        .font(LoreType.button)
+                    Spacer()
+                    if !entitlements.isPlus {
+                        Image(systemName: "lock.fill").font(.system(size: 12, weight: .semibold))
+                    }
                 }
+                .foregroundStyle(LoreColor.ink)
+                .padding(.horizontal, 16)
+                .frame(height: 50)
+                .background(LoreColor.bone200, in: Capsule())
+                .overlay(Capsule().strokeBorder(LoreColor.brass700.opacity(0.4), lineWidth: 1))
             }
-            .foregroundStyle(LoreColor.ink)
-            .padding(.horizontal, 16)
-            .frame(height: 50)
-            .background(LoreColor.bone200, in: Capsule())
-            .overlay(Capsule().strokeBorder(LoreColor.brass700.opacity(0.4), lineWidth: 1))
+            .buttonStyle(.pressable)
+            .disabled(entitlements.isPlus && currentNarrative == nil && currentAudioURL == nil && !narrativeLoadFailed)
+            .accessibilityLabel(audioAccessibilityLabel)
+
+            if narration.isActive {
+                HStack(spacing: 10) {
+                    if narration.canSeek {
+                        narrationControl(system: "gobackward.15", label: "Back 15 seconds") {
+                            narration.skip(seconds: -15)
+                        }
+                    }
+                    Button {
+                        narration.cyclePlaybackRate()
+                    } label: {
+                        Text("\(playbackRateText)x")
+                            .font(LoreType.micro)
+                            .frame(minWidth: 44, minHeight: 44)
+                            .background(LoreColor.bone200, in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(Text("Playback speed, \(playbackRateText) times"))
+                    if narration.canSeek {
+                        narrationControl(system: "goforward.15", label: "Forward 15 seconds") {
+                            narration.skip(seconds: 15)
+                        }
+                    }
+                    Spacer()
+                    Button("Stop") { narration.stop() }
+                        .font(LoreType.caption)
+                        .foregroundStyle(LoreColor.error)
+                        .frame(minHeight: 44)
+                }
+                .padding(.horizontal, 8)
+            }
+
+            if let error = narration.playbackError {
+                Text(error)
+                    .font(LoreType.caption)
+                    .foregroundStyle(LoreColor.error)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if narrativeLoadFailed {
+                Text("Narration couldn't load. Tap above to retry; downloaded city audio still works without signal.")
+                    .font(LoreType.caption)
+                    .foregroundStyle(LoreColor.error)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
-        .buttonStyle(.pressable)
-        .disabled(entitlements.isPlus && currentNarrative == nil && currentAudioURL == nil)
-        .accessibilityLabel(entitlements.isPlus
-            ? (narration.isSpeaking ? "Stop audio" : "Play this stop's audio")
-            : "Play this stop's audio, a Lore Plus feature")
+    }
+
+    private var audioButtonTitle: String {
+        if !entitlements.isPlus { return "Play this stop" }
+        if narration.isPaused { return "Resume audio" }
+        if narration.isSpeaking { return "Pause audio" }
+        if narrativeLoadFailed { return "Retry narration" }
+        return "Play this stop"
+    }
+
+    private var playbackRateText: String {
+        String(format: "%.2g", Double(narration.playbackRate))
+    }
+
+    private var audioAccessibilityLabel: Text {
+        if !entitlements.isPlus { return Text("Play this stop's audio, a Lore Plus feature") }
+        if narration.isPaused { return Text("Resume this stop's audio") }
+        if narration.isSpeaking { return Text("Pause this stop's audio") }
+        if narrativeLoadFailed { return Text("Retry loading this stop's narration") }
+        return Text("Play this stop's audio")
+    }
+
+    private func narrationControl(system: String, label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: system)
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(LoreColor.ink)
+                .frame(width: 44, height: 44)
+                .background(LoreColor.bone200, in: Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(label))
     }
 
     // MARK: Geofenced auto-play (Lore+)
@@ -799,16 +945,18 @@ struct TourDetailView: View {
                     .font(.system(size: 18))
                     .foregroundStyle(walkGuide.isGuiding ? LoreColor.brass700 : LoreColor.ink)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(walkGuide.isGuiding ? "Guiding — auto-play is on" : "Auto-play as you walk")
+                    Text(walkGuide.isDenied
+                        ? "Location needed for auto-play"
+                        : (walkGuide.isGuiding ? "Guiding — auto-play is on" : "Auto-play as you walk"))
                         .font(LoreType.button)
                         .foregroundStyle(LoreColor.ink)
-                    if walkGuide.isGuiding {
+                    if walkGuide.isDenied {
+                        Text("Tap to open Settings. Manual stops and narration still work.")
+                            .font(LoreType.caption).foregroundStyle(LoreColor.error)
+                    } else if walkGuide.isGuiding {
                         // One honest status line: denied, locating, or a live
                         // "next waypoint · distance" once a good fix exists.
-                        if walkGuide.isDenied {
-                            Text("Location is off — enable it in Settings to auto-play.")
-                                .font(LoreType.caption).foregroundStyle(LoreColor.error)
-                        } else if let meters = walkGuide.distanceToTarget, let name = guideTargetName {
+                        if let meters = walkGuide.distanceToTarget, let name = guideTargetName {
                             Text("\(name) · \(BearingProjector.distanceLabel(meters: meters))")
                                 .font(LoreType.caption).foregroundStyle(LoreColor.ink600)
                         } else if guideTargetIndex == nil {
@@ -842,7 +990,9 @@ struct TourDetailView: View {
         }
         .buttonStyle(.pressable)
         .accessibilityLabel(entitlements.isPlus
-            ? (walkGuide.isGuiding ? "Stop auto-play guiding" : "Auto-play each stop as you walk up to it")
+            ? (walkGuide.isDenied
+                ? "Location is off. Open Settings for walking auto-play"
+                : (walkGuide.isGuiding ? "Stop auto-play guiding" : "Auto-play each stop as you walk up to it"))
             : "Auto-play as you walk, a Lore Plus feature")
     }
 
@@ -890,8 +1040,17 @@ struct TourDetailView: View {
         narration.stop()
         currentNarrative = nil
         currentAudioURL = nil
+        narrativeLoadFailed = false
         guard let placeID = currentStop?.placeID else { return }
-        let dive = (try? await LoreAPI.shared.dive(placeID: placeID)) ?? nil
+        let dive: Dive?
+        do {
+            dive = try await LoreAPI.shared.dive(placeID: placeID)
+        } catch {
+            guard currentStop?.placeID == placeID else { return }
+            narrativeLoadFailed = true
+            pendingAutoPlay = false
+            return
+        }
         guard currentStop?.placeID == placeID else { return }
         currentNarrative = dive?.narrative
         currentAudioURL = dive?.audioURL
@@ -950,10 +1109,11 @@ struct TourDetailView: View {
         if let savedIndex = progress.stopIndex {
             stopIndex = savedIndex
         }
+        wasCompleted = progress.isCompleted
     }
 
     private func persistProgress() {
-        guard didRestoreProgress else { return }
+        guard didRestoreProgress, !wasCompleted else { return }
         TourProgressStore.save(
             stopIndex: stopIndex,
             for: tour.slug,
@@ -966,6 +1126,7 @@ struct TourDetailView: View {
             tourSlug: tour.slug,
             userID: auth.session?.user.id
         )
+        wasCompleted = true
         liveActivity.end()
         narration.stop()
         walkGuide.stop()

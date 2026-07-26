@@ -13,6 +13,8 @@ struct PlaceShareSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var format: LoreShareCard.Format = .story
     @State private var activityItems: [Any]?
+    @State private var isPreparing = false
+    @State private var shareError: String?
 
     var body: some View {
         NavigationStack {
@@ -32,6 +34,8 @@ struct PlaceShareSheet: View {
                         .scaleEffect(scale)
                         .frame(width: geo.size.width, height: geo.size.height)
                         .shadow(color: LoreColor.ink.opacity(0.35), radius: 24, x: 0, y: 12)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel("Preview of the \(format.accessibilityName) share card for \(place.name)")
                 }
                 .frame(maxHeight: .infinity)
 
@@ -39,6 +43,8 @@ struct PlaceShareSheet: View {
                     .padding(.horizontal, 20)
                     .padding(.bottom, 8)
             }
+            .frame(maxWidth: 700)
+            .frame(maxWidth: .infinity)
             .padding(.top, 12)
             .background(LoreColor.bone100)
             .navigationTitle("Share")
@@ -53,6 +59,12 @@ struct PlaceShareSheet: View {
                     ActivityView(items: activityItems)
                         .presentationDetents([.medium, .large])
                 }
+            }
+            .alert("Couldn't prepare this card", isPresented: errorBinding) {
+                Button("Try again") { Task { await present() } }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text(shareError ?? "Lore couldn't render the share image.")
             }
         }
     }
@@ -69,29 +81,54 @@ struct PlaceShareSheet: View {
     private var shareButton: some View {
         Button {
             Haptics.play(.chipTap)
-            present()
+            Task { await present() }
         } label: {
             HStack(spacing: 8) {
-                Image(systemName: "square.and.arrow.up")
-                Text("Share this place")
-                    .font(LoreType.button)
+                if isPreparing {
+                    ProgressView()
+                        .tint(LoreColor.bone)
+                    Text("Preparing card")
+                } else {
+                    Image(systemName: "square.and.arrow.up")
+                    Text("Share this place")
+                }
             }
+            .font(LoreType.button)
             .frame(maxWidth: .infinity)
             .frame(height: 52)
             .background(LoreColor.ink, in: Capsule())
             .foregroundStyle(LoreColor.bone)
         }
         .buttonStyle(.pressable)
+        .disabled(isPreparing)
     }
 
     private var activityBinding: Binding<Bool> {
         Binding(get: { activityItems != nil }, set: { if !$0 { activityItems = nil } })
     }
 
+    private var errorBinding: Binding<Bool> {
+        Binding(
+            get: { shareError != nil },
+            set: { if !$0 { shareError = nil } }
+        )
+    }
+
     /// Render the card and hand [image, caption, link] to the system share sheet.
     @MainActor
-    private func present() {
-        guard let image = ShareCardRenderer.loreCard(place, format: format) else { return }
+    private func present() async {
+        guard !isPreparing else { return }
+        isPreparing = true
+        shareError = nil
+        defer { isPreparing = false }
+
+        // Let the preparing state paint before ImageRenderer performs its
+        // synchronous main-actor layout work.
+        await Task.yield()
+        guard let image = ShareCardRenderer.loreCard(place, format: format) else {
+            shareError = "Lore couldn't render this card. Try another format or try again."
+            return
+        }
         activityItems = [image, ShareCaption.text(for: place), ShareCaption.url(for: place)]
     }
 }
@@ -103,7 +140,9 @@ enum ShareCaption {
     static func text(for place: Place) -> String {
         let city = place.city.replacingOccurrences(of: "-", with: " ").capitalized
         var lines = ["\(place.name) · \(city)"]
-        if let hook = place.layer1?.hook, !hook.isEmpty { lines.append(hook) }
+        if let hook = place.layer1?.hook?.trimmingCharacters(in: .whitespacesAndNewlines), !hook.isEmpty {
+            lines.append(hook)
+        }
         lines.append("Every place has a story. Discovered with Lore.")
         return lines.joined(separator: "\n\n")
     }

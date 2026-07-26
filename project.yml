@@ -240,6 +240,8 @@ targets:
     deploymentTarget: "17.0"
     sources:
       - path: Sources/LoreTests
+      - path: StoreKit/Lore.storekit
+        buildPhase: resources
     dependencies:
       - target: Lore
     settings:
@@ -260,6 +262,9 @@ schemes:
         LoreTests: [test]
     run:
       config: Debug
+      # Keep simulator purchase QA deterministic after every XcodeGen run.
+      # Archive/TestFlight still resolve products from App Store Connect.
+      storeKitConfiguration: StoreKit/Lore.storekit
     test:
       config: Debug
       targets:

@@ -63,6 +63,9 @@ struct MapScreen: View {
     /// The map's serendipity beat: briefly names a fresh place while the camera
     /// flies there, then opens its card.
     @State private var surprisePlace: Place?
+    /// Owns the delayed reveal so a city switch or repeated tap cannot open a
+    /// card from an earlier map after the traveler has moved on.
+    @State private var surpriseTask: Task<Void, Never>?
     /// Device-local trip pins are shared with the city switcher. Keeping the
     /// active city's state here makes planning available without leaving the
     /// map, while preserving the same private/offline store.
@@ -182,6 +185,16 @@ struct MapScreen: View {
             .toolbar(.hidden, for: .navigationBar)
             .task(id: city) { await model.load(city: city) }
             .onAppear { refreshPlanningCities() }
+            .onDisappear { surpriseTask?.cancel() }
+            .onChange(of: city) { oldCity, newCity in
+                guard oldCity != newCity else { return }
+                selectedPlaceID = nil
+                nightStory = nil
+                surpriseTask?.cancel()
+                surpriseTask = nil
+                surprisePlace = nil
+                refreshPlanningCities()
+            }
             .onChange(of: auth.session?.user.id) { _, _ in refreshPlanningCities() }
             .onChange(of: model.cameraTargetKey) { _, _ in
                 guard let target = model.cameraTarget else { return }
@@ -276,7 +289,8 @@ struct MapScreen: View {
                 system: "sparkles",
                 on: surprisePlace != nil,
                 title: "Surprise me",
-                label: "Surprise me with an undiscovered place"
+                label: "Surprise me with an undiscovered place",
+                enabled: !visiblePlaces.isEmpty && model.errorMessage == nil
             ) { surpriseMe() }
 
             mapControlButton(
@@ -335,6 +349,7 @@ struct MapScreen: View {
         on: Bool,
         title: String,
         label: String,
+        enabled: Bool = true,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
@@ -373,8 +388,10 @@ struct MapScreen: View {
             .scaleEffect(on && !reduceMotion ? 1.04 : 1)
         }
         .buttonStyle(.pressable)
+        .disabled(!enabled)
+        .opacity(enabled ? 1 : 0.48)
         .accessibilityLabel(Text(label))
-        .accessibilityValue(Text(on ? "Active" : "Off"))
+        .accessibilityValue(Text(enabled ? (on ? "Active" : "Off") : "Unavailable"))
         .animation(LoreSpring.smooth(reduceMotion: reduceMotion), value: on)
     }
 
@@ -443,8 +460,9 @@ struct MapScreen: View {
         guard let place = pool.randomElement() else { return }
 
         Haptics.play(.scannerLock)
+        surpriseTask?.cancel()
         selectedPlaceID = nil
-        withAnimation(LoreSpring.slow) {
+        withAnimation(LoreSpring.smooth(reduceMotion: reduceMotion)) {
             surprisePlace = place
             position = .region(MKCoordinateRegion(
                 center: place.coordinate,
@@ -452,13 +470,14 @@ struct MapScreen: View {
             ))
         }
 
-        let revealDelay = reduceMotion ? 0.12 : 0.72
-        DispatchQueue.main.asyncAfter(deadline: .now() + revealDelay) {
-            guard surprisePlace?.id == place.id else { return }
+        surpriseTask = Task {
+            let revealDelay: Duration = reduceMotion ? .milliseconds(120) : .milliseconds(720)
+            try? await Task.sleep(for: revealDelay)
+            guard !Task.isCancelled, surprisePlace?.id == place.id else { return }
             selectedPlaceID = place.id
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.6) {
-            guard surprisePlace?.id == place.id else { return }
+
+            try? await Task.sleep(for: .milliseconds(1_880))
+            guard !Task.isCancelled, surprisePlace?.id == place.id else { return }
             withAnimation(LoreMotion.tap) { surprisePlace = nil }
         }
     }
@@ -538,6 +557,9 @@ final class MapScreenModel {
     private var cityNames: [String: String] = [:]
     /// The city the current `places` were loaded for.
     private var loadedCity: String?
+    /// Identifies the only request allowed to publish state. SwiftUI cancels a
+    /// `.task(id:)` on city switches, but URL work can still finish late.
+    private var activeRequestID: UUID?
 
     var statusLine: String? {
         if let errorMessage { return errorMessage }
@@ -556,8 +578,11 @@ final class MapScreenModel {
 
     func load(city: String, force: Bool = false) async {
         guard force || city != loadedCity else { return }
+        let requestID = UUID()
+        activeRequestID = requestID
         errorMessage = nil
         places = []
+        stories = []
         theme = nil
         loadedCity = nil
         cameraTarget = nil
@@ -568,12 +593,17 @@ final class MapScreenModel {
             async let storiesTask = try? LoreAPI.shared.stories(city: city)
             async let themeTask = try? LoreAPI.shared.cityTheme(city: city)
             let loaded = try await LoreAPI.shared.places(city: city)
+            let cities = await citiesTask
+            let loadedStories = (await storiesTask) ?? []
+            let loadedTheme = (await themeTask) ?? nil
+
+            guard activeRequestID == requestID, !Task.isCancelled else { return }
             places = loaded
             loadedCity = city
-            stories = (await storiesTask) ?? []
-            theme = (await themeTask) ?? nil
+            stories = loadedStories
+            theme = loadedTheme
 
-            if let cities = await citiesTask {
+            if let cities {
                 cityNames = Dictionary(
                     cities.map { ($0.slug, $0.name) },
                     uniquingKeysWith: { first, _ in first }
@@ -590,6 +620,7 @@ final class MapScreenModel {
                 cameraTarget = Self.regionFitting(loaded)
             }
         } catch {
+            guard activeRequestID == requestID, !Task.isCancelled else { return }
             errorMessage = "Offline. Check your connection."
         }
     }

@@ -3,6 +3,78 @@ import Observation
 import UserNotifications
 import UIKit
 
+/// A validated in-app destination extracted from an APNs/local-notification
+/// payload. Unknown schemes and malformed identifiers are ignored rather than
+/// handed to UIApplication.
+enum PushDestination: Equatable {
+    case place(String)
+    case tour(String)
+    case map(city: String?)
+
+    var url: URL? {
+        var components = URLComponents()
+        components.scheme = "lore"
+        switch self {
+        case .place(let id):
+            components.host = "place"
+            components.path = "/\(id)"
+        case .tour(let slug):
+            components.host = "tour"
+            components.path = "/\(slug)"
+        case .map(let city):
+            components.host = "map"
+            if let city { components.queryItems = [URLQueryItem(name: "city", value: city)] }
+        }
+        return components.url
+    }
+
+    static func parse(_ userInfo: [AnyHashable: Any]) -> PushDestination? {
+        if let raw = userInfo["deep_link"] as? String,
+           let direct = parseLoreURL(raw) {
+            return direct
+        }
+
+        switch userInfo["type"] as? String {
+        case "nearby_lore":
+            return clean(userInfo["place_id"] as? String).map(PushDestination.place)
+        case "new_city":
+            return .map(city: clean(userInfo["city"] as? String))
+        case "tour_reminder":
+            return clean(userInfo["tour_slug"] as? String).map(PushDestination.tour)
+        default:
+            return nil
+        }
+    }
+
+    private static func parseLoreURL(_ raw: String) -> PushDestination? {
+        guard let url = URL(string: raw), url.scheme?.lowercased() == "lore" else { return nil }
+        let segments = url.pathComponents.filter { $0 != "/" }
+        switch url.host?.lowercased() {
+        case "place":
+            guard segments.count == 1 else { return nil }
+            return clean(segments[0]).map(PushDestination.place)
+        case "tour":
+            guard segments.count == 1 else { return nil }
+            return clean(segments[0]).map(PushDestination.tour)
+        case "map":
+            guard segments.isEmpty else { return nil }
+            let city = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                .queryItems?.first(where: { $0.name == "city" })?.value
+            return .map(city: clean(city))
+        default: return nil
+        }
+    }
+
+    private static func clean(_ raw: String?) -> String? {
+        guard let value = raw?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !value.isEmpty,
+              value.count <= 200,
+              !value.contains("/")
+        else { return nil }
+        return value
+    }
+}
+
 /// The push-notification client scaffold (docs/16-APPLE-TOOLKITS.md §5): request
 /// notification authorization, register for remote notifications, and hold the
 /// APNs device token once the system hands it back.
@@ -47,14 +119,32 @@ final class PushService: NSObject {
 
     /// True once the user has granted notification authorization.
     var isAuthorized: Bool {
-        authorizationStatus == .authorized || authorizationStatus == .provisional
+        authorizationStatus == .authorized
+            || authorizationStatus == .provisional
+            || authorizationStatus == .ephemeral
+    }
+
+    var educationText: String {
+        switch authorizationStatus {
+        case .authorized, .provisional, .ephemeral:
+            return "Lore nudges are on. Alerts are designed to be occasional and relevant."
+        case .denied:
+            return "Notifications are off in Settings. Lore still works normally without them."
+        case .notDetermined:
+            return "Lore can explain nearby-story nudges before asking for notification access."
+        @unknown default:
+            return "Notification status is unavailable right now."
+        }
     }
 
     /// Refresh the cached authorization status from the system. Call on
     /// foreground so a Settings-side change is reflected.
-    func refreshAuthorizationStatus() async {
+    func refreshAuthorizationStatus(registerIfAuthorized: Bool = false) async {
         let settings = await UNUserNotificationCenter.current().notificationSettings()
         authorizationStatus = settings.authorizationStatus
+        if registerIfAuthorized, isAuthorized {
+            UIApplication.shared.registerForRemoteNotifications()
+        }
     }
 
     /// Ask the user for notification permission, then register for remote
@@ -64,11 +154,24 @@ final class PushService: NSObject {
     /// Registration triggers the `AppDelegate` APNs callbacks, which call back
     /// into `didRegister(tokenData:)` / `didFailToRegister(error:)` here.
     func requestAuthorizationAndRegister() async {
+        await refreshAuthorizationStatus()
+        if authorizationStatus == .denied {
+            lastError = "Notifications are off in Settings. Turn them on there whenever you want nearby-story nudges."
+            return
+        }
+        if isAuthorized {
+            lastError = nil
+            UIApplication.shared.registerForRemoteNotifications()
+            return
+        }
         do {
             let granted = try await UNUserNotificationCenter.current()
                 .requestAuthorization(options: [.alert, .sound, .badge])
             await refreshAuthorizationStatus()
-            guard granted else { return }
+            guard granted else {
+                lastError = "Notifications remain off. Lore still works normally, and you can enable nudges later in Settings."
+                return
+            }
             // Must run on the main thread; registration is a UIApplication call.
             UIApplication.shared.registerForRemoteNotifications()
         } catch {
@@ -79,7 +182,22 @@ final class PushService: NSObject {
     /// Set this app instance as the `UNUserNotificationCenter` delegate so
     /// foreground presentation + taps route here. Call once at launch.
     func becomeNotificationCenterDelegate() {
-        UNUserNotificationCenter.current().delegate = self
+        let center = UNUserNotificationCenter.current()
+        center.delegate = self
+        center.setNotificationCategories([
+            UNNotificationCategory(
+                identifier: Category.nearbyLore.rawValue,
+                actions: [UNNotificationAction(identifier: "EXPLORE_LORE", title: "Explore story")],
+                intentIdentifiers: [],
+                options: []
+            ),
+            UNNotificationCategory(
+                identifier: Category.newCity.rawValue,
+                actions: [UNNotificationAction(identifier: "EXPLORE_CITY", title: "Explore city")],
+                intentIdentifiers: [],
+                options: []
+            ),
+        ])
     }
 
     // MARK: - APNs token callbacks (called by AppDelegate)
@@ -94,7 +212,11 @@ final class PushService: NSObject {
 
     /// Record a registration failure (e.g. no network, simulator). Non-fatal.
     func didFailToRegister(error: Error) {
-        lastError = error.localizedDescription
+        #if targetEnvironment(simulator)
+        lastError = "Push delivery requires a real iPhone. Notification UI can still be tested in Simulator."
+        #else
+        lastError = "Lore couldn't register this device for nudges. Check your connection and try again later."
+        #endif
     }
 
     /// Send the APNs token to the backend so the server sender can target this
@@ -127,15 +249,21 @@ extension PushService: UNUserNotificationCenterDelegate {
 
     /// Handle a tap on a notification, deep-link into the matching surface.
     ///
-    /// TODO(P2): read the payload's `type` (`nearby_lore` / `new_city`) + a
-    /// `place_id` / `city`, and route via `AppRouter.handleDeepLink` (the
-    /// `lore://` scheme already exists). Left as a seam; the payload shape is
-    /// defined server-side.
     nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
-        completionHandler()
+        guard response.actionIdentifier != UNNotificationDismissActionIdentifier,
+              let destination = PushDestination.parse(response.notification.request.content.userInfo),
+              let url = destination.url
+        else {
+            completionHandler()
+            return
+        }
+        Task { @MainActor in
+            UIApplication.shared.open(url)
+            completionHandler()
+        }
     }
 }

@@ -17,13 +17,20 @@ enum SessionStore {
         ]
     }
 
-    static func save(_ session: AuthSession) {
-        guard let data = try? JSONEncoder().encode(session) else { return }
-        SecItemDelete(baseQuery as CFDictionary)
+    @discardableResult
+    static func save(_ session: AuthSession) -> Bool {
+        guard let data = try? JSONEncoder().encode(session) else { return false }
+        let update: [String: Any] = [
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+        ]
+        let updateStatus = SecItemUpdate(baseQuery as CFDictionary, update as CFDictionary)
+        if updateStatus == errSecSuccess { return true }
+        guard updateStatus == errSecItemNotFound else { return false }
+
         var add = baseQuery
-        add[kSecValueData as String] = data
-        add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
-        SecItemAdd(add as CFDictionary, nil)
+        add.merge(update) { _, new in new }
+        return SecItemAdd(add as CFDictionary, nil) == errSecSuccess
     }
 
     static func load() -> AuthSession? {
@@ -33,7 +40,11 @@ enum SessionStore {
         var item: CFTypeRef?
         guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
               let data = item as? Data else { return nil }
-        return try? JSONDecoder().decode(AuthSession.self, from: data)
+        guard let session = try? JSONDecoder().decode(AuthSession.self, from: data) else {
+            clear()
+            return nil
+        }
+        return session
     }
 
     static func clear() {

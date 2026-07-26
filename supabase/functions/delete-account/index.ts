@@ -10,16 +10,30 @@ const CORS = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-const json = (body: Record<string, unknown>, status = 200) =>
+const json = (
+  body: Record<string, unknown>,
+  status = 200,
+  requestID = crypto.randomUUID(),
+) =>
   new Response(JSON.stringify(body), {
     status,
-    headers: { ...CORS, "Content-Type": "application/json" },
+    headers: {
+      ...CORS,
+      "Cache-Control": "no-store",
+      "Content-Type": "application/json",
+      "X-Request-ID": requestID,
+    },
   });
+
+const env = (name: string): string => {
+  const value = Deno.env.get(name);
+  if (!value) throw new Error(`missing ${name}`);
+  return value;
+};
 
 async function collectOwnedPaths(
   bucket: ReturnType<ReturnType<typeof createClient>["storage"]["from"]>,
   prefix: string,
-  uid: string,
 ): Promise<string[]> {
   const paths: string[] = [];
   let offset = 0;
@@ -35,8 +49,8 @@ async function collectOwnedPaths(
     for (const item of data ?? []) {
       const path = prefix ? `${prefix}/${item.name}` : item.name;
       if (!item.id) {
-        paths.push(...await collectOwnedPaths(bucket, path, uid));
-      } else if (item.owner_id === uid || path === uid || path.startsWith(`${uid}/`)) {
+        paths.push(...await collectOwnedPaths(bucket, path));
+      } else {
         paths.push(path);
       }
     }
@@ -49,21 +63,42 @@ async function collectOwnedPaths(
 }
 
 Deno.serve(async (req) => {
+  const requestID = req.headers.get("X-Request-ID") ?? crypto.randomUUID();
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
-  if (req.method !== "POST") return json({ error: "POST only" }, 405);
+  if (req.method !== "POST") {
+    return json({ error: "method_not_allowed" }, 405, requestID);
+  }
 
-  const url = Deno.env.get("SUPABASE_URL")!;
-  const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
   const authHeader = req.headers.get("Authorization") ?? "";
+  if (!/^Bearer\s+\S+$/i.test(authHeader)) {
+    return json({ error: "not_authenticated" }, 401, requestID);
+  }
+
+  let url: string;
+  let anonKey: string;
+  let serviceRoleKey: string;
+  try {
+    url = env("SUPABASE_URL");
+    anonKey = env("SUPABASE_ANON_KEY");
+    serviceRoleKey = env("SUPABASE_SERVICE_ROLE_KEY");
+  } catch (error) {
+    console.error("account deletion configuration error", requestID, String(error));
+    return json({ error: "service_unavailable" }, 503, requestID);
+  }
 
   const caller = createClient(url, anonKey, {
     global: { headers: { Authorization: authHeader } },
+    auth: { autoRefreshToken: false, persistSession: false },
   });
   const { data: { user }, error: userError } = await caller.auth.getUser();
-  if (userError || !user) return json({ error: "not authenticated" }, 401);
+  if (userError || !user) {
+    return json({ error: "not_authenticated" }, 401, requestID);
+  }
 
   const uid = user.id;
-  const admin = createClient(url, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+  const admin = createClient(url, serviceRoleKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
 
   try {
     const pathsByBucket = new Map<string, Set<string>>();
@@ -103,7 +138,10 @@ Deno.serve(async (req) => {
 
     for (const bucketInfo of buckets ?? []) {
       const bucket = admin.storage.from(bucketInfo.id);
-      const owned = await collectOwnedPaths(bucket, "", uid);
+      // Every Lore uploader writes beneath `{uid}/...`; listing only that prefix
+      // keeps deletion proportional to this account rather than every object in
+      // every bucket. Database-tracked legacy media is added above separately.
+      const owned = await collectOwnedPaths(bucket, uid);
       const paths = pathsByBucket.get(bucketInfo.id) ?? new Set<string>();
       for (const path of owned) paths.add(path);
       pathsByBucket.set(bucketInfo.id, paths);
@@ -119,23 +157,23 @@ Deno.serve(async (req) => {
       }
     }
   } catch (error) {
-    console.error("account storage cleanup failed", String(error));
-    return json({ error: "account storage cleanup failed" }, 500);
+    console.error("account storage cleanup failed", requestID, uid, String(error));
+    return json({ error: "storage_cleanup_failed" }, 500, requestID);
   }
 
   const { error: dataError } = await admin.rpc("delete_my_account_data", {
     p_user: uid,
   });
   if (dataError) {
-    console.error("account data cleanup failed", dataError.message);
-    return json({ error: "account data cleanup failed" }, 500);
+    console.error("account data cleanup failed", requestID, uid, dataError.message);
+    return json({ error: "data_cleanup_failed" }, 500, requestID);
   }
 
-  const { error: deleteError } = await admin.auth.admin.deleteUser(uid);
+  const { error: deleteError } = await admin.auth.admin.deleteUser(uid, false);
   if (deleteError) {
-    console.error("auth deletion failed", deleteError.message);
-    return json({ error: "auth deletion failed" }, 500);
+    console.error("auth deletion failed", requestID, uid, deleteError.message);
+    return json({ error: "identity_cleanup_failed" }, 500, requestID);
   }
 
-  return json({ deleted: true });
+  return json({ deleted: true }, 200, requestID);
 });

@@ -107,3 +107,98 @@ final class ScannerLogicTests: XCTestCase {
               heightM: height, city: "test", layer1: nil, tags: [], emoji: nil)
     }
 }
+
+final class SpecialistJourneyRegressionTests: XCTestCase {
+    @MainActor
+    func testArrivalRequiresTwoAccurateConsecutiveFixes() {
+        var gate = TourWalkGuide.ArrivalGate()
+
+        XCTAssertFalse(gate.consider(distance: 12, horizontalAccuracy: 10))
+        XCTAssertTrue(gate.consider(distance: 14, horizontalAccuracy: 12))
+    }
+
+    @MainActor
+    func testArrivalDriftResetsConfirmation() {
+        var gate = TourWalkGuide.ArrivalGate()
+
+        XCTAssertFalse(gate.consider(distance: 10, horizontalAccuracy: 8))
+        XCTAssertFalse(gate.consider(distance: 11, horizontalAccuracy: 60))
+        XCTAssertFalse(gate.consider(distance: 9, horizontalAccuracy: 7))
+        XCTAssertTrue(gate.consider(distance: 8, horizontalAccuracy: 7))
+    }
+
+    func testLandmarkResultNormalizesConfidenceAndAmbiguity() throws {
+        let uncertain = try XCTUnwrap(LandmarkID(name: "  Clock Tower  ", confidence: 0.61, slug: "  "))
+        let certain = try XCTUnwrap(LandmarkID(name: "Clock Tower", confidence: 1.4, slug: "clock-tower"))
+
+        XCTAssertEqual(uncertain.name, "Clock Tower")
+        XCTAssertNil(uncertain.slug)
+        XCTAssertTrue(uncertain.isAmbiguous)
+        XCTAssertEqual(certain.confidence, 1)
+        XCTAssertFalse(certain.isAmbiguous)
+        XCTAssertNil(LandmarkID(name: " \n ", confidence: 0.9, slug: nil))
+    }
+
+    func testPushDestinationRejectsExternalAndMalformedLinks() {
+        XCTAssertNil(PushDestination.parse(["deep_link": "https://example.com/place/city-hall"]))
+        XCTAssertNil(PushDestination.parse(["deep_link": "lore://place/city-hall/extra"]))
+        XCTAssertNil(PushDestination.parse(["type": "nearby_lore", "place_id": "bad/id"]))
+    }
+
+    func testPushDestinationBuildsSafeLoreRoutes() {
+        let place = PushDestination.parse(["type": "nearby_lore", "place_id": "city-hall"])
+        let city = PushDestination.parse(["type": "new_city", "city": "Paris"])
+
+        XCTAssertEqual(place, .place("city-hall"))
+        XCTAssertEqual(place?.url?.absoluteString, "lore://place/city-hall")
+        XCTAssertEqual(city, .map(city: "Paris"))
+        XCTAssertEqual(city?.url?.absoluteString, "lore://map?city=Paris")
+    }
+
+    @MainActor
+    func testLegacyOfflinePackManifestMigratesAsComplete() throws {
+        let legacy: [String: Any] = [
+            "downloadedAt": 0,
+            "placeCount": 12,
+            "imageBytes": 2400,
+            "imageKeys": ["hero", "audio"],
+            "pinnedURLs": ["https://example.com/places"],
+        ]
+        let data = try JSONSerialization.data(withJSONObject: legacy)
+        let pack = try JSONDecoder().decode(CityPackStore.CityPack.self, from: data)
+
+        XCTAssertEqual(pack.mediaCount, 2)
+        XCTAssertEqual(pack.missingMediaCount, 0)
+        XCTAssertTrue(pack.isComplete)
+    }
+
+    @MainActor
+    func testPartialOfflinePackReportsMissingMedia() {
+        var pack = CityPackStore.CityPack(
+            downloadedAt: .now,
+            placeCount: 30,
+            imageBytes: 9000,
+            imageKeys: ["hero"],
+            pinnedURLs: [],
+            mediaCount: 4,
+            missingMediaCount: 3
+        )
+
+        XCTAssertFalse(pack.isComplete)
+
+        pack = CityPackStore.CityPack(
+            downloadedAt: .now,
+            placeCount: 30,
+            imageBytes: 9000,
+            imageKeys: ["hero", "audio"],
+            pinnedURLs: [],
+            mediaCount: 2,
+            missingMediaCount: 0
+        )
+        pack.reconcileStoredMedia(validKeys: ["hero"], bytes: 4500)
+
+        XCTAssertEqual(pack.missingMediaCount, 1)
+        XCTAssertEqual(pack.imageBytes, 4500)
+        XCTAssertFalse(pack.isComplete)
+    }
+}

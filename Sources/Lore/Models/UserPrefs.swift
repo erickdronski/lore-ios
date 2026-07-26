@@ -38,8 +38,8 @@ struct UserPrefs: Codable, Identifiable, Hashable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         userID = try container.decode(String.self, forKey: .userID)
         persona = try container.decodeIfPresent(Persona.self, forKey: .persona) ?? .traveler
-        interests = try container.decodeIfPresent([String].self, forKey: .interests) ?? []
-        hiddenKinds = try container.decodeIfPresent([String].self, forKey: .hiddenKinds) ?? []
+        interests = Self.unique(try container.decodeIfPresent([String].self, forKey: .interests) ?? [])
+        hiddenKinds = Self.unique(try container.decodeIfPresent([String].self, forKey: .hiddenKinds) ?? [])
         affinity = try container.decodeIfPresent(JSONValue.self, forKey: .affinity)
         onboarded = try container.decodeIfPresent(Bool.self, forKey: .onboarded) ?? false
     }
@@ -54,8 +54,8 @@ struct UserPrefs: Codable, Identifiable, Hashable {
     ) {
         self.userID = userID
         self.persona = persona
-        self.interests = interests
-        self.hiddenKinds = hiddenKinds
+        self.interests = Self.unique(interests)
+        self.hiddenKinds = Self.unique(hiddenKinds)
         self.affinity = affinity
         self.onboarded = onboarded
     }
@@ -105,6 +105,56 @@ struct UserPrefs: Codable, Identifiable, Hashable {
             case .curator: return "Everything, unfiltered. I'll decide."
             }
         }
+
+        var symbolName: String {
+            switch self {
+            case .traveler: return "suitcase.fill"
+            case .local: return "building.2.fill"
+            case .architect: return "ruler.fill"
+            case .historian: return "clock.fill"
+            case .family: return "figure.2.and.child.holdinghands"
+            case .explorer: return "safari.fill"
+            case .nightlife: return "moon.stars.fill"
+            case .curator: return "sparkles.rectangle.stack.fill"
+            }
+        }
+
+        var defaultInterestIDs: [String] {
+            switch self {
+            case .traveler: return ["architecture", "history", "hidden_gems", "parks_nature", "public_art"]
+            case .local: return ["hidden_gems", "nightlife", "film_music", "public_art"]
+            case .architect: return ["architecture", "history", "public_art"]
+            case .historian: return ["history", "architecture", "haunted"]
+            case .family: return ["family", "parks_nature", "public_art", "sports"]
+            case .explorer: return ["hidden_gems", "parks_nature", "history", "public_art"]
+            case .nightlife: return ["nightlife", "film_music", "haunted", "hidden_gems"]
+            case .curator: return UserPrefs.interestCatalog.map(\.id)
+            }
+        }
+    }
+
+    struct InterestOption: Identifiable, Hashable {
+        let id: String
+        let label: String
+        let symbolName: String
+        let detail: String
+    }
+
+    static let interestCatalog: [InterestOption] = [
+        .init(id: "architecture", label: "Architecture", symbolName: "building.columns.fill", detail: "Facades, structures, and skyline icons"),
+        .init(id: "history", label: "History", symbolName: "scroll.fill", detail: "Founding eras and turning points"),
+        .init(id: "parks_nature", label: "Parks & nature", symbolName: "leaf.fill", detail: "Green spaces, trails, and waterfronts"),
+        .init(id: "hidden_gems", label: "Hidden gems", symbolName: "diamond.fill", detail: "The non-obvious, beyond the tourist line"),
+        .init(id: "film_music", label: "Film & music", symbolName: "music.note.list", detail: "Where scenes and songs were made"),
+        .init(id: "public_art", label: "Public art", symbolName: "paintpalette.fill", detail: "Murals, monuments, and street sculpture"),
+        .init(id: "nightlife", label: "Nightlife", symbolName: "wineglass.fill", detail: "Bars, jazz, and after-dark stories"),
+        .init(id: "family", label: "Family", symbolName: "figure.2.and.child.holdinghands", detail: "Kid-friendly wonder and open spaces"),
+        .init(id: "sports", label: "Sports", symbolName: "sportscourt.fill", detail: "Ballparks, arenas, and local legends"),
+        .init(id: "haunted", label: "Haunted", symbolName: "moon.haze.fill", detail: "Ghost stories and hushed folklore"),
+    ]
+
+    static var knownInterestIDs: Set<String> {
+        Set(interestCatalog.map(\.id))
     }
 
     /// Interests as a `Set` for fast membership checks in relevance scoring.
@@ -121,6 +171,17 @@ struct UserPrefs: Codable, Identifiable, Hashable {
         return 0
     }
 
+    func updating(persona: Persona, interests: [String]) -> UserPrefs {
+        UserPrefs(
+            userID: userID,
+            persona: persona,
+            interests: interests,
+            hiddenKinds: hiddenKinds,
+            affinity: affinity,
+            onboarded: true
+        )
+    }
+
     /// Body for `upsertPrefs`, the mutable subset the client writes back
     /// (never `user_id`; RLS derives it from the JWT). `affinity` is
     /// server-learned and omitted here.
@@ -131,5 +192,14 @@ struct UserPrefs: Codable, Identifiable, Hashable {
             "hidden_kinds": hiddenKinds,
             "onboarded": onboarded,
         ]
+    }
+
+    private static func unique(_ values: [String]) -> [String] {
+        var seen = Set<String>()
+        return values.compactMap { value in
+            let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !normalized.isEmpty, seen.insert(normalized).inserted else { return nil }
+            return normalized
+        }
     }
 }

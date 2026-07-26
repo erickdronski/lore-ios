@@ -100,6 +100,7 @@ struct FilmGrain: View {
 ///
 /// Content is Bone on the Ink sky, so text colors here are the on-Ink variants.
 struct OnboardingScaffold<Content: View>: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let progress: Double
     /// Shown as the pinned bottom button label. `nil` hides the CTA (e.g. steps
     /// whose action lives inline).
@@ -123,12 +124,17 @@ struct OnboardingScaffold<Content: View>: View {
         VStack(spacing: 0) {
             header
             if centered {
-                VStack(spacing: 0) {
-                    Spacer(minLength: 0)
-                    content()
-                        .frame(maxWidth: .infinity)
-                        .padding(.horizontal, 24)
-                    Spacer(minLength: 0)
+                GeometryReader { proxy in
+                    ScrollView {
+                        VStack(spacing: 0) {
+                            Spacer(minLength: 24)
+                            content()
+                                .frame(maxWidth: .infinity)
+                                .padding(.horizontal, 24)
+                            Spacer(minLength: 24)
+                        }
+                        .frame(minHeight: proxy.size.height)
+                    }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -191,7 +197,8 @@ struct OnboardingScaffold<Content: View>: View {
                 }
             }
             .frame(maxWidth: .infinity)
-            .frame(height: 52)
+            .frame(minHeight: 52)
+            .padding(.vertical, 2)
         }
         .background(primaryEnabled ? LoreColor.amber : LoreColor.amber.opacity(0.3), in: Capsule())
         .foregroundStyle(LoreColor.ink)
@@ -199,7 +206,7 @@ struct OnboardingScaffold<Content: View>: View {
             Capsule().strokeBorder(LoreColor.ink.opacity(0.12), lineWidth: 1)
         )
         .disabled(!primaryEnabled || primaryBusy)
-        .animation(LoreMotion.tap, value: primaryEnabled)
+        .animation(reduceMotion ? nil : LoreMotion.tap, value: primaryEnabled)
     }
 }
 
@@ -207,6 +214,7 @@ struct OnboardingScaffold<Content: View>: View {
 /// steps advance.
 struct ProgressRail: View {
     let progress: Double
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         GeometryReader { geo in
@@ -215,7 +223,7 @@ struct ProgressRail: View {
                 Capsule()
                     .fill(LoreColor.amber)
                     .frame(width: max(6, geo.size.width * progress))
-                    .animation(LoreMotion.drift, value: progress)
+                    .animation(reduceMotion ? nil : LoreMotion.drift, value: progress)
             }
         }
         .frame(height: 4)
@@ -245,7 +253,8 @@ struct InterestChip: View {
                     .foregroundStyle(isSelected ? LoreColor.ink : LoreColor.bone)
             }
             .padding(.horizontal, 14)
-            .frame(height: 44)
+            .frame(minHeight: 44)
+            .padding(.vertical, 2)
             .background(
                 Capsule().fill(isSelected ? LoreColor.amber : LoreColor.bone.opacity(0.06))
             )
@@ -285,7 +294,8 @@ struct PersonaChip: View {
                     .foregroundStyle(isSelected ? LoreColor.ink : LoreColor.bone)
             }
             .frame(maxWidth: .infinity)
-            .frame(height: 62)
+            .frame(minHeight: 62)
+            .padding(.vertical, 8)
             .background(
                 RoundedRectangle(cornerRadius: 14)
                     .fill(isSelected ? LoreColor.amber : LoreColor.bone.opacity(0.06))
@@ -320,37 +330,47 @@ struct PermissionToggleRow: View {
     let isOn: Bool
     /// A permission request in flight (shows a spinner instead of the switch).
     var isBusy: Bool = false
-    /// Called with the requested state; act only on `true` (turning it on).
-    let onChange: (Bool) -> Void
+    let actionTitle: String
+    var actionEnabled: Bool = true
+    let accessibilityHint: String
+    let action: () -> Void
 
     var body: some View {
-        HStack(spacing: 14) {
-            ZStack {
-                Circle()
-                    .fill(LoreColor.amber.opacity(0.14))
-                    .frame(width: 44, height: 44)
-                Image(systemName: symbol)
-                    .font(.system(size: 18, weight: .medium))
-                    .foregroundStyle(LoreColor.amber)
+        Button(action: action) {
+            HStack(spacing: 14) {
+                ZStack {
+                    Circle()
+                        .fill(LoreColor.amber.opacity(0.14))
+                        .frame(width: 44, height: 44)
+                    Image(systemName: isOn ? "checkmark" : symbol)
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(LoreColor.amber)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(LoreType.button)
+                        .foregroundStyle(LoreColor.bone)
+                    Text(subtitle)
+                        .font(LoreType.caption)
+                        .foregroundStyle(LoreColor.bone.opacity(0.68))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 8)
+                if isBusy {
+                    ProgressView().tint(LoreColor.amber)
+                } else {
+                    Text(actionTitle)
+                        .font(LoreType.caption)
+                        .foregroundStyle(actionEnabled ? LoreColor.amber : LoreColor.bone.opacity(0.7))
+                        .padding(.horizontal, 10)
+                        .frame(minHeight: 32)
+                        .background(Capsule().fill(LoreColor.bone.opacity(0.08)))
+                }
             }
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(LoreType.button)
-                    .foregroundStyle(LoreColor.bone)
-                Text(subtitle)
-                    .font(LoreType.caption)
-                    .foregroundStyle(LoreColor.bone.opacity(0.6))
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 8)
-            if isBusy {
-                ProgressView().tint(LoreColor.amber)
-            } else {
-                Toggle("", isOn: Binding(get: { isOn }, set: { onChange($0) }))
-                    .labelsHidden()
-                    .tint(LoreColor.amber)
-            }
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .disabled(!actionEnabled || isBusy)
         .padding(16)
         .background(
             RoundedRectangle(cornerRadius: 20)
@@ -363,6 +383,7 @@ struct PermissionToggleRow: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel(title)
         .accessibilityValue(isOn ? "On" : "Off")
+        .accessibilityHint(accessibilityHint)
     }
 }
 

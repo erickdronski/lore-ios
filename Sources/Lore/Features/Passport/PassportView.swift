@@ -15,6 +15,7 @@ import SwiftUI
 struct PassportView: View {
     @Environment(AuthService.self) private var auth
     @State private var model = PassportModel()
+    @State private var selectedBadge: PassportBadge?
 
     var body: some View {
         NavigationStack {
@@ -60,6 +61,13 @@ struct PassportView: View {
             // identity transition so badges from one account never cross into
             // another account or the signed-out state.
             .task(id: auth.session?.user.id) { await model.load(auth: auth) }
+            .sheet(item: $selectedBadge) { badge in
+                AchievementDetailSheet(
+                    badge: badge,
+                    progressAvailable: !auth.isSignedIn || model.achievementProgressAvailable
+                )
+            }
+            .onChange(of: auth.session?.user.id) { _, _ in selectedBadge = nil }
         }
     }
 
@@ -80,15 +88,21 @@ struct PassportView: View {
                     unlockedCount: model.unlockedCount,
                     totalCount: model.totalCount,
                     insightPoints: model.insightPoints,
-                    signedIn: auth.isSignedIn
+                    signedIn: auth.isSignedIn,
+                    progressAvailable: !auth.isSignedIn || model.achievementProgressAvailable
                 )
                 .padding(.horizontal, 16)
                 .padding(.top, 4)
 
+                if let warning = model.progressWarning {
+                    progressSyncNotice(warning)
+                        .padding(.horizontal, 16)
+                }
+
                 if !auth.isSignedIn {
                     signedOutNote
                         .padding(.horizontal, 16)
-                } else {
+                } else if model.statsAvailable {
                     // The world-exploration dashboard: continents lit as you
                     // cross them, headline tallies, streak, and personal ledger.
                     ExplorerStatsView(stats: model.stats)
@@ -99,13 +113,107 @@ struct PassportView: View {
                     .buttonStyle(.pressable)
                     .padding(.horizontal, 16)
 
+                if let next = model.nextMilestone, auth.isSignedIn {
+                    nextMilestoneCard(next)
+                        .padding(.horizontal, 16)
+                }
+
+                if model.totalCount == 0 {
+                    emptyCatalogCard
+                        .padding(.horizontal, 16)
+                }
+
                 ForEach(model.sections) { section in
-                    CategorySection(section: section)
+                    CategorySection(
+                        section: section,
+                        progressAvailable: !auth.isSignedIn || model.achievementProgressAvailable
+                    ) { selectedBadge = $0 }
                 }
             }
+            .frame(maxWidth: 980)
+            .frame(maxWidth: .infinity)
             .padding(.bottom, 40)
         }
         .scrollContentBackground(.hidden)
+        .refreshable { await model.load(auth: auth) }
+    }
+
+    private func progressSyncNotice(_ message: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "arrow.triangle.2.circlepath.icloud")
+                .foregroundStyle(LoreColor.amber)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Progress may be out of date")
+                    .font(LoreType.button)
+                    .foregroundStyle(LoreColor.bone)
+                Text(message)
+                    .font(LoreType.caption)
+                    .foregroundStyle(LoreColor.bone.opacity(0.7))
+            }
+            Spacer(minLength: 8)
+            Button("Retry") { Task { await model.load(auth: auth) } }
+                .font(LoreType.button)
+                .foregroundStyle(LoreColor.amber)
+        }
+        .padding(14)
+        .background(LoreColor.ink800, in: RoundedRectangle(cornerRadius: 16))
+        .accessibilityElement(children: .contain)
+    }
+
+    private func nextMilestoneCard(_ badge: PassportBadge) -> some View {
+        Button { selectedBadge = badge } label: {
+            HStack(spacing: 14) {
+                Image(systemName: badge.achievement.symbolName)
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(LoreColor.ink900)
+                    .frame(width: 50, height: 50)
+                    .background(LoreColor.amber, in: Circle())
+
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("NEXT MILESTONE")
+                        .font(LoreType.label)
+                        .tracking(0.7)
+                        .foregroundStyle(LoreColor.brass300)
+                    Text(badge.achievement.name)
+                        .font(LoreType.display(size: 19, weight: .semibold))
+                        .foregroundStyle(LoreColor.bone)
+                    ProgressView(value: badge.progressFraction)
+                        .tint(LoreColor.amber)
+                    Text(badge.progressSummary)
+                        .font(LoreType.caption)
+                        .foregroundStyle(LoreColor.bone.opacity(0.68))
+                }
+                Spacer(minLength: 6)
+                Image(systemName: "chevron.right")
+                    .foregroundStyle(LoreColor.amber)
+            }
+            .padding(16)
+            .background(LoreColor.ink800, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .strokeBorder(LoreColor.amber.opacity(0.26), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.pressable)
+        .accessibilityHint("Opens this achievement's requirements")
+    }
+
+    private var emptyCatalogCard: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "seal")
+                .font(.system(size: 26, weight: .semibold))
+                .foregroundStyle(LoreColor.amber)
+            Text("Achievement catalog unavailable")
+                .font(LoreType.displayM)
+                .foregroundStyle(LoreColor.bone)
+            Text("Your journal is still available. Pull to refresh the badge catalog.")
+                .font(LoreType.caption)
+                .foregroundStyle(LoreColor.bone.opacity(0.68))
+                .multilineTextAlignment(.center)
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity)
+        .background(LoreColor.ink800, in: RoundedRectangle(cornerRadius: 18))
     }
 
     private var passportMasthead: some View {
@@ -299,6 +407,7 @@ struct PassportSummary: View {
     let totalCount: Int
     let insightPoints: Int
     let signedIn: Bool
+    let progressAvailable: Bool
 
     private var completion: Double {
         guard totalCount > 0 else { return 0 }
@@ -353,7 +462,7 @@ struct PassportSummary: View {
                 .fill(LoreColor.ink900)
                 .padding(8)
             VStack(spacing: 0) {
-                Text("\(Int((completion * 100).rounded()))")
+                Text(progressAvailable ? "\(Int((completion * 100).rounded()))" : "--")
                     .font(LoreType.display(size: 23, weight: .bold))
                     .foregroundStyle(LoreColor.amber)
                 Text("%")
@@ -364,7 +473,9 @@ struct PassportSummary: View {
         .frame(width: 84, height: 84)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Passport completion")
-        .accessibilityValue("\(Int((completion * 100).rounded())) percent")
+        .accessibilityValue(
+            progressAvailable ? "\(Int((completion * 100).rounded())) percent" : "Unavailable until progress syncs"
+        )
     }
 
     private var summaryDetails: some View {
@@ -380,7 +491,7 @@ struct PassportSummary: View {
             Text("Your exploration, earned")
                 .font(LoreType.displayM)
                 .foregroundStyle(LoreColor.bone)
-            Text(signedIn ? "Every seal records a story you found." : "A personal atlas ready to be written.")
+            Text(summarySubtitle)
                 .font(LoreType.caption)
                 .foregroundStyle(LoreColor.bone.opacity(0.68))
                 .fixedSize(horizontal: false, vertical: true)
@@ -392,25 +503,43 @@ struct PassportSummary: View {
             stat(caption: "Badges") {
                 // "n / total", n counts up on first view; the total is fixed.
                 HStack(spacing: 0) {
-                    CountUpText.integer(
-                        unlockedCount,
-                        font: LoreType.display(size: 25, weight: .semibold)
-                    )
-                    Text("/\(totalCount)")
-                        .font(LoreType.display(size: 25, weight: .semibold))
+                    if progressAvailable {
+                        CountUpText.integer(
+                            unlockedCount,
+                            font: LoreType.display(size: 25, weight: .semibold)
+                        )
+                        Text("/\(totalCount)")
+                            .font(LoreType.display(size: 25, weight: .semibold))
+                    } else {
+                        Text("--/\(totalCount)")
+                            .font(LoreType.display(size: 25, weight: .semibold))
+                    }
                 }
                 .foregroundStyle(LoreColor.amber)
             }
             divider
             stat(caption: "Insight") {
                 // Insight points roll up, the ledger tallying (LUXURY-MOTION §5).
-                CountUpText.integer(
-                    insightPoints,
-                    font: LoreType.display(size: 25, weight: .semibold)
-                )
+                Group {
+                    if progressAvailable {
+                        CountUpText.integer(
+                            insightPoints,
+                            font: LoreType.display(size: 25, weight: .semibold)
+                        )
+                    } else {
+                        Text("--")
+                            .font(LoreType.display(size: 25, weight: .semibold))
+                    }
+                }
                 .foregroundStyle(LoreColor.brass300)
             }
         }
+    }
+
+    private var summarySubtitle: String {
+        if !signedIn { return "A personal atlas ready to be written." }
+        if !progressAvailable { return "Sync your progress to restore your earned seals." }
+        return "Every seal records a story you found."
     }
 
     private func stat<Value: View>(
@@ -444,6 +573,8 @@ struct PassportSummary: View {
 /// badge atlas on iPad without stretching individual medallions.
 struct CategorySection: View {
     let section: PassportSection
+    var progressAvailable = true
+    var onSelect: (PassportBadge) -> Void = { _ in }
 
     /// Flips on appear so the badges bloom in a stagger rather than being born
     /// already-landed (LUXURY-MOTION §6 "badges StaggeredReveal in").
@@ -464,7 +595,7 @@ struct CategorySection: View {
                 ZStack {
                     Circle().fill(LoreColor.brass300.opacity(0.12))
                     Circle().strokeBorder(LoreColor.brass300.opacity(0.38), lineWidth: 1)
-                    Image(systemName: section.unlockedCount == section.badges.count ? "checkmark.seal.fill" : section.symbol)
+                    Image(systemName: categorySymbol)
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(LoreColor.brass300)
                 }
@@ -474,14 +605,20 @@ struct CategorySection: View {
                     Text(section.title)
                         .font(LoreType.display(size: 20, weight: .medium))
                         .foregroundStyle(LoreColor.bone)
-                    ProgressView(value: completion)
-                        .tint(LoreColor.amber)
-                        .accessibilityLabel("\(section.title) completion")
-                        .accessibilityValue("\(section.unlockedCount) of \(section.badges.count)")
+                    if progressAvailable {
+                        ProgressView(value: completion)
+                            .tint(LoreColor.amber)
+                            .accessibilityLabel("\(section.title) completion")
+                            .accessibilityValue("\(section.unlockedCount) of \(section.badges.count)")
+                    } else {
+                        Text("Progress unavailable until sync completes")
+                            .font(LoreType.caption)
+                            .foregroundStyle(LoreColor.bone.opacity(0.68))
+                    }
                 }
 
                 Spacer()
-                Text("\(section.unlockedCount)/\(section.badges.count)")
+                Text(progressAvailable ? "\(section.unlockedCount)/\(section.badges.count)" : "--/\(section.badges.count)")
                     .font(LoreType.label)
                     .foregroundStyle(LoreColor.bone.opacity(0.78))
                     .padding(.horizontal, 9)
@@ -492,11 +629,33 @@ struct CategorySection: View {
 
             LazyVGrid(columns: columns, alignment: .center, spacing: 12) {
                 ForEach(Array(section.badges.enumerated()), id: \.element.achievement.id) { pair in
-                    AchievementBadge(
-                        achievement: pair.element.achievement,
-                        progress: pair.element.progress,
-                        appeared: appeared,
-                        revealDelay: LoreMotion.staggerDelay(index: pair.offset)
+                    Button { onSelect(pair.element) } label: {
+                        ZStack(alignment: .topTrailing) {
+                            AchievementBadge(
+                                achievement: pair.element.achievement,
+                                progress: pair.element.progress,
+                                appeared: appeared,
+                                revealDelay: LoreMotion.staggerDelay(index: pair.offset)
+                            )
+                            .opacity(progressAvailable ? 1 : 0.58)
+
+                            if !progressAvailable {
+                                Image(systemName: "icloud.slash.fill")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .foregroundStyle(LoreColor.ink900)
+                                    .padding(7)
+                                    .background(LoreColor.amber, in: Circle())
+                                    .accessibilityHidden(true)
+                            }
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(badgeAccessibilityLabel(pair.element))
+                    .accessibilityHint(
+                        progressAvailable
+                            ? "Opens requirements and progress"
+                            : "Opens requirements. Progress will return after syncing."
                     )
                 }
             }
@@ -505,6 +664,16 @@ struct CategorySection: View {
         // Flip on appear so RevealBounce runs its entrance (a stagger under
         // motion, a crossfade under Reduce Motion, handled inside RevealBounce).
         .onAppear { appeared = true }
+    }
+
+    private var categorySymbol: String {
+        if !progressAvailable { return "icloud.slash" }
+        return section.unlockedCount == section.badges.count ? "checkmark.seal.fill" : section.symbol
+    }
+
+    private func badgeAccessibilityLabel(_ badge: PassportBadge) -> String {
+        let name = badge.isSecretLocked ? "Secret achievement" : badge.achievement.name
+        return progressAvailable ? "\(name), \(badge.progressSummary)" : "\(name), progress unavailable"
     }
 }
 
@@ -517,6 +686,15 @@ struct PassportBadge: Identifiable, Hashable {
 
     var id: String { achievement.slug }
     var isUnlocked: Bool { progress?.isUnlocked ?? false }
+    var isSecretLocked: Bool { achievement.secret && !isUnlocked }
+    var progressFraction: Double { progress?.fraction ?? 0 }
+
+    var progressSummary: String {
+        if isUnlocked { return "Earned · +\(achievement.points) Insight" }
+        let target = max(progress?.target ?? achievement.criteriaTarget ?? 1, 1)
+        let current = min(max(progress?.progress ?? 0, 0), target)
+        return "\(current) of \(target) complete"
+    }
 }
 
 /// A resolved category section for the wall: title, glyph, and its badges in
@@ -560,6 +738,152 @@ struct PassportSection: Identifiable {
     }
 }
 
+// MARK: - Achievement detail
+
+struct AchievementDetailSheet: View {
+    let badge: PassportBadge
+    var progressAvailable = true
+    @Environment(\.dismiss) private var dismiss
+
+    private var achievement: Achievement { badge.achievement }
+    private var target: Int { max(badge.progress?.target ?? achievement.criteriaTarget ?? 1, 1) }
+    private var current: Int { min(max(badge.progress?.progress ?? 0, 0), target) }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 20) {
+                    AchievementBadge(
+                        achievement: achievement,
+                        progress: badge.progress
+                    )
+                    .frame(width: 190)
+                    .accessibilityHidden(true)
+
+                    VStack(spacing: 7) {
+                        Text(badge.isSecretLocked ? "Secret achievement" : achievement.name)
+                            .font(LoreType.display(size: 28, weight: .semibold))
+                            .foregroundStyle(LoreColor.bone)
+                            .multilineTextAlignment(.center)
+                            .accessibilityAddTraits(.isHeader)
+
+                        Text(badge.isSecretLocked ? "Keep exploring to reveal this seal." : requirementText)
+                            .font(LoreType.body)
+                            .foregroundStyle(LoreColor.bone.opacity(0.78))
+                            .multilineTextAlignment(.center)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    if !badge.isSecretLocked, progressAvailable {
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack {
+                                Text(badge.isUnlocked ? "COMPLETED" : "YOUR PROGRESS")
+                                    .font(LoreType.label)
+                                    .tracking(0.7)
+                                    .foregroundStyle(LoreColor.brass300)
+                                Spacer()
+                                Text(badge.progressSummary)
+                                    .font(LoreType.caption)
+                                    .foregroundStyle(LoreColor.bone.opacity(0.7))
+                            }
+                            ProgressView(value: badge.isUnlocked ? 1 : badge.progressFraction)
+                                .tint(LoreColor.amber)
+                                .accessibilityLabel("Achievement progress")
+                                .accessibilityValue(badge.progressSummary)
+
+                            if !badge.isUnlocked {
+                                Text(nextStepText)
+                                    .font(LoreType.caption)
+                                    .foregroundStyle(LoreColor.bone.opacity(0.74))
+                            }
+                        }
+                        .padding(16)
+                        .background(LoreColor.ink800, in: RoundedRectangle(cornerRadius: 18))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 18)
+                                .strokeBorder(LoreColor.brass300.opacity(0.22), lineWidth: 1)
+                        )
+
+                        HStack(spacing: 18) {
+                            Label("\(achievement.tier.label) tier", systemImage: "seal.fill")
+                            Label("\(achievement.points) Insight", systemImage: "sparkles")
+                        }
+                        .font(LoreType.caption)
+                        .foregroundStyle(LoreColor.brass300)
+
+                        if badge.isUnlocked {
+                            ShareLink(item: shareText) {
+                                Label("Share this achievement", systemImage: "square.and.arrow.up")
+                                    .font(LoreType.button)
+                                    .foregroundStyle(LoreColor.ink900)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 12)
+                                    .background(LoreColor.amber, in: Capsule())
+                            }
+                        }
+                    } else if !badge.isSecretLocked {
+                        Label(
+                            "Your requirements are available, but personal progress needs to sync before Lore can show an accurate total.",
+                            systemImage: "icloud.slash"
+                        )
+                        .font(LoreType.body)
+                        .foregroundStyle(LoreColor.bone.opacity(0.78))
+                        .padding(16)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(LoreColor.ink800, in: RoundedRectangle(cornerRadius: 18))
+                    }
+                }
+                .frame(maxWidth: 560)
+                .frame(maxWidth: .infinity)
+                .padding(24)
+            }
+            .background(LoreColor.ink900.ignoresSafeArea())
+            .navigationTitle("Achievement")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    private var requirementText: String {
+        if let description = achievement.description, !description.isEmpty {
+            return description
+        }
+        return actionLabel(target: target)
+    }
+
+    private var nextStepText: String {
+        let remaining = max(target - current, 0)
+        guard remaining > 0 else { return "Your achievement is ready to settle on the next sync." }
+        return "Next: \(actionLabel(target: remaining))"
+    }
+
+    private func actionLabel(target count: Int) -> String {
+        let noun: String
+        switch achievement.criteriaType {
+        case "visit_count": noun = count == 1 ? "place" : "places"
+        case "city_count": noun = count == 1 ? "city" : "cities"
+        case "country_count": noun = count == 1 ? "country" : "countries"
+        case "continent_count": noun = count == 1 ? "continent" : "continents"
+        case "journal_count", "note_count": noun = count == 1 ? "journal story" : "journal stories"
+        case "photo_count": noun = count == 1 ? "private photo" : "private photos"
+        case "fact_count", "read_count": noun = count == 1 ? "story" : "stories"
+        case "streak": noun = count == 1 ? "day" : "days"
+        default: noun = count == 1 ? "step" : "steps"
+        }
+        return "Complete \(count) more \(noun)."
+    }
+
+    private var shareText: String {
+        "I earned the \(achievement.name) achievement in Lore and collected +\(achievement.points) Insight."
+    }
+}
+
 // MARK: - Model
 
 /// Fetches the catalog + the user's rows, stitches them into sections, tracks
@@ -577,17 +901,25 @@ final class PassportModel {
 
     private(set) var state: State = .loading
     private(set) var sections: [PassportSection] = []
+    private(set) var progressWarning: String?
+    private(set) var achievementProgressAvailable = true
+    private(set) var statsAvailable = true
     /// Newly-unlocked badges waiting to be celebrated.
     private(set) var celebrating: [Achievement] = []
 
     /// The full catalog, cached for celebration lookups.
     private var catalog: [Achievement] = []
     private var loaded = false
+    private var activeLoadID = UUID()
 
     // MARK: Derived
 
     var totalCount: Int { catalog.count }
     var unlockedCount: Int { sections.reduce(0) { $0 + $1.unlockedCount } }
+    var nextMilestone: PassportBadge? {
+        guard achievementProgressAvailable else { return nil }
+        return PassportMilestoneSelector.next(from: sections)
+    }
 
     /// Insight = sum of the points on every unlocked badge.
     private(set) var insightPoints: Int = 0
@@ -609,33 +941,65 @@ final class PassportModel {
 
     func load(auth: AuthService) async {
         let expectedUserID = auth.session?.user.id
+        let loadID = UUID()
+        activeLoadID = loadID
         state = .loading
+        progressWarning = nil
+        achievementProgressAvailable = expectedUserID == nil
+        statsAvailable = expectedUserID == nil
+        celebrating = []
         do {
             // Catalog is an anonymous read; the user's rows need a token.
             async let catalogTask = LoreAPI.shared.achievements()
+            let token = await auth.validAccessToken()
+            guard activeLoadID == loadID, auth.session?.user.id == expectedUserID else { return }
+
+            var warning: String?
+            var loadedAchievementProgress = true
             let userRows: [UserAchievement]
-            if let token = await auth.validAccessToken() {
-                userRows = (try? await LoreAPI.shared.userAchievements(accessToken: token)) ?? []
+            if let token, expectedUserID != nil {
+                do {
+                    userRows = try await LoreAPI.shared.userAchievements(accessToken: token)
+                } catch {
+                    userRows = []
+                    loadedAchievementProgress = false
+                    warning = "Lore couldn't refresh your earned badges. Requirements remain available, but personal progress is hidden until sync succeeds."
+                }
             } else {
                 userRows = []
+                if expectedUserID != nil {
+                    loadedAchievementProgress = false
+                    warning = "Lore couldn't verify this session to refresh your earned badges."
+                }
             }
             let catalog = try await catalogTask
-            guard auth.session?.user.id == expectedUserID else { return }
+            guard activeLoadID == loadID, auth.session?.user.id == expectedUserID else { return }
 
             // The world-exploration dashboard: the user's own stats (RLS-guarded).
             // A failure just leaves the zero state, never blocks the wall.
-            if let token = await auth.validAccessToken(), let uid = expectedUserID {
-                stats = (try? await LoreAPI.shared.userStats(userID: uid, accessToken: token)) ?? .zero
-            } else {
-                stats = .zero
+            var loadedStats: UserStats = .zero
+            var loadedStatsAvailable = true
+            if let token, let uid = expectedUserID {
+                do {
+                    loadedStats = try await LoreAPI.shared.userStats(userID: uid, accessToken: token)
+                } catch {
+                    loadedStatsAvailable = false
+                    warning = warning
+                        ?? "Lore couldn't refresh your journey totals. Pull to refresh when your connection improves."
+                }
             }
+            guard activeLoadID == loadID, auth.session?.user.id == expectedUserID else { return }
 
             self.catalog = catalog
+            stats = loadedStats
+            achievementProgressAvailable = loadedAchievementProgress
+            statsAvailable = loadedStatsAvailable
+            progressWarning = warning
             rebuild(catalog: catalog, userRows: userRows)
             loaded = true
             state = catalog.isEmpty ? .empty : .loaded
         } catch {
-            guard auth.session?.user.id == expectedUserID else { return }
+            guard activeLoadID == loadID, auth.session?.user.id == expectedUserID else { return }
             state = .failed("Check your connection and try again.")
         }
     }
@@ -686,9 +1050,20 @@ final class PassportModel {
                 userID: userID,
                 accessToken: token
             )
+            guard auth.session?.user.id == userID else { return }
             // Pull fresh user rows so the wall reflects the new state.
-            let userRows = (try? await LoreAPI.shared.userAchievements(accessToken: token)) ?? []
+            let userRows: [UserAchievement]
+            do {
+                userRows = try await LoreAPI.shared.userAchievements(accessToken: token)
+            } catch {
+                guard auth.session?.user.id == userID else { return }
+                achievementProgressAvailable = false
+                progressWarning = "Your achievement was recorded, but Lore couldn't refresh the badge wall yet. Pull to refresh."
+                return
+            }
+            guard auth.session?.user.id == userID else { return }
             rebuild(catalog: catalog, userRows: userRows)
+            achievementProgressAvailable = true
             state = catalog.isEmpty ? .empty : .loaded
 
             if !newlyUnlocked.isEmpty {
@@ -704,5 +1079,23 @@ final class PassportModel {
     /// Clear the celebration queue once the user dismisses the overlay.
     func dismissCelebration() {
         celebrating = []
+    }
+}
+
+enum PassportMilestoneSelector {
+    static func next(from sections: [PassportSection]) -> PassportBadge? {
+        sections
+            .flatMap(\.badges)
+            .filter { !$0.isUnlocked && !$0.isSecretLocked }
+            .sorted {
+                if $0.progressFraction != $1.progressFraction {
+                    return $0.progressFraction > $1.progressFraction
+                }
+                let leftProgress = $0.progress?.progress ?? 0
+                let rightProgress = $1.progress?.progress ?? 0
+                if leftProgress != rightProgress { return leftProgress > rightProgress }
+                return ($0.achievement.sort ?? Int.max) < ($1.achievement.sort ?? Int.max)
+            }
+            .first
     }
 }

@@ -20,8 +20,23 @@ import Observation
 @Observable
 @MainActor
 final class TourLiveActivityController {
+    enum StartFailure: Equatable {
+        case disabled
+        case systemRejected
+
+        var message: String {
+            switch self {
+            case .disabled:
+                return "Lock Screen updates are off. The tour still works in Lore; enable Live Activities in Settings to add glanceable progress."
+            case .systemRejected:
+                return "The Lock Screen companion couldn't start. Your tour progress and narration are still running in Lore."
+            }
+        }
+    }
+
     /// The running activity, if one is live. `nil` before `start` / after `end`.
     private var activity: Activity<TourActivityAttributes>?
+    private(set) var startFailure: StartFailure?
 
     /// True when a tour Live Activity is currently running.
     var isRunning: Bool { activity != nil }
@@ -45,7 +60,11 @@ final class TourLiveActivityController {
         nextStopName: String?,
         distanceToNextMeters: Double?
     ) {
-        guard areActivitiesEnabled else { return }
+        guard areActivitiesEnabled else {
+            startFailure = .disabled
+            return
+        }
+        startFailure = nil
         // One tour Live Activity at a time.
         if activity != nil {
             end()
@@ -75,6 +94,7 @@ final class TourLiveActivityController {
             // Starting can fail (budget, disabled mid-flight). Non-fatal, the
             // tour stepper works without the Live Activity.
             activity = nil
+            startFailure = .systemRejected
         }
     }
 

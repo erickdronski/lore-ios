@@ -66,11 +66,16 @@ struct SearchView: View {
         case .searching where model.groups.isEmpty:
             searchingSkeleton
         case .failed(let message):
-            ContentUnavailableView(
-                "Search unavailable",
-                systemImage: "wifi.exclamationmark",
-                description: Text(message)
-            )
+            VStack(spacing: 14) {
+                ContentUnavailableView(
+                    "Search unavailable",
+                    systemImage: "wifi.exclamationmark",
+                    description: Text(message)
+                )
+                Button("Try again") { model.retry() }
+                    .buttonStyle(.borderedProminent)
+                    .tint(LoreColor.ink)
+            }
         case .empty:
             ContentUnavailableView.search(text: model.query)
         case .searching, .loaded:
@@ -188,6 +193,21 @@ final class SearchModel {
         searchTask = Task { [weak self] in
             try? await Task.sleep(for: self?.debounce ?? .milliseconds(250))
             guard !Task.isCancelled else { return }
+            await self?.performSearch(trimmed)
+        }
+    }
+
+    /// Retry the current query immediately after a network failure.
+    func retry() {
+        searchTask?.cancel()
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 2 else {
+            groups = []
+            state = .idle
+            return
+        }
+        state = .searching
+        searchTask = Task { [weak self] in
             await self?.performSearch(trimmed)
         }
     }

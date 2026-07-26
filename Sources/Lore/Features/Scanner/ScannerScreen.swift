@@ -120,6 +120,18 @@ struct ScannerScreen: View {
                 VStack(spacing: 0) {
                     StatusChip(text: model.statusLine)
                         .padding(.top, 8)
+                    if model.hasContentLoadError {
+                        Button("Retry city stories") {
+                            Task { await model.retryContent(city: city) }
+                        }
+                        .font(LoreType.micro)
+                        .foregroundStyle(LoreColor.ink)
+                        .padding(.horizontal, 12)
+                        .frame(height: 36)
+                        .background(LoreColor.amber, in: Capsule())
+                        .buttonStyle(.plain)
+                        .padding(.top, 6)
+                    }
                     Spacer()
                     if let offered = model.narration.offered {
                         audioOffer(for: offered)
@@ -142,6 +154,8 @@ struct ScannerScreen: View {
                 // black viewfinder with pins floating on nothing.
                 if model.permissionDenied {
                     permissionOverlay
+                } else if let message = model.cameraUnavailableMessage {
+                    cameraUnavailableOverlay(message: message)
                 }
             }
         }
@@ -388,12 +402,18 @@ struct ScannerScreen: View {
 
         case .result(let id):
             VStack(spacing: 6) {
+                if id.isAmbiguous {
+                    Label("POSSIBLE MATCH", systemImage: "questionmark.diamond")
+                        .font(LoreType.micro)
+                        .tracking(0.8)
+                        .foregroundStyle(LoreColor.amber)
+                }
                 Text(id.name)
                     .font(LoreType.button)
                     .foregroundStyle(LoreColor.bone)
                     .multilineTextAlignment(.center)
                 Text(id.confidence != nil
-                    ? "Google Cloud Vision · \(Int((id.confidence ?? 0) * 100))% match"
+                    ? "Google Cloud Vision · \(Int((id.confidence ?? 0) * 100))% \(id.isAmbiguous ? "possibility" : "match")"
                     : "Google Cloud Vision")
                     .font(LoreType.micro)
                     .foregroundStyle(LoreColor.bone.opacity(0.7))
@@ -410,23 +430,43 @@ struct ScannerScreen: View {
                     }
                     .buttonStyle(.pressable)
                 }
+                retryIdentificationButton(title: "Try another angle")
             }
 
         case .none:
-            Text("Couldn't identify a landmark from here.")
-                .font(LoreType.caption)
-                .foregroundStyle(LoreColor.bone.opacity(0.8))
+            VStack(spacing: 7) {
+                Text("No landmark cleared the confidence threshold. Lore won't guess.")
+                    .font(LoreType.caption)
+                    .foregroundStyle(LoreColor.bone.opacity(0.8))
+                    .multilineTextAlignment(.center)
+                retryIdentificationButton(title: "Try another angle")
+            }
 
-        case .unavailable:
-            Text("Landmark ID isn't available right now.")
-                .font(LoreType.caption)
-                .foregroundStyle(LoreColor.bone.opacity(0.8))
+        case .unavailable(let failure):
+            VStack(spacing: 7) {
+                Text(failure.message)
+                    .font(LoreType.caption)
+                    .foregroundStyle(LoreColor.bone.opacity(0.8))
+                    .multilineTextAlignment(.center)
+                retryIdentificationButton(title: "Retry identification")
+            }
 
         case .quotaReached:
             Text("Today's landmark limit has been reached. Try again tomorrow.")
                 .font(LoreType.caption)
                 .foregroundStyle(LoreColor.bone.opacity(0.8))
         }
+    }
+
+    private func retryIdentificationButton(title: String) -> some View {
+        Button(title) {
+            model.resetIdentification()
+            beginLandmarkIdentification()
+        }
+        .font(LoreType.caption)
+        .foregroundStyle(LoreColor.amber)
+        .frame(minHeight: 44)
+        .buttonStyle(.plain)
     }
 
     private func beginLandmarkIdentification() {
@@ -687,6 +727,53 @@ struct ScannerScreen: View {
         .transition(.opacity)
     }
 
+    /// Permission can be granted while camera hardware is absent or busy. Treat
+    /// that as a recoverable degraded mode, not a black screen or a false prompt.
+    private func cameraUnavailableOverlay(message: String) -> some View {
+        ZStack {
+            LoreColor.ink950.opacity(0.96).ignoresSafeArea()
+            VStack(spacing: 16) {
+                Image(systemName: "camera.fill.badge.ellipsis")
+                    .font(.system(size: 40, weight: .light))
+                    .foregroundStyle(LoreColor.amber)
+                Text("Live scanner unavailable")
+                    .font(LoreType.displayM)
+                    .foregroundStyle(LoreColor.bone)
+                Text(message)
+                    .font(LoreType.body)
+                    .foregroundStyle(LoreColor.bone.opacity(0.8))
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(cameraFallbackCopy)
+                    .font(LoreType.caption)
+                    .foregroundStyle(LoreColor.bone.opacity(0.68))
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("Try camera again") {
+                    model.retryCamera()
+                }
+                .font(LoreType.button)
+                .foregroundStyle(LoreColor.ink)
+                .padding(.horizontal, 22)
+                .frame(height: 46)
+                .background(LoreColor.amber, in: Capsule())
+                .buttonStyle(.plain)
+            }
+            .padding(28)
+            .frame(maxWidth: 430)
+        }
+        .accessibilityElement(children: .contain)
+        .transition(.opacity)
+    }
+
+    private var cameraFallbackCopy: String {
+        #if targetEnvironment(simulator)
+        return "You can still explore every place from Map and Tours. Simulator has no live camera; use a real iPhone for scanning and AR."
+        #else
+        return "You can still explore every place from Map and Tours while the camera is unavailable."
+        #endif
+    }
+
     // MARK: Layout
 
     /// Clamp a screen fraction into the safe band so a chip never clips the
@@ -841,6 +928,38 @@ struct LandmarkID: Equatable {
     /// The Lore place slug if this landmark sits on one we know (so we can open
     /// its real story), else nil.
     let slug: String?
+
+    init?(name: String, confidence: Double?, slug: String?) {
+        let cleanedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanedName.isEmpty else { return nil }
+        self.name = cleanedName
+        if let confidence, confidence.isFinite {
+            self.confidence = min(max(confidence, 0), 1)
+        } else {
+            self.confidence = nil
+        }
+        let cleanedSlug = slug?.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.slug = cleanedSlug?.isEmpty == false ? cleanedSlug : nil
+    }
+
+    /// Cloud labels below this threshold are possibilities, not identities.
+    var isAmbiguous: Bool { confidence.map { $0 < 0.70 } ?? true }
+}
+
+enum IdentifyFailure: Equatable {
+    case capture
+    case network
+    case service
+    case invalidResponse
+
+    var message: String {
+        switch self {
+        case .capture: return "The camera couldn't capture a clear frame. Hold steady and try again."
+        case .network: return "Landmark ID needs a connection. Check your signal and retry."
+        case .service: return "Google landmark matching is temporarily unavailable. Try again in a moment."
+        case .invalidResponse: return "The match came back incomplete, so Lore didn't guess. Try another angle."
+        }
+    }
 }
 
 /// The state of the opt-in cloud landmark identification.
@@ -849,7 +968,7 @@ enum IdentifyState: Equatable {
     case loading       // one frame in flight to the cloud
     case result(LandmarkID)
     case none          // ran, cloud recognized no landmark
-    case unavailable   // error / offline / API not enabled yet
+    case unavailable(IdentifyFailure)
     case quotaReached  // authenticated daily quota exhausted
 }
 
@@ -859,7 +978,7 @@ enum LandmarkRequestOutcome: Equatable {
 }
 
 /// The `landmark-id` edge function's JSON shape.
-private struct LandmarkResponse: Decodable {
+struct LandmarkResponse: Decodable {
     let landmark: String
     let confidence: Double?
     let slug: String?
@@ -898,6 +1017,8 @@ final class ScannerModel {
     /// True while the precise pipeline owns the viewfinder. Coarse mode is
     /// the default and the fallback; this only flips on an explicit upgrade.
     private(set) var preciseMode = false
+    private(set) var preciseFallbackNotice: String?
+    private var preciseNoticeTask: Task<Void, Never>?
 
     private(set) var places: [Place] = []
     private(set) var stories: [Story] = []
@@ -941,9 +1062,12 @@ final class ScannerModel {
     /// scanner shows a Settings path instead of a black / empty viewfinder.
     private(set) var cameraDenied = false
     private(set) var locationDenied = false
+    private(set) var cameraUnavailableMessage: String?
     var permissionDenied: Bool { cameraDenied || locationDenied }
 
     private var loadError = false
+    var hasContentLoadError: Bool { loadError }
+    private var contentLoadID = UUID()
     /// Coverage is area-specific. Re-probe after a meaningful move instead of
     /// keeping the first block's result for the rest of the app session.
     private var lastScoutedLocation: CLLocation?
@@ -959,7 +1083,8 @@ final class ScannerModel {
     var hasHauntedNearby: Bool { inViewStories.contains { $0.story.isHaunted } || stories.contains(where: \.isHaunted) }
 
     var statusLine: String {
-        if loadError { return "Offline, cached places only" }
+        if loadError { return "Couldn't load \(CityPackStore.label(loadedCity ?? "city")) stories" }
+        if let preciseFallbackNotice { return preciseFallbackNotice }
         if preciseMode {
             // The precise ladder rung narrated honestly: localizing keeps
             // the searching language, locked earns the claim (docs/05 §5).
@@ -1037,7 +1162,9 @@ final class ScannerModel {
         // if still denied, so a grant from Settings clears the overlay.
         cameraDenied = false
         locationDenied = false
+        cameraUnavailableMessage = nil
         camera.onPermissionDenied = { [weak self] in self?.cameraDenied = true }
+        camera.onUnavailable = { [weak self] message in self?.cameraUnavailableMessage = message }
         pose.onPermissionDenied = { [weak self] in self?.locationDenied = true }
         // Feed live frames to the on-device recognizer. Capture the service (not
         // self) so the closure runs cleanly off the main actor; frames never
@@ -1058,23 +1185,37 @@ final class ScannerModel {
 
     /// Refetch places/stories for a newly-selected city, keeping sensors live.
     func reload(city: String) async {
-        guard city != loadedCity else { return }
+        guard city != loadedCity || loadError else { return }
+        await loadContent(city: city)
+    }
+
+    func retryContent(city: String) async {
         await loadContent(city: city)
     }
 
     private func loadContent(city: String) async {
+        let requestID = UUID()
+        contentLoadID = requestID
         loadedCity = city
         loadError = false
-        async let placesResult = LoreAPI.shared.places(city: city)
-        async let storiesResult = LoreAPI.shared.stories(city: city)
+        places = []
+        stories = []
+        lockedRanked = nil
+        inViewClusters = []
+        inViewStories = []
+        directionalCandidates = []
+        async let placesResult: [Place] = LoreAPI.shared.places(city: city)
+        async let storiesResult: [Story] = (try? await LoreAPI.shared.stories(city: city)) ?? []
         do {
-            places = try await placesResult
+            let (newPlaces, newStories) = try await (placesResult, storiesResult)
+            guard contentLoadID == requestID else { return }
+            places = newPlaces
+            stories = newStories
+            reproject()
         } catch {
+            guard contentLoadID == requestID else { return }
             loadError = true
         }
-        // Stories are enrichment, not the primary resolve: a failure here never
-        // degrades the scan, it just means no meanwhile-nearby markers.
-        stories = (try? await storiesResult) ?? []
     }
 
     func stopSensors() {
@@ -1092,6 +1233,8 @@ final class ScannerModel {
         }
         projectionTask?.cancel()
         projectionTask = nil
+        preciseNoticeTask?.cancel()
+        preciseNoticeTask = nil
         tierStabilizer.reset()
     }
 
@@ -1102,6 +1245,7 @@ final class ScannerModel {
         guard !preciseMode, projectionTask == nil else { return }
         cameraDenied = false
         locationDenied = false
+        cameraUnavailableMessage = nil
         let recognizer = vision
         camera.onFrame = { buffer, orientation in
             recognizer.recognize(pixelBuffer: buffer, orientation: orientation)
@@ -1111,6 +1255,11 @@ final class ScannerModel {
         Haptics.play(.scanAttempt)
         acquiringSince = Date()
         startProjectionLoop()
+    }
+
+    func retryCamera() {
+        cameraUnavailableMessage = nil
+        camera.start()
     }
 
     // MARK: Precise mode (docs/05 §5 ladder, rung 1)
@@ -1144,6 +1293,7 @@ final class ScannerModel {
         guard !ranked.isEmpty else { return }
 
         preciseMode = true
+        preciseFallbackNotice = nil
         narration.dismissOffer()
         // One camera owner at a time: the AVCapture preview yields to ARKit.
         camera.stop()
@@ -1164,6 +1314,23 @@ final class ScannerModel {
         geoAR.stop()
         camera.start()
         reproject()
+    }
+
+    private func fallBackFromPreciseMode(_ failure: VPSFailure) {
+        let message: String
+        switch failure {
+        case .unsupported: message = "Precise AR isn't supported here · using compass mode"
+        case .trackingLost: message = "Precise lock was lost · using compass mode"
+        case .sessionError: message = "AR was interrupted · using compass mode"
+        }
+        exitPreciseMode()
+        preciseFallbackNotice = message
+        preciseNoticeTask?.cancel()
+        preciseNoticeTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(6))
+            guard !Task.isCancelled else { return }
+            self?.preciseFallbackNotice = nil
+        }
     }
 
     // MARK: Selection
@@ -1196,18 +1363,19 @@ final class ScannerModel {
         guard !preciseMode else { return .completed }
         identifyState = .loading
         guard let data = await camera.capturePhotoData() else {
-            identifyState = .unavailable
+            identifyState = .unavailable(.capture)
             return .completed
         }
         do {
             var request = URLRequest(url: Config.functionsURL.appending(path: "landmark-id"))
             request.httpMethod = "POST"
+            request.timeoutInterval = 20
             request.setValue(Config.supabaseAnonKey, forHTTPHeaderField: "apikey")
             request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
             request.setValue("image/jpeg", forHTTPHeaderField: "Content-Type")
             let (body, response) = try await URLSession.shared.upload(for: request, from: data)
             guard let http = response as? HTTPURLResponse else {
-                identifyState = .unavailable
+                identifyState = .unavailable(.service)
                 return .completed
             }
             if http.statusCode == 204 {
@@ -1215,7 +1383,7 @@ final class ScannerModel {
                 return .completed
             }
             if http.statusCode == 401 {
-                identifyState = .unavailable
+                identifyState = .unavailable(.service)
                 return .unauthorized
             }
             if http.statusCode == 429 {
@@ -1224,20 +1392,34 @@ final class ScannerModel {
             }
             guard http.statusCode == 200,
                   let decoded = try? JSONDecoder().decode(LandmarkResponse.self, from: body) else {
-                identifyState = .unavailable
+                identifyState = .unavailable(.service)
                 return .completed
             }
-            identifyState = .result(LandmarkID(
+            guard let match = LandmarkID(
                 name: decoded.landmark,
                 confidence: decoded.confidence,
                 slug: decoded.slug
-            ))
-            Haptics.play(.scannerLock)
+            ) else {
+                identifyState = .unavailable(.invalidResponse)
+                return .completed
+            }
+            identifyState = .result(match)
+            Haptics.play(match.isAmbiguous ? .scanRecognizing : .scannerLock)
+            return .completed
+        } catch let error as URLError where error.code == .notConnectedToInternet
+            || error.code == .networkConnectionLost
+            || error.code == .timedOut {
+            identifyState = .unavailable(.network)
             return .completed
         } catch {
-            identifyState = .unavailable
+            identifyState = .unavailable(.service)
             return .completed
         }
+    }
+
+    func resetIdentification() {
+        guard identifyState != .loading else { return }
+        identifyState = .idle
     }
 
     /// Open the story for an identified landmark when Lore knows the place (the
@@ -1317,8 +1499,8 @@ final class ScannerModel {
         // a hard failure drops silently back to coarse (docs/05 §5). A
         // transient relocalize keeps the searching treatment instead.
         if preciseMode {
-            if case .failed = geoAR.state {
-                exitPreciseMode()
+            if case .failed(let failure) = geoAR.state {
+                fallBackFromPreciseMode(failure)
             }
             return
         }
