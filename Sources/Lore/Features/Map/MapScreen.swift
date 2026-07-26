@@ -43,6 +43,7 @@ struct MapScreen: View {
     /// dark, night pins glow, and the ghost-story layer wakes.
     @Environment(DayNightStore.self) private var dayNight
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var model = MapScreenModel()
     /// A haunted story opened from its night marker.
     @State private var nightStory: Story?
@@ -62,6 +63,10 @@ struct MapScreen: View {
     /// The map's serendipity beat: briefly names a fresh place while the camera
     /// flies there, then opens its card.
     @State private var surprisePlace: Place?
+    /// Device-local trip pins are shared with the city switcher. Keeping the
+    /// active city's state here makes planning available without leaving the
+    /// map, while preserving the same private/offline store.
+    @State private var planningCities: Set<String> = []
 
     /// The relevance lens for the current prefs + whether a hard filter is on
     /// + the night layer's re-weighting after dark.
@@ -111,8 +116,11 @@ struct MapScreen: View {
             .safeAreaInset(edge: .top) {
                 MapHeader(
                     cityName: model.cityDisplayName(for: city),
+                    placeCount: visiblePlaces.count,
                     theme: model.theme,
+                    isPlanning: planningCities.contains(city),
                     onLocate: locateMe,
+                    onTogglePlanning: togglePlanningCity,
                     onSearch: onOpenSearch,
                     onSwitchCity: onOpenCitySwitcher,
                     onMeetCity: { onMeetCity(city) }
@@ -173,6 +181,8 @@ struct MapScreen: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar(.hidden, for: .navigationBar)
             .task(id: city) { await model.load(city: city) }
+            .onAppear { refreshPlanningCities() }
+            .onChange(of: auth.session?.user.id) { _, _ in refreshPlanningCities() }
             .onChange(of: model.cameraTargetKey) { _, _ in
                 guard let target = model.cameraTarget else { return }
                 // The fly-to eases on `spring.smooth`, a settled camera glide,
@@ -253,22 +263,33 @@ struct MapScreen: View {
     /// toggle, and the day/night cycle. Quiet and top-trailing; 3D is the
     /// moment people screen-record, night is the one they show a friend.
     private var mapControls: some View {
-        VStack(spacing: 10) {
+        VStack(alignment: .trailing, spacing: 8) {
+            if horizontalSizeClass == .regular {
+                Text("MAP LENSES")
+                    .loreLabelStyle()
+                    .tracking(1.1)
+                    .foregroundStyle(LoreColor.brass700)
+                    .padding(.trailing, 6)
+            }
+
             mapControlButton(
                 system: "sparkles",
                 on: surprisePlace != nil,
+                title: "Surprise me",
                 label: "Surprise me with an undiscovered place"
             ) { surpriseMe() }
 
             mapControlButton(
                 system: dimensional ? "view.2d" : "view.3d",
                 on: dimensional,
+                title: dimensional ? "Flatten" : "Explore in 3D",
                 label: dimensional ? "Flatten map" : "3D map"
             ) { toggleDimensional() }
 
             mapControlButton(
                 system: satellite ? "map.fill" : "globe.americas.fill",
                 on: satellite,
+                title: satellite ? "Atlas map" : "Satellite",
                 label: satellite ? "Standard map" : "Satellite map"
             ) {
                 Haptics.play(.chipTap)
@@ -280,10 +301,22 @@ struct MapScreen: View {
             mapControlButton(
                 system: dayNight.isNight ? "moon.stars.fill" : "sun.max.fill",
                 on: dayNight.override != .auto,
+                title: dayNight.isNight ? "Night stories" : "Day stories",
                 label: dayNightLabel
             ) {
                 Haptics.play(.chipTap)
                 dayNight.cycle()
+            }
+        }
+        .padding(horizontalSizeClass == .regular ? 9 : 0)
+        .background {
+            if horizontalSizeClass == .regular {
+                RoundedRectangle(cornerRadius: 18)
+                    .fill(LoreColor.bone50.opacity(0.95))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 18)
+                            .strokeBorder(LoreColor.brass700.opacity(0.2), lineWidth: 1)
+                    )
             }
         }
         .padding(.trailing, 14)
@@ -298,21 +331,51 @@ struct MapScreen: View {
     }
 
     private func mapControlButton(
-        system: String, on: Bool, label: String, action: @escaping () -> Void
+        system: String,
+        on: Bool,
+        title: String,
+        label: String,
+        action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            Image(systemName: system)
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(LoreColor.ink)
-                .frame(width: 42, height: 42)
-                .background(
-                    on ? AnyShapeStyle(LoreColor.amber) : AnyShapeStyle(.ultraThinMaterial),
-                    in: Circle()
-                )
-                .overlay(Circle().strokeBorder(LoreColor.ink.opacity(0.08), lineWidth: 1))
+            Group {
+                if horizontalSizeClass == .regular {
+                    HStack(spacing: 9) {
+                        Image(systemName: system)
+                            .font(.system(size: 15, weight: .semibold))
+                            .frame(width: 22)
+                        Text(title)
+                            .font(LoreType.caption)
+                            .lineLimit(1)
+                        Spacer(minLength: 4)
+                        if on {
+                            Circle()
+                                .fill(LoreColor.ink)
+                                .frame(width: 5, height: 5)
+                        }
+                    }
+                    .padding(.horizontal, 11)
+                    .frame(width: 144, height: 42)
+                    .background(on ? LoreColor.amber : LoreColor.bone100, in: Capsule())
+                } else {
+                    Image(systemName: system)
+                        .font(.system(size: 16, weight: .semibold))
+                        .frame(width: 42, height: 42)
+                        .background(on ? LoreColor.amber : LoreColor.bone50.opacity(0.96), in: Circle())
+                }
+            }
+            .foregroundStyle(LoreColor.ink)
+            .overlay {
+                if horizontalSizeClass != .regular {
+                    Circle().strokeBorder(LoreColor.ink.opacity(0.1), lineWidth: 1)
+                }
+            }
+            .scaleEffect(on && !reduceMotion ? 1.04 : 1)
         }
         .buttonStyle(.pressable)
         .accessibilityLabel(Text(label))
+        .accessibilityValue(Text(on ? "Active" : "Off"))
+        .animation(LoreSpring.smooth(reduceMotion: reduceMotion), value: on)
     }
 
     /// The header "locate me" tap. Recentering the map on your own GPS fix is a
@@ -336,6 +399,18 @@ struct MapScreen: View {
         withAnimation(LoreSpring.smooth(reduceMotion: reduceMotion)) {
             position = .userLocation(fallback: fallback)
         }
+    }
+
+    private func refreshPlanningCities() {
+        planningCities = CityPlanningStore.cities(userID: auth.session?.user.id)
+    }
+
+    private func togglePlanningCity() {
+        Haptics.play(.chipTap)
+        planningCities = CityPlanningStore.toggle(
+            city: city,
+            userID: auth.session?.user.id
+        )
     }
 
     /// Pitch into 3D (or flatten) around the current city centre with a settled
@@ -395,8 +470,12 @@ private struct SerendipityToast: View {
 
     var body: some View {
         HStack(spacing: 11) {
-            Text(place.displayEmoji)
-                .font(.system(size: 25))
+            ZStack {
+                Circle().fill((theme?.accentColor ?? LoreColor.brass700).opacity(0.12))
+                Text(place.displayEmoji)
+                    .font(.system(size: 22))
+            }
+            .frame(width: 40, height: 40)
             VStack(alignment: .leading, spacing: 1) {
                 Text("A NEW TRAIL")
                     .loreLabelStyle()
@@ -407,9 +486,14 @@ private struct SerendipityToast: View {
                     .foregroundStyle(LoreColor.ink)
                     .lineLimit(1)
             }
-            Image(systemName: "location.fill")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(theme?.accentColor ?? LoreColor.brass700)
+            HStack(spacing: 3) {
+                Circle().frame(width: 4, height: 4)
+                Circle().frame(width: 4, height: 4)
+                Image(systemName: "location.fill")
+                    .font(.system(size: 13, weight: .semibold))
+            }
+            .foregroundStyle(theme?.accentColor ?? LoreColor.brass700)
+            .accessibilityHidden(true)
         }
         .padding(.horizontal, 15)
         .frame(height: 58)
@@ -546,75 +630,115 @@ final class MapScreenModel {
 /// affordance. App chrome, so Ink/Brass, never Amber (Amber is the world's).
 struct MapHeader: View {
     let cityName: String
+    var placeCount: Int = 0
     var theme: CityTheme? = nil
+    var isPlanning: Bool = false
     /// Center the map on the user (gated to signed-in upstream).
     var onLocate: () -> Void = {}
+    var onTogglePlanning: () -> Void = {}
     let onSearch: () -> Void
     let onSwitchCity: () -> Void
     let onMeetCity: () -> Void
     private var accent: Color { theme?.accentColor ?? LoreColor.brass700 }
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 6) {
             Button(action: onSwitchCity) {
-                HStack(spacing: 6) {
-                    Text(cityName)
-                        .font(LoreType.display(size: 18, weight: .semibold))
-                        .foregroundStyle(LoreColor.ink)
-                        .lineLimit(1)
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(LoreColor.ink600)
+                HStack(spacing: 8) {
+                    Image(systemName: "map.fill")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(accent)
+                        .frame(width: 28, height: 28)
+                        .background(Circle().fill(accent.opacity(0.12)))
+
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text("FIELD GUIDE / \(placeCount)")
+                            .loreLabelStyle()
+                            .tracking(0.8)
+                            .foregroundStyle(LoreColor.brass700)
+                            .lineLimit(1)
+                        HStack(spacing: 4) {
+                            Text(cityName)
+                                .font(LoreType.display(size: 17, weight: .semibold))
+                                .foregroundStyle(LoreColor.ink)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.75)
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(LoreColor.ink600)
+                        }
+                    }
                 }
-                .padding(.horizontal, 12)
-                .frame(height: 40)
-                .background(.ultraThinMaterial, in: Capsule())
-                .overlay(Capsule().strokeBorder(accent.opacity(theme == nil ? 0.12 : 0.36), lineWidth: 1))
+                .padding(.leading, 7)
+                .padding(.trailing, 10)
+                .frame(height: 46)
+                .background(LoreColor.bone50.opacity(0.96), in: Capsule())
+                .overlay(Capsule().strokeBorder(accent.opacity(theme == nil ? 0.16 : 0.4), lineWidth: 1))
             }
             .buttonStyle(.plain)
+            .layoutPriority(1)
             .accessibilityLabel(Text("Current city, \(cityName)"))
-            .accessibilityHint(Text("Switch cities."))
+            .accessibilityValue(Text("\(placeCount) places in the field guide"))
+            .accessibilityHint(Text("Switch cities"))
 
-            Spacer(minLength: 8)
+            Spacer(minLength: 2)
 
             // Locate me: center the map on the user's live position. Amber (the
             // world's color) marks it as "you on the map"; gated to signed-in
             // upstream so tapping it signed-out nudges sign-in.
-            Button(action: onLocate) {
-                Image(systemName: "location.fill")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(LoreColor.ink)
-                    .frame(width: 40, height: 40)
-                    .background(.ultraThinMaterial, in: Circle())
-                    .overlay(Circle().strokeBorder(LoreColor.amber.opacity(0.55), lineWidth: 1.5))
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(Text("Show my location on the map"))
+            headerAction(
+                system: "location.fill",
+                accent: LoreColor.amber,
+                label: "Show my location on the map",
+                action: onLocate
+            )
 
-            Button(action: onMeetCity) {
-                Image(systemName: "quote.bubble")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(LoreColor.ink)
-                    .frame(width: 40, height: 40)
-                    .background(.ultraThinMaterial, in: Circle())
-                    .overlay(Circle().strokeBorder(accent.opacity(theme == nil ? 0.1 : 0.32), lineWidth: 1))
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(Text("Meet \(cityName)"))
+            headerAction(
+                system: isPlanning ? "pin.fill" : "pin",
+                accent: isPlanning ? LoreColor.amber : accent,
+                active: isPlanning,
+                label: isPlanning ? "Remove \(cityName) from my trip" : "Save \(cityName) to my trip",
+                value: isPlanning ? "Saved for your trip" : "Not saved",
+                action: onTogglePlanning
+            )
 
-            Button(action: onSearch) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(LoreColor.ink)
-                    .frame(width: 40, height: 40)
-                    .background(.ultraThinMaterial, in: Circle())
-                    .overlay(Circle().strokeBorder(accent.opacity(theme == nil ? 0.1 : 0.32), lineWidth: 1))
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(Text("Search Lore"))
+            headerAction(
+                system: "quote.bubble",
+                accent: accent,
+                label: "Meet \(cityName)",
+                action: onMeetCity
+            )
+
+            headerAction(
+                system: "magnifyingglass",
+                accent: accent,
+                label: "Search Lore",
+                action: onSearch
+            )
         }
         .padding(.horizontal, 16)
         .padding(.top, 8)
+    }
+
+    private func headerAction(
+        system: String,
+        accent: Color,
+        active: Bool = false,
+        label: String,
+        value: String? = nil,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: system)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(LoreColor.ink)
+                .frame(width: 42, height: 42)
+                .background(active ? LoreColor.amber : LoreColor.bone50.opacity(0.96), in: Circle())
+                .overlay(Circle().strokeBorder(accent.opacity(active ? 0.85 : 0.38), lineWidth: active ? 1.5 : 1))
+        }
+        .buttonStyle(.pressable)
+        .accessibilityLabel(Text(label))
+        .accessibilityValue(Text(value ?? ""))
     }
 }
 
@@ -650,7 +774,23 @@ struct PlacePinBadge: View {
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
+            if isSelected {
+                Circle()
+                    .stroke(
+                        theme?.accentColor ?? LoreColor.brass300,
+                        style: StrokeStyle(lineWidth: 1.5, dash: [3, 3])
+                    )
+                    .frame(width: 40, height: 40)
+                    .rotationEffect(.degrees(reduceMotion ? 0 : 18))
+                    .transition(.opacity)
+                    .accessibilityHidden(true)
+            }
+
             ZStack {
+                Capsule()
+                    .fill(LoreColor.ink)
+                    .frame(width: 6, height: 11)
+                    .offset(y: 15)
                 Circle()
                     .fill(LoreColor.amber)
                     .strokeBorder(LoreColor.ink, lineWidth: 1.5)
@@ -691,7 +831,7 @@ struct PlacePinBadge: View {
             }
         }
         .accessibilityLabel(Text(place.name))
-        .accessibilityValue(Text(isVisited ? "Visited" : ""))
+        .accessibilityValue(Text(pinAccessibilityValue))
     }
 
     /// Rest 0.6 → landed 1.0 → selected 1.18 (Reduce Motion: no scale, always 1).
@@ -699,6 +839,13 @@ struct PlacePinBadge: View {
         if reduceMotion { return 1 }
         if !bloomed { return 0.6 }
         return isSelected ? 1.18 : 1.0
+    }
+
+    private var pinAccessibilityValue: String {
+        var values: [String] = []
+        if isVisited { values.append("Visited") }
+        if isSelected { values.append("Selected") }
+        return values.joined(separator: ", ")
     }
 }
 

@@ -7,27 +7,101 @@ import SwiftUI
 struct ExplorerStatsView: View {
     let stats: UserStats
 
-    /// A representative emoji per continent, lit when the user has been there.
-    private static let continentEmoji: [String: String] = [
-        "North America": "🗽", "South America": "🏔️", "Europe": "🏰",
-        "Africa": "🦁", "Asia": "🏯", "Oceania": "🦘",
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var revealsProgress = false
+
+    /// A field-guide glyph per continent, stamped when the user has been there.
+    private static let continentSymbol: [String: String] = [
+        "North America": "building.columns.fill",
+        "South America": "mountain.2.fill",
+        "Europe": "building.2.crop.circle.fill",
+        "Africa": "sun.horizon.fill",
+        "Asia": "torii.gate",
+        "Oceania": "water.waves",
     ]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
+            journeyHeading
             continents
             headline
             ledger
             if !stats.topCategories.isEmpty { categories }
-            if let since = stats.exploringSince {
-                Text("Exploring since \(since)")
-                    .font(LoreType.caption)
-                    .foregroundStyle(LoreColor.ink600)
+            journeyFooter
+        }
+        .padding(18)
+        .background {
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [LoreColor.ink800, LoreColor.ink900],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .overlay(alignment: .topTrailing) { atlasLines }
+        }
+        .overlay(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .strokeBorder(LoreColor.brass300.opacity(0.2), lineWidth: 1)
+        )
+        .loreElevation(.elev1)
+        .onAppear {
+            guard !revealsProgress else { return }
+            if reduceMotion {
+                revealsProgress = true
+            } else {
+                withAnimation(LoreSpring.slow(reduceMotion: false).delay(0.12)) {
+                    revealsProgress = true
+                }
             }
         }
-        .padding(16)
-        .background(LoreColor.ink900, in: RoundedRectangle(cornerRadius: 20))
-        .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(LoreColor.ink700, lineWidth: 1))
+    }
+
+    private var journeyHeading: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(LoreColor.amber.opacity(0.15))
+                Circle()
+                    .strokeBorder(LoreColor.brass300.opacity(0.7), style: StrokeStyle(lineWidth: 1, dash: [2, 3]))
+                Image(systemName: "map.fill")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(LoreColor.amber)
+            }
+            .frame(width: 42, height: 42)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("EXPLORER'S LEDGER")
+                    .font(LoreType.label)
+                    .tracking(0.8)
+                    .foregroundStyle(LoreColor.brass300)
+                Text(stats.places == 0 ? "Your world starts here" : "A world shaped by your footsteps")
+                    .font(LoreType.display(size: 17, weight: .medium))
+                    .foregroundStyle(LoreColor.bone)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var atlasLines: some View {
+        Canvas { context, size in
+            var route = Path()
+            route.move(to: CGPoint(x: size.width * 0.1, y: size.height * 0.72))
+            route.addCurve(
+                to: CGPoint(x: size.width * 0.92, y: size.height * 0.16),
+                control1: CGPoint(x: size.width * 0.36, y: size.height * 0.34),
+                control2: CGPoint(x: size.width * 0.58, y: size.height * 0.78)
+            )
+            context.stroke(
+                route,
+                with: .color(LoreColor.brass300.opacity(0.09)),
+                style: StrokeStyle(lineWidth: 1, dash: [4, 7])
+            )
+        }
+        .frame(width: 190, height: 110)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 
     // MARK: The world — continents lit as you cross them
@@ -41,34 +115,51 @@ struct ExplorerStatsView: View {
                 Spacer()
                 Text("\(stats.continents) of 6 continents")
                     .font(LoreType.caption)
-                    .foregroundStyle(LoreColor.ink600)
+                    .foregroundStyle(LoreColor.bone.opacity(0.65))
             }
-            HStack(spacing: 8) {
-                ForEach(UserStats.allContinents, id: \.self) { name in
-                    let visited = stats.continentsList.contains(name)
-                    VStack(spacing: 4) {
-                        Text(Self.continentEmoji[name] ?? "🌍")
-                            .font(.system(size: 22))
-                            .frame(width: 44, height: 44)
-                            .background(
-                                Circle().fill(visited ? LoreColor.amber.opacity(0.9) : LoreColor.ink800)
-                            )
-                            .overlay(
-                                Circle().strokeBorder(
-                                    visited ? LoreColor.brass : LoreColor.ink700,
-                                    lineWidth: visited ? 1.5 : 1
-                                )
-                            )
-                            .saturation(visited ? 1 : 0)
+
+            ProgressView(value: Double(stats.continents), total: 6)
+                .tint(LoreColor.amber)
+                .accessibilityLabel("Continents explored")
+                .accessibilityValue("\(stats.continents) of 6")
+
+            GeometryReader { proxy in
+                let spacing: CGFloat = 6
+                let stampSize = min(44, (proxy.size.width - spacing * 5) / 6)
+
+                HStack(spacing: spacing) {
+                    ForEach(UserStats.allContinents, id: \.self) { name in
+                        let visited = stats.continentsList.contains(name)
+                        VStack(spacing: 4) {
+                            ZStack {
+                                Circle()
+                                    .fill(visited ? LoreColor.amber.opacity(0.92) : LoreColor.ink900)
+                                Circle()
+                                    .strokeBorder(
+                                        visited ? LoreColor.brass300 : LoreColor.ink700,
+                                        style: StrokeStyle(lineWidth: visited ? 1.5 : 1, dash: visited ? [2, 2] : [])
+                                    )
+                                Image(systemName: Self.continentSymbol[name] ?? "globe.americas.fill")
+                                    .font(.system(size: min(17, stampSize * 0.42), weight: .semibold))
+                                    .symbolRenderingMode(.hierarchical)
+                                    .foregroundStyle(visited ? LoreColor.ink900 : LoreColor.bone.opacity(0.45))
+                            }
+                            .frame(width: stampSize, height: stampSize)
                             .opacity(visited ? 1 : 0.5)
-                        Text(shortName(name))
-                            .font(.system(size: 9, weight: .semibold))
-                            .foregroundStyle(visited ? LoreColor.bone : LoreColor.ink600)
-                            .lineLimit(1)
+                            Text(shortName(name))
+                                .font(LoreType.micro)
+                                .foregroundStyle(visited ? LoreColor.bone : LoreColor.bone.opacity(0.45))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.7)
+                        }
+                        .frame(width: stampSize)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(name)
+                        .accessibilityValue(visited ? "Visited" : "Not visited")
                     }
-                    .frame(maxWidth: .infinity)
                 }
             }
+            .frame(height: 62)
         }
     }
 
@@ -98,7 +189,7 @@ struct ExplorerStatsView: View {
                 .foregroundStyle(LoreColor.bone)
             Text(caption.uppercased())
                 .font(.system(size: 10, weight: .semibold)).tracking(0.5)
-                .foregroundStyle(LoreColor.ink600)
+                .foregroundStyle(LoreColor.bone.opacity(0.58))
         }
         .frame(maxWidth: .infinity)
     }
@@ -128,20 +219,30 @@ struct ExplorerStatsView: View {
 
     private func smallStat(system: String, value: Int, caption: String, hot: Bool) -> some View {
         VStack(spacing: 4) {
-            Image(systemName: system)
-                .font(.system(size: 14))
-                .foregroundStyle(hot ? LoreColor.amber : LoreColor.brass300)
+            ZStack {
+                Circle()
+                    .fill((hot ? LoreColor.amber : LoreColor.brass300).opacity(0.12))
+                Image(systemName: system)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(hot ? LoreColor.amber : LoreColor.brass300)
+            }
+            .frame(width: 28, height: 28)
             Text("\(value)")
                 .font(LoreType.display(size: 18, weight: .semibold))
                 .foregroundStyle(LoreColor.bone)
             Text(caption)
                 .font(.system(size: 10))
-                .foregroundStyle(LoreColor.ink600)
+                .foregroundStyle(LoreColor.bone.opacity(0.58))
                 .lineLimit(1)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 10)
-        .background(LoreColor.ink800, in: RoundedRectangle(cornerRadius: 12))
+        .background(LoreColor.ink900.opacity(0.72), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(LoreColor.ink700.opacity(0.7), lineWidth: 1)
+        )
+        .accessibilityElement(children: .combine)
     }
 
     // MARK: Top categories
@@ -160,18 +261,50 @@ struct ExplorerStatsView: View {
                         .frame(width: 92, alignment: .leading)
                     GeometryReader { geo in
                         ZStack(alignment: .leading) {
-                            Capsule().fill(LoreColor.ink800)
+                            Capsule().fill(LoreColor.ink900)
                             Capsule().fill(LoreColor.amber)
-                                .frame(width: max(8, geo.size.width * CGFloat(cat.count) / CGFloat(maxCount)))
+                                .frame(
+                                    width: revealsProgress
+                                        ? max(8, geo.size.width * CGFloat(cat.count) / CGFloat(maxCount))
+                                        : 0
+                                )
                         }
                     }
                     .frame(height: 8)
                     Text("\(cat.count)")
                         .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(LoreColor.ink600)
+                        .foregroundStyle(LoreColor.bone.opacity(0.62))
                         .frame(width: 24, alignment: .trailing)
                 }
             }
+        }
+    }
+
+    private var journeyFooter: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 10) { journeyFooterItems }
+            VStack(alignment: .leading, spacing: 8) { journeyFooterItems }
+        }
+        .padding(12)
+        .background(LoreColor.ink900.opacity(0.76), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    @ViewBuilder
+    private var journeyFooterItems: some View {
+        Label(
+            stats.currentStreak > 0 ? "\(stats.currentStreak)-day trail" : "Begin a trail",
+            systemImage: stats.currentStreak > 0 ? "flame.fill" : "figure.walk"
+        )
+        .foregroundStyle(stats.currentStreak > 0 ? LoreColor.amber : LoreColor.bone.opacity(0.72))
+
+        Spacer(minLength: 4)
+
+        if let since = stats.exploringSince {
+            Label("Since \(since)", systemImage: "calendar")
+                .foregroundStyle(LoreColor.bone.opacity(0.68))
+        } else {
+            Label("First memory awaits", systemImage: "bookmark")
+                .foregroundStyle(LoreColor.bone.opacity(0.68))
         }
     }
 }

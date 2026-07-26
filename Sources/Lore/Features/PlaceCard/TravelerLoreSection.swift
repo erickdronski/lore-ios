@@ -81,9 +81,15 @@ struct TravelerLoreSection: View {
     private var section: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text("TRAVELER LORE")
-                    .loreLabelStyle()
-                    .foregroundStyle(LoreColor.brass700)
+                LoreArtworkMedallion(kind: .quote, diameter: 34)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("TRAVELER LORE")
+                        .loreLabelStyle()
+                        .foregroundStyle(LoreColor.brass700)
+                    Text("Notes left by people who came before you")
+                        .font(LoreType.micro)
+                        .foregroundStyle(LoreColor.ink600)
+                }
                 Spacer()
                 if visibleEntries.count > Self.inlineCount {
                     Button {
@@ -103,7 +109,14 @@ struct TravelerLoreSection: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
-        .background(LoreColor.bone200, in: RoundedRectangle(cornerRadius: 14))
+        .background {
+            ZStack {
+                RoundedRectangle(cornerRadius: 14).fill(LoreColor.bone200)
+                LoreTileArtwork(kind: .quote, accent: LoreColor.brass700, intensity: 0.09)
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+            }
+        }
+        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(LoreColor.brass700.opacity(0.18), lineWidth: 1))
     }
 
     /// The full list, for places with more lore than the card should carry.
@@ -134,27 +147,52 @@ struct TravelerLoreSection: View {
     // MARK: Rows
 
     private func row(_ entry: PublicLore) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                Text(entry.displayName)
-                    .font(LoreType.display(size: 14, weight: .semibold))
-                    .foregroundStyle(LoreColor.ink)
-                if !entry.dateLabel.isEmpty {
-                    Text("· \(entry.dateLabel)")
-                        .font(LoreType.caption)
-                        .foregroundStyle(LoreColor.ink600)
+        HStack(alignment: .top, spacing: 10) {
+            travelerMark(entry)
+
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    Text(entry.displayName)
+                        .font(LoreType.display(size: 14, weight: .semibold))
+                        .foregroundStyle(LoreColor.ink)
+                    if !entry.dateLabel.isEmpty {
+                        Text("· \(entry.dateLabel)")
+                            .font(LoreType.caption)
+                            .foregroundStyle(LoreColor.ink600)
+                    }
+                    Spacer()
+                    rowMenu(entry)
                 }
-                Spacer()
-                rowMenu(entry)
-            }
-            if let note = entry.note, !note.isEmpty {
-                Text(note)
-                    .font(LoreType.body)
-                    .foregroundStyle(LoreColor.ink)
-                    .lineLimit(5)
-                    .fixedSize(horizontal: false, vertical: true)
+                if let note = entry.note, !note.isEmpty {
+                    Text(note)
+                        .font(LoreType.body)
+                        .foregroundStyle(LoreColor.ink)
+                        .lineLimit(5)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
         }
+        .padding(.vertical, 3)
+    }
+
+    private func travelerMark(_ entry: PublicLore) -> some View {
+        let initial = entry.displayName.trimmingCharacters(in: .whitespacesAndNewlines).first
+        return ZStack {
+            Circle()
+                .fill(
+                    LinearGradient(
+                        colors: [LoreColor.ink800, LoreColor.ink900],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+            Text(initial.map { String($0).uppercased() } ?? "L")
+                .font(LoreType.display(size: 15, weight: .semibold))
+                .foregroundStyle(LoreColor.amber)
+        }
+        .frame(width: 34, height: 34)
+        .overlay(Circle().strokeBorder(LoreColor.brass700.opacity(0.45), lineWidth: 1))
+        .accessibilityHidden(true)
     }
 
     /// Report / block, the 1.2 pair. Needs an account so reports are

@@ -121,9 +121,15 @@ struct PlaceCardView: View {
         if visits.hasVisited(place.id) {
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
-                    Text("YOUR LORE")
-                        .loreLabelStyle()
-                        .foregroundStyle(LoreColor.brass700)
+                    LoreArtworkMedallion(kind: .memory, diameter: 34)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("YOUR LORE")
+                            .loreLabelStyle()
+                            .foregroundStyle(LoreColor.brass700)
+                        Text("A page from your journey")
+                            .font(LoreType.micro)
+                            .foregroundStyle(LoreColor.ink600)
+                    }
                     Spacer()
                     Button {
                         Haptics.play(.chipTap)
@@ -163,7 +169,13 @@ struct PlaceCardView: View {
             }
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(LoreColor.bone200, in: RoundedRectangle(cornerRadius: 14))
+            .background {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 14).fill(LoreColor.bone200)
+                    LoreTileArtwork(kind: .memory, accent: LoreColor.brass700, intensity: 0.08)
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                }
+            }
             .overlay(
                 RoundedRectangle(cornerRadius: 14)
                     .strokeBorder(LoreColor.brass700.opacity(0.25), lineWidth: 1)
@@ -279,9 +291,17 @@ struct PlaceCardView: View {
     private var storyTeaser: some View {
         if let narrative = dive?.narrative, !narrative.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
-                Text("THE STORY")
-                    .loreLabelStyle()
-                    .foregroundStyle(accent)
+                HStack(spacing: 9) {
+                    LoreArtworkMedallion(kind: .story, accent: accent, diameter: 34)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("THE STORY")
+                            .loreLabelStyle()
+                            .foregroundStyle(accent)
+                        Text("A first page from the full dossier")
+                            .font(LoreType.micro)
+                            .foregroundStyle(LoreColor.ink600)
+                    }
+                }
                 Text(narrative)
                     .font(LoreType.body)
                     .foregroundStyle(LoreColor.ink)
@@ -290,7 +310,14 @@ struct PlaceCardView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(14)
-            .background(LoreColor.bone200, in: RoundedRectangle(cornerRadius: 14))
+            .background {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 14).fill(LoreColor.bone200)
+                    LoreTileArtwork(kind: .story, accent: accent, intensity: 0.08)
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                }
+            }
+            .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(accent.opacity(0.16), lineWidth: 1))
         }
     }
 

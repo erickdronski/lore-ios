@@ -49,6 +49,20 @@ struct TravelMapControls: View {
         places.filter { filters.allows($0) }
     }
 
+    private var cityDisplayName: String {
+        city.split(separator: "-").map { $0.capitalized }.joined(separator: " ")
+    }
+
+    private var discoverySubtitle: String {
+        if let collection = filters.activeCollection {
+            return "\(collection.label) · \(filteredPlaces.count) places"
+        }
+        if filters.hasActiveFilter {
+            return "Focused view · \(filteredPlaces.count) places"
+        }
+        return "\(filteredPlaces.count) places to wander"
+    }
+
     var body: some View {
         VStack(spacing: 8) {
             handle
@@ -95,31 +109,60 @@ struct TravelMapControls: View {
         }
     }
 
-    /// The grip: a grab bar plus, when collapsed, a labelled "Around you" pill so
-    /// it's obvious how to bring the shelf back. Tap toggles; drag toggles too.
+    /// A compact field-guide tab that explains what the deck contains before a
+    /// traveler opens it. It stays opaque rather than adding another live-map
+    /// blur layer, and carries filter/count context in both states.
     private var handle: some View {
         Button {
             setCollapsed(!collapsed)
         } label: {
-            HStack(spacing: 8) {
-                if collapsed {
-                    Image(systemName: "location.fill")
-                        .font(.system(size: 11, weight: .semibold))
+            HStack(spacing: 10) {
+                ZStack {
+                    Circle().fill(LoreColor.amber.opacity(0.16))
+                    Image(systemName: collapsed ? "map.fill" : "location.fill")
+                        .font(.system(size: 12, weight: .bold))
                         .foregroundStyle(LoreColor.amber)
-                    Text("Around you")
+                }
+                .frame(width: 30, height: 30)
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(collapsed ? "NEARBY FIELD GUIDE" : "DISCOVERY DECK")
+                        .loreLabelStyle()
+                        .tracking(1)
+                        .foregroundStyle(LoreColor.brass300)
+                    Text(collapsed ? cityDisplayName : discoverySubtitle)
                         .font(LoreType.caption)
                         .foregroundStyle(LoreColor.bone)
+                        .lineLimit(1)
                 }
+
+                if filters.hasActiveFilter {
+                    Circle()
+                        .fill(LoreColor.amber)
+                        .frame(width: 7, height: 7)
+                        .accessibilityHidden(true)
+                }
+
                 Image(systemName: collapsed ? "chevron.up" : "chevron.down")
                     .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(LoreColor.bone.opacity(0.85))
             }
-            .padding(.horizontal, 14)
-            .frame(height: 30)
-            .background(.ultraThinMaterial, in: Capsule())
+            .padding(.horizontal, 12)
+            .frame(height: 44)
+            .frame(maxWidth: collapsed ? nil : .infinity)
+            .background(LoreColor.ink900.opacity(0.96), in: Capsule())
+            .overlay(
+                Capsule().strokeBorder(
+                    (theme?.accentColor ?? LoreColor.brass300).opacity(0.35),
+                    lineWidth: 1
+                )
+            )
+            .padding(.horizontal, collapsed ? 0 : 16)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(collapsed ? "Show places around you" : "Hide places around you")
+        .accessibilityLabel(collapsed ? "Show nearby field guide" : "Hide nearby field guide")
+        .accessibilityValue(discoverySubtitle)
+        .accessibilityHint(collapsed ? "Opens place filters and nearby cards." : "Collapses the deck to show more map.")
     }
 
     /// Drag the handle/panel down to collapse, up to expand.

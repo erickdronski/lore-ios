@@ -66,13 +66,16 @@ struct DealSection: View {
     private var section: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("PLAN YOUR VISIT")
-                        .loreLabelStyle()
-                        .foregroundStyle(LoreColor.brass700)
-                    Text("Curated ways to experience this place")
-                        .font(LoreType.caption)
-                        .foregroundStyle(LoreColor.ink600)
+                HStack(spacing: 10) {
+                    LoreArtworkMedallion(kind: .offer, diameter: 38)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("PLAN YOUR VISIT")
+                            .loreLabelStyle()
+                            .foregroundStyle(LoreColor.brass700)
+                        Text("Curated ways to experience this place")
+                            .font(LoreType.caption)
+                            .foregroundStyle(LoreColor.ink600)
+                    }
                 }
                 Spacer()
                 Image(systemName: "sparkles")
@@ -90,7 +93,14 @@ struct DealSection: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
-        .background(LoreColor.bone200, in: RoundedRectangle(cornerRadius: 16))
+        .background {
+            ZStack {
+                RoundedRectangle(cornerRadius: 16).fill(LoreColor.bone200)
+                LoreTileArtwork(kind: .offer, accent: LoreColor.brass700, intensity: 0.08)
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+            }
+        }
+        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(LoreColor.brass700.opacity(0.18), lineWidth: 1))
     }
 
     private func categoryHeader(_ category: OfferCategory, count: Int) -> some View {
@@ -122,9 +132,7 @@ struct DealSection: View {
         } label: {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 10) {
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 15))
-                        .foregroundStyle(LoreColor.brass700)
+                    LoreArtworkMedallion(kind: .offer, diameter: 38)
                     Text(deals.count == 1
                          ? "1 curated offer here"
                          : "\(deals.count) curated offers here")
@@ -157,7 +165,13 @@ struct DealSection: View {
             }
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(LoreColor.bone200, in: RoundedRectangle(cornerRadius: 16))
+            .background {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 16).fill(LoreColor.bone200)
+                    LoreTileArtwork(kind: .offer, accent: LoreColor.brass700, intensity: 0.10)
+                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                }
+            }
             .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(LoreColor.brass700.opacity(0.4), lineWidth: 1))
         }
         .buttonStyle(.pressable)
@@ -184,12 +198,11 @@ struct DealRow: View {
             if let url = deal.dealURL { openURL(url) }
         } label: {
             HStack(alignment: .top, spacing: 10) {
-                Image(systemName: deal.offerCategory.icon)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(LoreColor.brass700)
-                    .frame(width: 22, height: 22)
-                    .background(LoreColor.bone50, in: Circle())
-                    .overlay(Circle().strokeBorder(LoreColor.brass700.opacity(0.2), lineWidth: 1))
+                LoreArtworkMedallion(
+                    kind: .offer,
+                    symbol: deal.offerCategory.icon,
+                    diameter: 30
+                )
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Text(deal.title)

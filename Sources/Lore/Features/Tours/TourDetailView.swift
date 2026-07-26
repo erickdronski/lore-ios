@@ -8,6 +8,7 @@ struct TourDetailView: View {
     let tour: Tour
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(EntitlementStore.self) private var entitlements
     @Environment(StoreKitService.self) private var store
     @Environment(AuthService.self) private var auth
@@ -88,6 +89,8 @@ struct TourDetailView: View {
                     liveActivityControl
                 }
             }
+            .frame(maxWidth: 760)
+            .frame(maxWidth: .infinity)
             .padding(16)
         }
         .background(LoreColor.bone100)
@@ -134,26 +137,55 @@ struct TourDetailView: View {
     private var lockedTourPreview: some View {
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 8) {
-                Text("\(tour.stops.count) stops on this walk")
-                    .font(LoreType.button)
-                    .foregroundStyle(LoreColor.ink)
-                ForEach(Array(tour.stops.enumerated()), id: \.offset) { i, stop in
-                    HStack(spacing: 10) {
-                        Text("\(i + 1)")
-                            .font(LoreType.caption)
+                HStack(alignment: .firstTextBaseline) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("ROUTE PREVIEW")
+                            .font(LoreType.micro)
+                            .tracking(1.2)
                             .foregroundStyle(LoreColor.brass700)
-                            .frame(width: 18, alignment: .leading)
+                        Text("\(tour.stops.count) checkpoints on this walk")
+                            .font(LoreType.button)
+                            .foregroundStyle(LoreColor.ink)
+                    }
+                    Spacer()
+                    Image(systemName: "map.fill")
+                        .font(.system(size: 20))
+                        .foregroundStyle(LoreColor.brass700)
+                        .accessibilityHidden(true)
+                }
+                .padding(.bottom, 4)
+
+                ForEach(Array(tour.stops.enumerated()), id: \.offset) { i, stop in
+                    HStack(alignment: .top, spacing: 11) {
+                        VStack(spacing: 0) {
+                            Text("\(i + 1)")
+                                .font(LoreType.micro)
+                                .foregroundStyle(LoreColor.bone)
+                                .frame(width: 25, height: 25)
+                                .background(LoreColor.ink, in: Circle())
+                            if i < tour.stops.count - 1 {
+                                Rectangle()
+                                    .fill(LoreColor.brass.opacity(0.45))
+                                    .frame(width: 1.5, height: 24)
+                            }
+                        }
                         Text(model.place(id: stop.placeID)?.name ?? "Stop \(i + 1)")
                             .font(LoreType.body)
-                            .foregroundStyle(LoreColor.ink600)
+                            .foregroundStyle(LoreColor.ink)
                             .lineLimit(1)
+                            .padding(.top, 2)
                         Spacer()
                     }
                 }
             }
-            .padding(14)
+            .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(LoreColor.bone50, in: RoundedRectangle(cornerRadius: 14))
+            .background(LoreColor.bone50, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .strokeBorder(LoreColor.bone300, lineWidth: 1)
+            }
+            .loreElevation(.elev1)
 
             PlusGate(isPlus: false, feature: .tours, onUnlock: { showPaywall = true }) {
                 EmptyView()
@@ -271,29 +303,49 @@ struct TourDetailView: View {
     private var routeMap: some View {
         let stops = orderedStopPlaces
         if stops.count >= 2 {
-            Map(position: $mapCamera, interactionModes: [.pan, .zoom]) {
-                MapPolyline(coordinates: stops.map(\.place.coordinate))
-                    .stroke(
-                        LoreColor.brass700.opacity(0.55),
-                        style: StrokeStyle(lineWidth: 3, lineCap: .round, dash: [1, 7])
-                    )
-                ForEach(stops, id: \.index) { item in
-                    Annotation(item.place.name, coordinate: item.place.coordinate) {
-                        Button {
-                            withAnimation(LoreSpring.bounce(reduceMotion: reduceMotion)) {
-                                stopIndex = item.index
+            VStack(spacing: 0) {
+                HStack {
+                    Label("ROUTE OVERVIEW", systemImage: "point.3.connected.trianglepath.dotted")
+                        .font(LoreType.micro)
+                        .tracking(1)
+                        .foregroundStyle(LoreColor.brass700)
+                    Spacer()
+                    Text("Tap a checkpoint")
+                        .font(LoreType.micro)
+                        .foregroundStyle(LoreColor.ink600)
+                }
+                .padding(.horizontal, 13)
+                .frame(height: 38)
+                .background(LoreColor.bone50)
+
+                Map(position: $mapCamera, interactionModes: [.pan, .zoom]) {
+                    MapPolyline(coordinates: stops.map(\.place.coordinate))
+                        .stroke(
+                            LoreColor.brass700.opacity(0.55),
+                            style: StrokeStyle(lineWidth: 3, lineCap: .round, dash: [1, 7])
+                        )
+                    ForEach(stops, id: \.index) { item in
+                        Annotation(item.place.name, coordinate: item.place.coordinate) {
+                            Button {
+                                withAnimation(LoreSpring.bounce(reduceMotion: reduceMotion)) {
+                                    stopIndex = item.index
+                                }
+                            } label: {
+                                routePin(number: item.index + 1, active: item.index == stopIndex)
                             }
-                        } label: {
-                            routePin(number: item.index + 1, active: item.index == stopIndex)
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(Text("Stop \(item.index + 1), \(item.place.name)"))
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(Text("Stop \(item.index + 1), \(item.place.name)"))
                     }
                 }
+                .mapStyle(.standard(pointsOfInterest: .excludingAll))
+                .frame(height: horizontalSizeClass == .regular ? 250 : 190)
             }
-            .mapStyle(.standard(pointsOfInterest: .excludingAll))
-            .frame(height: 190)
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .strokeBorder(LoreColor.bone300.opacity(0.9), lineWidth: 1)
+            }
             .loreElevation(.elev1)
             .animation(LoreSpring.smooth(reduceMotion: reduceMotion), value: stopIndex)
         }
@@ -308,7 +360,7 @@ struct TourDetailView: View {
             .frame(width: active ? 30 : 24, height: active ? 30 : 24)
             .background(active ? LoreColor.amber : LoreColor.brass700, in: Circle())
             .overlay(Circle().strokeBorder(LoreColor.bone, lineWidth: 2))
-            .shadow(color: .black.opacity(0.25), radius: active ? 4 : 1, y: 1)
+            .shadow(color: LoreColor.ink950.opacity(0.25), radius: active ? 4 : 1, y: 1)
     }
 
     /// Frame the overview map to fit every stop once the places resolve. An
@@ -394,21 +446,62 @@ struct TourDetailView: View {
     // MARK: Sections
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 10) {
-                Text(tour.displayEmoji).font(.system(size: 32))
+        ZStack(alignment: .topTrailing) {
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [LoreColor.ink800, LoreColor.ink950],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+
+            TourRouteConstellation(nodeCount: min(max(tour.stops.count, 3), 7))
+                .frame(width: 190, height: 125)
+                .padding(.top, 34)
+                .padding(.trailing, -24)
+                .opacity(0.5)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Label(tour.isPremium ? "LORE+ FIELD WALK" : "CITY FIELD WALK", systemImage: "map")
+                        .font(LoreType.micro)
+                        .tracking(1.2)
+                        .foregroundStyle(LoreColor.brass300)
+                    Spacer()
+                    Text("\(tour.stops.count) STOPS")
+                        .font(LoreType.micro)
+                        .tracking(0.8)
+                        .foregroundStyle(LoreColor.bone.opacity(0.8))
+                }
+
+                ZStack {
+                    Circle().fill(LoreColor.bone.opacity(0.1))
+                    Circle().strokeBorder(LoreColor.amber.opacity(0.75), lineWidth: 1)
+                        .padding(3)
+                    Text(tour.displayEmoji).font(.system(size: 31))
+                }
+                .frame(width: 58, height: 58)
+                .accessibilityHidden(true)
+
                 Text(tour.title)
-                    .font(LoreType.displayM)
-                    .foregroundStyle(LoreColor.ink)
+                    .font(LoreType.display(size: 28, weight: .semibold))
+                    .foregroundStyle(LoreColor.bone)
+
+                if let blurb = tour.blurb {
+                    Text(blurb)
+                        .font(LoreType.hook)
+                        .foregroundStyle(LoreColor.bone.opacity(0.76))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                tripFacts
             }
-            if let blurb = tour.blurb {
-                Text(blurb)
-                    .font(LoreType.hook)
-                    .foregroundStyle(LoreColor.ink600)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            tripFacts
+            .padding(18)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .loreElevation(.elev1)
     }
 
     // MARK: Trip facts (TestFlight feedback: "Total distance? Total time?")
@@ -453,11 +546,18 @@ struct TourDetailView: View {
     /// strip below).
     @ViewBuilder
     private var tripFacts: some View {
-        if distanceText != nil || minutesText != nil {
-            HStack(spacing: 16) {
-                if let distanceText { tripFact(system: "figure.walk", text: distanceText) }
-                if let minutesText { tripFact(system: "clock", text: minutesText) }
-                tripFact(system: "mappin.and.ellipse", text: "\(tour.stops.count) stops")
+        if distanceText != nil || minutesText != nil || !tour.stops.isEmpty {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 16) {
+                    if let distanceText { tripFact(system: "figure.walk", text: distanceText) }
+                    if let minutesText { tripFact(system: "clock", text: minutesText) }
+                    tripFact(system: "mappin.and.ellipse", text: "\(tour.stops.count) stops")
+                }
+                VStack(alignment: .leading, spacing: 5) {
+                    if let distanceText { tripFact(system: "figure.walk", text: distanceText) }
+                    if let minutesText { tripFact(system: "clock", text: minutesText) }
+                    tripFact(system: "mappin.and.ellipse", text: "\(tour.stops.count) stops")
+                }
             }
             .padding(.top, 2)
         }
@@ -467,82 +567,159 @@ struct TourDetailView: View {
         Label(text, systemImage: system)
             .font(LoreType.caption)
             .labelStyle(.titleAndIcon)
-            .foregroundStyle(LoreColor.ink)
+            .foregroundStyle(LoreColor.bone)
     }
 
-    /// Amber node rail, one dot per stop, filled up to the current one. The
-    /// current dot swells (a spring pop) so the route reads its position; tapping
-    /// a dot springs the stepper to that stop (LUXURY-MOTION §6 tour stepper).
+    /// A horizontally scrolling checkpoint itinerary. Shape, number, fill, and
+    /// connecting segments all communicate visited/current/upcoming state;
+    /// tapping a checkpoint springs the stepper to that stop.
     private var progressRail: some View {
-        HStack(spacing: 6) {
-            ForEach(Array(tour.stops.enumerated()), id: \.element.id) { index, _ in
-                Circle()
-                    .fill(index <= stopIndex ? LoreColor.amber : LoreColor.bone300)
-                    .strokeBorder(
-                        index <= stopIndex ? LoreColor.ink : LoreColor.bone300,
-                        lineWidth: 1
-                    )
-                    .frame(width: 12, height: 12)
-                    .scaleEffect(index == stopIndex && !reduceMotion ? 1.35 : 1.0)
-                    .onTapGesture {
-                        withAnimation(LoreSpring.bounce(reduceMotion: reduceMotion)) {
-                            stopIndex = index
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("YOUR ITINERARY")
+                        .font(LoreType.micro)
+                        .tracking(1.2)
+                        .foregroundStyle(LoreColor.brass700)
+                    Text("Checkpoint \(stopIndex + 1) of \(tour.stops.count)")
+                        .font(LoreType.button)
+                        .foregroundStyle(LoreColor.ink)
+                }
+                Spacer()
+                Text("\(Int(progressFraction * 100))%")
+                    .font(LoreType.display(size: 18, weight: .semibold))
+                    .foregroundStyle(LoreColor.brass700)
+            }
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 0) {
+                    ForEach(Array(tour.stops.enumerated()), id: \.element.id) { index, _ in
+                        Button {
+                            withAnimation(LoreSpring.bounce(reduceMotion: reduceMotion)) {
+                                stopIndex = index
+                            }
+                        } label: {
+                            RouteCheckpoint(
+                                number: index + 1,
+                                isVisited: index < stopIndex,
+                                isCurrent: index == stopIndex
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(Text("Stop \(index + 1) of \(tour.stops.count)"))
+                        .accessibilityValue(Text(index == stopIndex ? "Current stop" : (index < stopIndex ? "Visited" : "Upcoming")))
+
+                        if index < tour.stops.count - 1 {
+                            Capsule()
+                                .fill(index < stopIndex ? LoreColor.amber : LoreColor.bone300)
+                                .frame(width: 28, height: 3)
+                                .padding(.horizontal, 3)
                         }
                     }
+                }
+                .padding(.horizontal, 2)
+                .padding(.vertical, 4)
             }
-            Spacer()
-            Text("Stop \(stopIndex + 1) of \(tour.stops.count)")
-                .font(LoreType.caption)
-                .foregroundStyle(LoreColor.ink600)
         }
-        // Dot fills + the current-dot swell settle on one spring, no cut.
+        .padding(14)
+        .background(LoreColor.bone50, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(LoreColor.bone300.opacity(0.8), lineWidth: 1)
+        }
         .animation(LoreSpring.smooth(reduceMotion: reduceMotion), value: stopIndex)
+    }
+
+    private var progressFraction: Double {
+        guard !tour.stops.isEmpty else { return 0 }
+        return Double(stopIndex + 1) / Double(tour.stops.count)
     }
 
     @ViewBuilder
     private var stopCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            if let place = currentPlace {
-                HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    Text(place.displayEmoji).font(.system(size: 28))
-                    Text(place.name)
-                        .font(LoreType.displayL)
-                        .foregroundStyle(LoreColor.ink)
-                    Spacer()
-                    if let year = place.layer1?.yearBuilt {
-                        YearChip(year: year)
-                    }
-                }
-                if let hook = place.layer1?.hook {
-                    Text(hook)
-                        .font(LoreType.hook)
-                        .foregroundStyle(LoreColor.ink)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            } else if model.isLoading {
-                SkeletonRow()
-            } else if currentStop != nil {
-                Text("Stop \(stopIndex + 1)")
-                    .font(LoreType.body)
-                    .foregroundStyle(LoreColor.ink600)
-            }
+        ZStack(alignment: .topTrailing) {
+            Text(String(format: "%02d", stopIndex + 1))
+                .font(.system(size: 78, weight: .black, design: .serif))
+                .foregroundStyle(LoreColor.bone200.opacity(0.65))
+                .offset(x: 8, y: -9)
+                .accessibilityHidden(true)
 
-            if let note = currentStop?.note {
-                HStack(alignment: .top, spacing: 8) {
-                    Image(systemName: "quote.opening")
-                        .font(.system(size: 12))
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    Text("FIELD STOP / \(String(format: "%02d", stopIndex + 1))")
+                        .font(LoreType.micro)
+                        .tracking(1.2)
                         .foregroundStyle(LoreColor.brass700)
-                    Text(note)
-                        .font(LoreType.body)
-                        .foregroundStyle(LoreColor.ink)
-                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer()
+                    Image(systemName: "scope")
+                        .foregroundStyle(LoreColor.brass700)
+                        .accessibilityHidden(true)
                 }
-                .padding(12)
-                .background(LoreColor.bone200, in: RoundedRectangle(cornerRadius: 14))
+
+                if let place = currentPlace {
+                    HStack(alignment: .center, spacing: 12) {
+                        ZStack {
+                            Circle().fill(LoreColor.ink)
+                            Circle().strokeBorder(LoreColor.amber, lineWidth: 1)
+                                .padding(3)
+                            Text(place.displayEmoji).font(.system(size: 28))
+                        }
+                        .frame(width: 56, height: 56)
+                        .accessibilityHidden(true)
+
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text(place.name)
+                                .font(LoreType.displayL)
+                                .foregroundStyle(LoreColor.ink)
+                            if let year = place.layer1?.yearBuilt {
+                                YearChip(year: year)
+                            }
+                        }
+                    }
+
+                    if let hook = place.layer1?.hook {
+                        Text(hook)
+                            .font(LoreType.hook)
+                            .foregroundStyle(LoreColor.ink)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                } else if model.isLoading {
+                    SkeletonRow()
+                } else if currentStop != nil {
+                    Text("Stop \(stopIndex + 1)")
+                        .font(LoreType.body)
+                        .foregroundStyle(LoreColor.ink600)
+                }
+
+                if let note = currentStop?.note {
+                    HStack(alignment: .top, spacing: 10) {
+                        Rectangle()
+                            .fill(LoreColor.amber)
+                            .frame(width: 3)
+                        VStack(alignment: .leading, spacing: 5) {
+                            Label("CURATOR'S FIELD NOTE", systemImage: "eye")
+                                .font(LoreType.micro)
+                                .tracking(0.8)
+                                .foregroundStyle(LoreColor.brass700)
+                            Text(note)
+                                .font(LoreType.body)
+                                .foregroundStyle(LoreColor.ink)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .padding(12)
+                    .background(LoreColor.bone200.opacity(0.72), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                }
             }
+            .padding(17)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(16)
-        .background(LoreColor.bone50, in: RoundedRectangle(cornerRadius: 14))
+        .background(LoreColor.bone50, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .strokeBorder(LoreColor.bone300.opacity(0.9), lineWidth: 1)
+        }
+        .loreElevation(.elev1)
     }
 
     /// The hands-free "listen to this stop" control (Lore+). Speaks the current
@@ -806,6 +983,84 @@ struct TourDetailView: View {
     }
 }
 
+/// One tap target on the itinerary rail. Completed, current, and upcoming
+/// checkpoints differ by shape as well as color so the state survives without
+/// color perception.
+private struct RouteCheckpoint: View {
+    let number: Int
+    let isVisited: Bool
+    let isCurrent: Bool
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(isCurrent ? LoreColor.amber : (isVisited ? LoreColor.ink : LoreColor.bone200))
+            Circle()
+                .strokeBorder(
+                    isCurrent || isVisited ? LoreColor.ink : LoreColor.bone300,
+                    lineWidth: isCurrent ? 2 : 1
+                )
+            if isVisited {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(LoreColor.bone)
+            } else {
+                Text("\(number)")
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .foregroundStyle(isCurrent ? LoreColor.ink : LoreColor.ink600)
+            }
+        }
+        .frame(width: 31, height: 31)
+        .scaleEffect(isCurrent ? 1.1 : 1)
+    }
+}
+
+/// Decorative route line for the editorial tour cover. Deliberately uses a
+/// fixed, calm geometry rather than live animation so the card stays quiet in
+/// a long scrolling detail view.
+private struct TourRouteConstellation: View {
+    let nodeCount: Int
+
+    var body: some View {
+        GeometryReader { proxy in
+            let points = routePoints(in: proxy.size)
+            ZStack {
+                Path { path in
+                    guard let first = points.first else { return }
+                    path.move(to: first)
+                    for point in points.dropFirst() { path.addLine(to: point) }
+                }
+                .stroke(
+                    LoreColor.brass300.opacity(0.55),
+                    style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round, dash: [2, 7])
+                )
+
+                ForEach(Array(points.enumerated()), id: \.offset) { index, point in
+                    ZStack {
+                        Circle().fill(index == points.count - 1 ? LoreColor.amber : LoreColor.brass300)
+                        if index == points.count - 1 {
+                            Circle().strokeBorder(LoreColor.bone.opacity(0.8), lineWidth: 1)
+                                .padding(-3)
+                        }
+                    }
+                    .frame(width: index == points.count - 1 ? 10 : 6, height: index == points.count - 1 ? 10 : 6)
+                    .position(point)
+                }
+            }
+        }
+    }
+
+    private func routePoints(in size: CGSize) -> [CGPoint] {
+        let count = max(nodeCount, 2)
+        return (0..<count).map { index in
+            let fraction = CGFloat(index) / CGFloat(count - 1)
+            let x = 8 + fraction * max(size.width - 16, 0)
+            let pattern: [CGFloat] = [0.72, 0.32, 0.58, 0.2]
+            return CGPoint(x: x, y: size.height * pattern[index % pattern.count])
+        }
+    }
+}
+
 private struct TourCompletionView: View {
     let tour: Tour
     let onDismiss: () -> Void
@@ -817,6 +1072,12 @@ private struct TourCompletionView: View {
     var body: some View {
         ZStack {
             LoreColor.ink950.opacity(0.94).ignoresSafeArea()
+            TourRouteConstellation(nodeCount: min(max(tour.stops.count, 4), 8))
+                .frame(maxWidth: 520)
+                .frame(height: 230)
+                .opacity(0.22)
+                .rotationEffect(.degrees(-8))
+                .accessibilityHidden(true)
             if !reduceMotion {
                 ConfettiBurst(active: burst, tier: .gold)
                     .ignoresSafeArea()

@@ -126,6 +126,7 @@ struct ProgressRing: View {
     var lineWidth: CGFloat = 4
     var animates: Bool = true
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var shown: Double = 0
 
     private var target: Double { min(1, max(0, fraction)) }
@@ -141,14 +142,29 @@ struct ProgressRing: View {
                     style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
                 )
                 .rotationEffect(.degrees(-90))
+
+            ForEach(0..<4, id: \.self) { index in
+                Circle()
+                    .fill(checkpointColor(at: index))
+                    .frame(width: lineWidth + 1, height: lineWidth + 1)
+                    .offset(y: -38)
+                    .rotationEffect(.degrees(Double(index) * 90))
+            }
         }
         .onAppear {
-            guard animates else { shown = target; return }
-            withAnimation(LoreMotion.unfurl) { shown = target }
+            guard animates, !reduceMotion else { shown = target; return }
+            withAnimation(LoreSpring.smooth(reduceMotion: reduceMotion)) { shown = target }
         }
         .onChange(of: fraction) { _, _ in
-            withAnimation(LoreMotion.unfurl) { shown = target }
+            withAnimation(LoreSpring.smooth(reduceMotion: reduceMotion)) { shown = target }
         }
+    }
+
+    private func checkpointColor(at index: Int) -> Color {
+        let checkpoint = Double(index) / 4
+        return target >= checkpoint && target > 0
+            ? tier.ring
+            : LoreColor.ink700.opacity(0.55)
     }
 }
 
@@ -169,6 +185,8 @@ struct AchievementBadge: View {
     var appeared: Bool = true
     /// Stagger delay for cascade entrances on the wall.
     var revealDelay: TimeInterval = 0
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var tier: BadgeTier { BadgeTier(raw: achievement.tier.rawValue) }
 
@@ -191,15 +209,53 @@ struct AchievementBadge: View {
                 .revealBounce(isActive: appeared, delay: revealDelay)
             label
         }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 12)
         .frame(maxWidth: .infinity)
+        .frame(minHeight: 132, alignment: .top)
+        .background(tileBackground)
+        .overlay(alignment: .topTrailing) {
+            if isUnlocked {
+                Image(systemName: "checkmark.seal.fill")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(tier.iconColor, tier.ring)
+                    .padding(7)
+                    .accessibilityHidden(true)
+            }
+        }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityText)
+    }
+
+    private var tileBackground: some View {
+        RoundedRectangle(cornerRadius: 18, style: .continuous)
+            .fill(
+                LinearGradient(
+                    colors: [
+                        isUnlocked ? tier.disc.opacity(0.52) : LoreColor.ink800.opacity(0.72),
+                        LoreColor.ink900.opacity(0.92),
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .strokeBorder(
+                        isUnlocked ? tier.ring.opacity(0.32) : LoreColor.ink700.opacity(0.72),
+                        lineWidth: 1
+                    )
+            )
     }
 
     // MARK: Medallion
 
     private var medallion: some View {
         ZStack {
+            if isUnlocked {
+                sealTeeth
+            }
+
             // In-progress badges keep the tier progress ring, sized just outside
             // the metal medallion.
             if isInProgress {
@@ -222,7 +278,9 @@ struct AchievementBadge: View {
                     )
                 )
                 .shadow(
-                    color: (isUnlocked && tier.isPrestige) ? tier.ring.opacity(0.5) : .black.opacity(0.28),
+                    color: (isUnlocked && tier.isPrestige)
+                        ? tier.ring.opacity(0.5)
+                        : LoreElevation.tint.opacity(0.38),
                     radius: (isUnlocked && tier.isPrestige) ? 10 : 4,
                     x: 0, y: 2
                 )
@@ -261,6 +319,22 @@ struct AchievementBadge: View {
         .opacity(isUnlocked ? 1 : 0.82)
     }
 
+    /// A restrained perforated edge makes earned badges read like physical
+    /// passport seals without adding image assets or obscuring the tier metal.
+    private var sealTeeth: some View {
+        ZStack {
+            ForEach(0..<16, id: \.self) { index in
+                Capsule()
+                    .fill(tier.ring.opacity(tier.isPrestige ? 0.72 : 0.48))
+                    .frame(width: 4, height: 10)
+                    .offset(y: -38)
+                    .rotationEffect(.degrees(Double(index) * 22.5))
+            }
+        }
+        .rotationEffect(.degrees(reduceMotion ? 0 : -3))
+        .accessibilityHidden(true)
+    }
+
     @ViewBuilder
     private var glyph: some View {
         if isMystery {
@@ -272,20 +346,8 @@ struct AchievementBadge: View {
                 .font(.system(size: 25, weight: .semibold))
                 .symbolRenderingMode(.hierarchical)
                 .foregroundStyle(isUnlocked ? tier.iconColor : LoreColor.bone.opacity(0.5))
-                .shadow(color: .black.opacity(isUnlocked ? 0.3 : 0), radius: 1, y: 1)
+                .shadow(color: LoreElevation.tint.opacity(isUnlocked ? 0.35 : 0), radius: 1, y: 1)
         }
-    }
-
-    private var ringColor: Color {
-        if isMystery { return LoreColor.ink700 }
-        if isUnlocked { return tier.ring }
-        return LoreColor.ink700.opacity(0.5)
-    }
-
-    private var discColor: Color {
-        if isMystery { return LoreColor.ink800.opacity(0.6) }
-        if isUnlocked { return tier.disc }
-        return LoreColor.ink800.opacity(0.35)
     }
 
     // MARK: Label
@@ -316,9 +378,19 @@ struct AchievementBadge: View {
                 .tracking(0.6)
                 .foregroundStyle(tier.isPrestige ? tier.accent : LoreColor.ink600)
         } else if isInProgress, let p = progress {
-            Text("\(p.progress) / \(p.target)")
-                .font(LoreType.caption)
-                .foregroundStyle(tier.ring)
+            VStack(spacing: 4) {
+                Text("\(p.progress) of \(p.target)")
+                    .font(LoreType.caption)
+                    .foregroundStyle(LoreColor.bone.opacity(0.76))
+                Capsule()
+                    .fill(LoreColor.ink700)
+                    .frame(width: 42, height: 3)
+                    .overlay(alignment: .leading) {
+                        Capsule()
+                            .fill(tier.ring)
+                            .frame(width: 42 * fraction, height: 3)
+                    }
+            }
         } else {
             Text("Locked")
                 .font(LoreType.caption)

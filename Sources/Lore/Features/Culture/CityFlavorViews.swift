@@ -57,6 +57,8 @@ private struct FlavorCard: View {
     @Environment(AuthService.self) private var auth
     @Environment(AppRouter.self) private var router
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ScaledMetric(relativeTo: .title3) private var titleSize: CGFloat = 20
     @State private var completed = false
     @State private var isListening = false
     @State private var secondsRemaining = 30
@@ -72,21 +74,24 @@ private struct FlavorCard: View {
         narration.isSpeaking && narration.activeSpeechID == entry.id
     }
 
+    private var cardWidth: CGFloat {
+        dynamicTypeSize.isAccessibilitySize ? 332 : 286
+    }
+
+    private var minimumHeight: CGFloat {
+        let base = isInteractive ? 282.0 : (isPhrase ? 252.0 : 222.0)
+        return dynamicTypeSize.isAccessibilitySize ? base + 126 : base
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Rectangle()
-                .fill(accent.opacity(0.85))
-                .frame(width: 28, height: 2)
-                .accessibilityHidden(true)
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                if let emoji = entry.emoji, !emoji.isEmpty {
-                    Text(emoji).font(.system(size: 20))
-                }
-                Text(entry.title)
-                    .font(LoreType.display(size: 19, weight: .semibold))
-                    .foregroundStyle(LoreColor.bone)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+        VStack(alignment: .leading, spacing: 12) {
+            CityFlavorArtwork(entry: entry, accent: accent)
+
+            Text(entry.title)
+                .font(LoreType.display(size: titleSize, weight: .semibold))
+                .foregroundStyle(LoreColor.bone)
+                .fixedSize(horizontal: false, vertical: true)
+
             if isPhrase {
                 phraseTranslation
             } else {
@@ -112,11 +117,18 @@ private struct FlavorCard: View {
                 .accessibilityHint("Opens the source for this traveler note")
             }
         }
-        .padding(14)
-        .frame(width: 280, alignment: .topLeading)
-        .frame(minHeight: isInteractive ? 238 : (isPhrase ? 198 : 152))
+        .padding(16)
+        .frame(width: cardWidth, alignment: .topLeading)
+        .frame(minHeight: minimumHeight, alignment: .topLeading)
         .background(
-            completed ? LoreColor.ink800 : LoreColor.ink900,
+            LinearGradient(
+                colors: [
+                    completed ? LoreColor.ink700 : LoreColor.ink800,
+                    LoreColor.ink900,
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            ),
             in: RoundedRectangle(cornerRadius: 16)
         )
         .overlay(
@@ -203,7 +215,7 @@ private struct FlavorCard: View {
                 .font(LoreType.button)
                 .foregroundStyle(LoreColor.bone)
                 .frame(maxWidth: .infinity)
-                .frame(height: 40)
+                .padding(.vertical, 11)
                 .background(LoreColor.ink700, in: Capsule())
             }
             .buttonStyle(.pressable)
@@ -222,7 +234,7 @@ private struct FlavorCard: View {
                 .font(LoreType.button)
                 .foregroundStyle(completed ? LoreColor.ink900 : LoreColor.bone)
                 .padding(.horizontal, 12)
-                .frame(height: 40)
+                .padding(.vertical, 11)
                 .background(completed ? accent : LoreColor.ink700, in: Capsule())
             }
             .buttonStyle(.pressable)
@@ -236,7 +248,7 @@ private struct FlavorCard: View {
                     .font(LoreType.button)
                     .foregroundStyle(completed ? LoreColor.ink900 : LoreColor.bone)
                     .frame(maxWidth: .infinity)
-                    .frame(height: 40)
+                    .padding(.vertical, 11)
                     .background(completed ? accent : LoreColor.ink700, in: Capsule())
             }
             .buttonStyle(.pressable)
@@ -252,7 +264,7 @@ private struct FlavorCard: View {
                         .font(LoreType.button)
                         .foregroundStyle(LoreColor.bone)
                         .frame(maxWidth: .infinity)
-                        .frame(height: 40)
+                        .padding(.vertical, 11)
                         .background(LoreColor.ink700, in: Capsule())
                 }
                 .buttonStyle(.pressable)
@@ -293,6 +305,189 @@ private struct FlavorCard: View {
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.55) {
             withAnimation(LoreMotion.tap) { pulse = false }
+        }
+    }
+}
+
+// MARK: - Flavor artwork
+
+/// A compact visual index for each flavor kind. The icon answers "what sort of
+/// knowledge is this?" before the reader reaches the title; the moving field
+/// mark gives sound, route, language, and ritual cards distinct silhouettes.
+private struct CityFlavorArtwork: View {
+    let entry: CitySection
+    let accent: Color
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isDrifting = false
+
+    private var identity: FlavorVisualIdentity {
+        FlavorVisualIdentity(kind: entry.kind, language: entry.meta?.language)
+    }
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [accent.opacity(0.2), LoreColor.ink900.opacity(0.72)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+
+            flavorFieldMark
+                .opacity(0.44)
+                .offset(x: isDrifting && !reduceMotion ? 4 : -3)
+
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(LoreColor.ink900.opacity(0.84))
+                    Circle()
+                        .strokeBorder(accent.opacity(0.78), lineWidth: 1)
+                    Image(systemName: identity.symbol)
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(accent)
+                }
+                .frame(width: 46, height: 46)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(identity.eyebrow.uppercased())
+                        .loreLabelStyle()
+                        .foregroundStyle(accent)
+                    if let emoji = entry.emoji, !emoji.isEmpty {
+                        Text(emoji)
+                            .font(.system(size: 20))
+                    } else {
+                        Text(identity.prompt)
+                            .font(LoreType.micro)
+                            .foregroundStyle(LoreColor.bone.opacity(0.65))
+                    }
+                }
+
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 12)
+        }
+        .frame(height: 72)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(accent.opacity(0.72))
+                .frame(height: 1)
+                .padding(.horizontal, 12)
+        }
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(LoreSpring.slow.repeatForever(autoreverses: true)) {
+                isDrifting = true
+            }
+        }
+        .accessibilityHidden(true)
+    }
+
+    @ViewBuilder
+    private var flavorFieldMark: some View {
+        switch identity.motif {
+        case .wave:
+            HStack(alignment: .center, spacing: 4) {
+                ForEach([12.0, 28.0, 18.0, 38.0, 22.0, 14.0], id: \.self) { height in
+                    Capsule()
+                        .fill(accent)
+                        .frame(width: 3, height: height)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .trailing)
+            .padding(.trailing, 18)
+
+        case .route:
+            HStack(spacing: 0) {
+                Circle().fill(accent).frame(width: 7, height: 7)
+                Rectangle().fill(accent).frame(width: 62, height: 1)
+                Circle().strokeBorder(accent, lineWidth: 2).frame(width: 12, height: 12)
+            }
+            .rotationEffect(.degrees(-12))
+            .frame(maxWidth: .infinity, alignment: .trailing)
+            .padding(.trailing, 14)
+
+        case .rays:
+            ZStack {
+                ForEach(0..<5, id: \.self) { index in
+                    Capsule()
+                        .fill(accent)
+                        .frame(width: 42, height: 2)
+                        .offset(x: 20)
+                        .rotationEffect(.degrees(Double(index) * 28 - 56))
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .trailing)
+            .padding(.trailing, 22)
+
+        case .grid:
+            HStack(spacing: 5) {
+                ForEach(0..<3, id: \.self) { column in
+                    VStack(spacing: 5) {
+                        ForEach(0..<2, id: \.self) { row in
+                            RoundedRectangle(cornerRadius: 2)
+                                .fill(accent.opacity((column + row).isMultiple(of: 2) ? 1 : 0.42))
+                                .frame(width: 15, height: 15)
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .trailing)
+            .padding(.trailing, 20)
+        }
+    }
+}
+
+private struct FlavorVisualIdentity {
+    enum Motif { case wave, route, rays, grid }
+
+    let symbol: String
+    let eyebrow: String
+    let prompt: String
+    let motif: Motif
+
+    private init(symbol: String, eyebrow: String, prompt: String, motif: Motif) {
+        self.symbol = symbol
+        self.eyebrow = eyebrow
+        self.prompt = prompt
+        self.motif = motif
+    }
+
+    init(kind: String, language: String?) {
+        switch kind {
+        case "name_origin":
+            self = .init(symbol: "textformat.abc", eyebrow: "Origin", prompt: "Read the name", motif: .rays)
+        case "phrase":
+            self = .init(symbol: "quote.bubble.fill", eyebrow: language ?? "Local voice", prompt: "Say it aloud", motif: .wave)
+        case "dish":
+            self = .init(symbol: "fork.knife", eyebrow: "Local table", prompt: "Taste the city", motif: .rays)
+        case "drink":
+            self = .init(symbol: "wineglass.fill", eyebrow: "Local pour", prompt: "Know the order", motif: .rays)
+        case "ritual":
+            self = .init(symbol: "sparkles", eyebrow: "Ritual", prompt: "Join the rhythm", motif: .rays)
+        case "soundmark", "sound":
+            self = .init(symbol: "waveform", eyebrow: "Sound field", prompt: "Hear the place", motif: .wave)
+        case "material":
+            self = .init(symbol: "building.columns.fill", eyebrow: "Material study", prompt: "Read the details", motif: .grid)
+        case "screen":
+            self = .init(symbol: "film.fill", eyebrow: "On screen", prompt: "Spot the scene", motif: .grid)
+        case "etiquette":
+            self = .init(symbol: "hand.raised.fill", eyebrow: "Local code", prompt: "Move like a local", motif: .route)
+        case "number":
+            self = .init(symbol: "number", eyebrow: "Field measure", prompt: "Size it up", motif: .grid)
+        case "market":
+            self = .init(symbol: "storefront.fill", eyebrow: "Street life", prompt: "Follow the crowd", motif: .grid)
+        case "experience":
+            self = .init(symbol: "map.fill", eyebrow: "Mini route", prompt: "Start exploring", motif: .route)
+        case "listen":
+            self = .init(symbol: "ear.fill", eyebrow: "Sound quest", prompt: "Phone down", motif: .wave)
+        case "field_note":
+            self = .init(symbol: "pencil.and.outline", eyebrow: "Your field note", prompt: "Try it yourself", motif: .route)
+        default:
+            self = .init(symbol: "sparkles", eyebrow: "City detail", prompt: "Look closer", motif: .rays)
         }
     }
 }

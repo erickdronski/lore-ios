@@ -96,16 +96,38 @@ struct NearMeShelf: View {
     // MARK: Header
 
     private var header: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "location.fill")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(LoreColor.amber)
-            Text("Around you right now")
-                .font(LoreType.displayM)
-                .foregroundStyle(LoreColor.bone)
+        HStack(alignment: .center, spacing: 10) {
+            ZStack {
+                Circle()
+                    .fill(LoreColor.amber.opacity(0.16))
+                Image(systemName: "location.fill")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(LoreColor.amber)
+            }
+            .frame(width: 30, height: 30)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text("LIVE FIELD NOTES")
+                    .loreLabelStyle()
+                    .tracking(1.1)
+                    .foregroundStyle(LoreColor.brass300)
+                Text("Around you right now")
+                    .font(LoreType.displayM)
+                    .foregroundStyle(LoreColor.bone)
+            }
             Spacer()
+
+            if provider.location != nil, !ranked.isEmpty {
+                Text("\(ranked.count) nearby")
+                    .font(LoreType.caption)
+                    .foregroundStyle(LoreColor.bone.opacity(0.72))
+                    .padding(.horizontal, 10)
+                    .frame(height: 28)
+                    .background(Capsule().fill(LoreColor.ink800))
+            }
         }
         .padding(.horizontal, 16)
+        .accessibilityElement(children: .combine)
     }
 
     // MARK: Shelf
@@ -120,6 +142,7 @@ struct NearMeShelf: View {
                     NearMeCard(
                         ranked: ranked,
                         hasOffer: offerPlaceIDs.contains(ranked.place.id),
+                        isForYou: relevance.prefs != nil && relevance.isRelevant(ranked.place),
                         onSelect: { onSelect(ranked.place) },
                         onNeedsSignIn: onNeedsSignIn,
                         theme: theme
@@ -146,20 +169,39 @@ struct NearMeShelf: View {
     // MARK: Degraded states
 
     private var locationPrompt: some View {
-        HStack(spacing: 10) {
-            Image(systemName: provider.isDenied ? "location.slash" : "location.magnifyingglass")
+        HStack(spacing: 12) {
+            Image(systemName: provider.isDenied ? "location.slash.fill" : "location.magnifyingglass")
+                .font(.system(size: 18, weight: .semibold))
                 .foregroundStyle(LoreColor.amber)
-            Text(provider.isDenied
-                 ? "Turn on location to see what's around you."
-                 : "Finding your block…")
-                .font(LoreType.caption)
-                .foregroundStyle(LoreColor.bone.opacity(0.75))
+                .frame(width: 38, height: 38)
+                .background(Circle().fill(LoreColor.ink900))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(provider.isDenied ? "Location is resting" : "Finding your block")
+                    .font(LoreType.button)
+                    .foregroundStyle(LoreColor.bone)
+                Text(provider.isDenied
+                     ? "Turn on location to reveal nearby field notes."
+                     : "Measuring the closest stories and landmarks…")
+                    .font(LoreType.caption)
+                    .foregroundStyle(LoreColor.bone.opacity(0.7))
+            }
             Spacer()
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 14).fill(LoreColor.ink800))
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(LoreColor.ink800)
+                .overlay(alignment: .trailing) {
+                    Image(systemName: "map.fill")
+                        .font(.system(size: 56, weight: .light))
+                        .foregroundStyle(LoreColor.brass300.opacity(0.08))
+                        .padding(.trailing, 18)
+                        .accessibilityHidden(true)
+                }
+        )
         .padding(.horizontal, 16)
+        .accessibilityElement(children: .combine)
     }
 
     private var emptyState: some View {
@@ -180,46 +222,66 @@ struct NearMeCard: View {
     /// True when this place has a live offer — draws a quiet brass mark on the
     /// medallion. The hook is honest: it only shows when an offer truly exists.
     var hasOffer: Bool = false
+    /// True when the current traveler lens considers this place a match.
+    var isForYou: Bool = false
     let onSelect: () -> Void
     var onNeedsSignIn: () -> Void = {}
     /// Current city theme, if curated. Used for the medallion ring and top rule.
     var theme: CityTheme? = nil
 
     @Environment(VisitStore.self) private var visits
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private var place: Place { ranked.place }
     private var accent: Color { theme?.accentColor ?? LoreColor.brass300 }
+    private var cardWidth: CGFloat { dynamicTypeSize.isAccessibilitySize ? 260 : 220 }
+    private var cardMinimumHeight: CGFloat { dynamicTypeSize.isAccessibilitySize ? 300 : 246 }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 11) {
             Button(action: onSelect) {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
+                VStack(alignment: .leading, spacing: 9) {
+                    HStack(alignment: .top) {
                         medallion
                         Spacer()
+                        if isForYou {
+                            Label("For you", systemImage: "sparkles")
+                                .font(LoreType.caption)
+                                .foregroundStyle(LoreColor.brass300)
+                                .padding(.horizontal, 8)
+                                .frame(height: 26)
+                                .background(Capsule().fill(LoreColor.ink900.opacity(0.78)))
+                        }
                         if visits.hasVisited(place.id) {
                             VisitedPinAccent()
                         }
                     }
+
+                    Text(kindLabel.uppercased())
+                        .loreLabelStyle()
+                        .tracking(1)
+                        .foregroundStyle(accent)
+
                     Text(place.name)
                         .font(LoreType.display(size: 17, weight: .semibold))
                         .foregroundStyle(LoreColor.bone)
-                        .lineLimit(2)
+                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 2)
                         .multilineTextAlignment(.leading)
-                        // Reserve two lines always, so a one- or two-line name
-                        // leaves the distance + toggle at the same position on
-                        // every card (the tiles read as one uniform row).
-                        .frame(height: 46, alignment: .topLeading)
 
-                    Label(ranked.distanceLabel, systemImage: "figure.walk")
-                        .font(LoreType.caption)
-                        .foregroundStyle(LoreColor.amber)
-                        .labelStyle(.titleAndIcon)
+                    if let hook = place.layer1?.hook, !hook.isEmpty {
+                        Text(hook)
+                            .font(LoreType.caption)
+                            .foregroundStyle(LoreColor.bone.opacity(0.7))
+                            .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 1)
+                            .multilineTextAlignment(.leading)
+                    }
+
+                    proximityRow
                 }
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(Text("\(place.name), \(ranked.distanceLabel) away"))
-            .accessibilityHint(Text("Opens the place"))
+            .accessibilityLabel(Text(cardAccessibilityLabel))
+            .accessibilityHint(Text("Opens this field note"))
 
             Spacer(minLength: 0)
 
@@ -230,13 +292,11 @@ struct NearMeCard: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(14)
-        // Fixed height so every card in the shelf is uniform regardless of a
-        // one- or two-line name. Sized to fit the worst case (two-line name +
-        // 44pt toggle) so nothing ever clips.
-        .frame(width: 200, height: 208, alignment: .topLeading)
-        .background(RoundedRectangle(cornerRadius: 18).fill(LoreColor.ink800))
+        .frame(width: cardWidth, alignment: .topLeading)
+        .frame(minHeight: cardMinimumHeight, alignment: .topLeading)
+        .background(cardBackground)
         .overlay(
-            RoundedRectangle(cornerRadius: 18)
+            RoundedRectangle(cornerRadius: 20)
                 .strokeBorder(accent.opacity(theme == nil ? 0.18 : 0.42), lineWidth: 1)
         )
         .overlay(alignment: .topLeading) {
@@ -246,18 +306,28 @@ struct NearMeCard: View {
                 .padding(.leading, 14)
                 .accessibilityHidden(true)
         }
+        .clipShape(RoundedRectangle(cornerRadius: 20))
     }
 
     private var medallion: some View {
-        Text(place.displayEmoji)
-            .font(.system(size: 22))
-            .frame(width: 44, height: 44)
-            .background(Circle().fill(LoreColor.ink900))
-            .overlay(Circle().strokeBorder(accent.opacity(0.5), lineWidth: 1))
+        ZStack {
+            Circle().fill(LoreColor.ink900)
+            Image(systemName: contextSymbol)
+                .font(.system(size: 25, weight: .medium))
+                .foregroundStyle(accent)
+            Text(place.displayEmoji)
+                .font(.system(size: 13))
+                .frame(width: 22, height: 22)
+                .background(Circle().fill(LoreColor.bone50))
+                .offset(x: 17, y: 16)
+        }
+            .frame(width: 48, height: 48)
+            .overlay(Circle().strokeBorder(accent.opacity(0.55), lineWidth: 1))
             // A quiet brass "offers here" mark, only when one truly exists.
             .overlay(alignment: .bottomTrailing) {
                 if hasOffer { offerMark }
             }
+            .accessibilityHidden(true)
     }
 
     /// The offer hook: a small brass sparkles disc tucked on the medallion.
@@ -271,6 +341,100 @@ struct NearMeCard: View {
             .overlay(Circle().strokeBorder(LoreColor.ink800, lineWidth: 1.5))
             .offset(x: 3, y: 3)
             .accessibilityLabel(Text("Offers available here"))
+    }
+
+    private var proximityRow: some View {
+        HStack(spacing: 9) {
+            Image(systemName: "figure.walk.motion")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(LoreColor.ink900)
+                .frame(width: 28, height: 28)
+                .background(Circle().fill(LoreColor.amber))
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(proximityLabel)
+                    .font(LoreType.button)
+                    .foregroundStyle(LoreColor.bone)
+                Text(ranked.distanceLabel)
+                    .font(LoreType.caption)
+                    .foregroundStyle(LoreColor.amber)
+                    .contentTransition(.numericText())
+            }
+            Spacer(minLength: 6)
+            HStack(spacing: 3) {
+                ForEach(0..<3, id: \.self) { index in
+                    Circle()
+                        .fill(index == 2 ? accent : LoreColor.bone.opacity(0.28))
+                        .frame(width: index == 2 ? 6 : 4, height: index == 2 ? 6 : 4)
+                }
+                Image(systemName: "mappin.circle.fill")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(accent)
+            }
+            .accessibilityHidden(true)
+        }
+    }
+
+    private var cardBackground: some View {
+        RoundedRectangle(cornerRadius: 20)
+            .fill(
+                LinearGradient(
+                    colors: [LoreColor.ink800, LoreColor.ink900],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .overlay(alignment: .topTrailing) {
+                Image(systemName: contextSymbol)
+                    .font(.system(size: 84, weight: .thin))
+                    .foregroundStyle(accent.opacity(0.07))
+                    .offset(x: 16, y: -10)
+                    .accessibilityHidden(true)
+            }
+    }
+
+    private var proximityLabel: String {
+        switch ranked.meters {
+        case ..<250: return "Steps away"
+        case ..<900: return "Easy walk"
+        case ..<2_000: return "A short wander"
+        default: return "Worth the detour"
+        }
+    }
+
+    private var kindLabel: String {
+        switch place.kind {
+        case "statue", "sculpture": return "Public art"
+        case "monument", "memorial": return "Landmark"
+        case "church", "temple", "synagogue", "mosque": return "Sacred place"
+        case "bar", "restaurant", "cafe", "market": return "Local flavor"
+        case "museum", "gallery": return "Culture"
+        case "park", "garden": return "Open air"
+        default: return place.kind.replacingOccurrences(of: "-", with: " ").capitalized
+        }
+    }
+
+    private var contextSymbol: String {
+        switch place.kind {
+        case "statue", "sculpture": return "figure.stand"
+        case "monument", "memorial": return "building.columns.fill"
+        case "bridge": return "point.topleft.down.to.point.bottomright.curvepath.fill"
+        case "park", "garden": return "leaf.fill"
+        case "church", "temple", "synagogue", "mosque": return "sparkles"
+        case "museum", "gallery": return "photo.artframe"
+        case "bar": return "wineglass.fill"
+        case "restaurant", "cafe", "market": return "fork.knife"
+        case "theater", "theatre": return "theatermasks.fill"
+        case "library": return "books.vertical.fill"
+        default: return "building.2.fill"
+        }
+    }
+
+    private var cardAccessibilityLabel: String {
+        var parts = [place.name, kindLabel, "\(ranked.distanceLabel) away", proximityLabel]
+        if isForYou { parts.append("Recommended for you") }
+        if hasOffer { parts.append("Offers available") }
+        return parts.joined(separator: ", ")
     }
 }
 

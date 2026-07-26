@@ -69,9 +69,12 @@ struct ToursScreen: View {
                                         userID: auth.session?.user.id
                                     )
                                 }
+                                .listRowBackground(Color.clear)
+                                .listRowSeparator(.hidden)
+                                .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
                             }
                         } header: {
-                            Text(city.capitalized)
+                            Text(city.replacingOccurrences(of: "-", with: " ").capitalized)
                                 .font(LoreType.displayM)
                                 .foregroundStyle(LoreColor.ink)
                                 .textCase(nil)
@@ -185,14 +188,16 @@ struct ToursScreen: View {
     }
 }
 
-/// The featured "1 Hour In {city}" entry: an Ink medallion, the promise, and a
-/// Brass go-arrow. Taps generate the walk on the fly (a brief routing spinner),
-/// then push the standard tour stepper.
+/// The featured "1 Hour In {city}" entry: a dark field-guide cover with a
+/// route signature and one Amber call to action. Taps generate the walk on the
+/// fly (a brief routing state), then push the standard tour stepper.
 struct OneHourHero: View {
     let city: String
     var minutes: Int = 60
     var isGenerating: Bool = false
     let action: () -> Void
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var cityLabel: String {
         city.replacingOccurrences(of: "-", with: " ").capitalized
@@ -208,34 +213,75 @@ struct OneHourHero: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 14) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(LoreColor.ink)
-                        .frame(width: 52, height: 52)
-                    if isGenerating {
-                        ProgressView().tint(LoreColor.amber)
-                    } else {
-                        Text("⏱️").font(.system(size: 26))
+            ZStack(alignment: .topTrailing) {
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [LoreColor.ink800, LoreColor.ink950],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+
+                TourRouteArtwork(
+                    nodeCount: minutes == 30 ? 3 : (minutes == 90 ? 5 : 4),
+                    color: LoreColor.amber,
+                    activeFraction: isGenerating ? 0.45 : 1
+                )
+                .frame(width: 170, height: 104)
+                .opacity(0.45)
+                .padding(.top, 22)
+                .padding(.trailing, -18)
+                .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack {
+                        Label("MADE FOR YOU", systemImage: "wand.and.stars")
+                            .font(LoreType.micro)
+                            .tracking(1.2)
+                            .foregroundStyle(LoreColor.brass300)
+                        Spacer()
+                        Text(minutes == 60 ? "1 HOUR" : "\(minutes) MIN")
+                            .font(LoreType.micro)
+                            .tracking(0.8)
+                            .foregroundStyle(LoreColor.bone)
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 5)
+                            .background(LoreColor.bone.opacity(0.11), in: Capsule())
                     }
-                }
-                VStack(alignment: .leading, spacing: 3) {
+
                     Text(titleText)
-                        .font(LoreType.display(size: 19, weight: .semibold))
-                        .foregroundStyle(LoreColor.ink)
-                    Text(isGenerating ? "Routing your walk…" : "Auto-routed from published Lore stops")
+                        .font(LoreType.display(size: 24, weight: .semibold))
+                        .foregroundStyle(LoreColor.bone)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Text(isGenerating ? "Threading nearby stories into one walk…" : "A fresh route through published Lore, built around your time.")
                         .font(LoreType.caption)
-                        .foregroundStyle(LoreColor.ink600)
+                        .foregroundStyle(LoreColor.bone.opacity(0.72))
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    HStack(spacing: 9) {
+                        Image(systemName: isGenerating ? "point.3.connected.trianglepath.dotted" : "figure.walk.motion")
+                            .symbolEffect(.pulse, options: .repeating, isActive: isGenerating && !reduceMotion)
+                        Text(isGenerating ? "ROUTING" : "BUILD MY WALK")
+                            .font(LoreType.micro)
+                            .tracking(1)
+                        Image(systemName: "arrow.right")
+                    }
+                    .foregroundStyle(LoreColor.ink)
+                    .padding(.horizontal, 13)
+                    .frame(height: 36)
+                    .background(LoreColor.amber, in: Capsule())
                 }
-                Spacer()
-                Image(systemName: "arrow.right.circle.fill")
-                    .font(.system(size: 24))
-                    .foregroundStyle(LoreColor.brass)
+                .padding(18)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(.vertical, 6)
+            .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
         .disabled(isGenerating)
+        .accessibilityLabel(Text(titleText))
+        .accessibilityHint(Text(isGenerating ? "Your route is being built." : "Builds a city walk from published Lore stops."))
     }
 }
 
@@ -247,42 +293,78 @@ struct TourRow: View {
     @State private var progress = TourProgressStore.Progress.empty
 
     var body: some View {
-        HStack(spacing: 12) {
-            Text(tour.displayEmoji)
-                .font(.system(size: 28))
-            VStack(alignment: .leading, spacing: 4) {
-                Text(tour.title)
-                    .font(LoreType.display(size: 18, weight: .medium))
-                    .foregroundStyle(LoreColor.ink)
-                if let blurb = tour.blurb {
-                    Text(blurb)
-                        .font(LoreType.caption)
-                        .foregroundStyle(LoreColor.ink600)
-                        .lineLimit(2)
+        ZStack(alignment: .topTrailing) {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(LoreColor.bone50)
+
+            TourRouteArtwork(
+                nodeCount: min(max(tour.stops.count, 3), 6),
+                color: LoreColor.brass,
+                activeFraction: progressFraction
+            )
+            .frame(width: 132, height: 82)
+            .opacity(0.18)
+            .padding(.top, 6)
+            .padding(.trailing, -14)
+            .accessibilityHidden(true)
+
+            HStack(alignment: .top, spacing: 13) {
+                ZStack {
+                    Circle()
+                        .fill(LoreColor.ink)
+                    Circle()
+                        .strokeBorder(LoreColor.amber.opacity(0.8), lineWidth: 1)
+                        .padding(3)
+                    Text(tour.displayEmoji)
+                        .font(.system(size: 25))
                 }
-                if !tour.summaryLine.isEmpty {
-                    Text(tour.summaryLine)
-                        .loreLabelStyle()
-                        .foregroundStyle(LoreColor.brass700)
+                .frame(width: 50, height: 50)
+                .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 6) {
+                        Text(progress.isCompleted ? "TRAIL COMPLETE" : "CURATED FIELD WALK")
+                            .font(LoreType.micro)
+                            .tracking(1)
+                            .foregroundStyle(progress.isCompleted ? LoreColor.success : LoreColor.brass700)
+                        if tour.isPremium && !isPlus {
+                            Image(systemName: "lock.fill")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundStyle(LoreColor.brass700)
+                        }
+                    }
+
+                    Text(tour.title)
+                        .font(LoreType.display(size: 20, weight: .semibold))
+                        .foregroundStyle(LoreColor.ink)
+
+                    if let blurb = tour.blurb {
+                        Text(blurb)
+                            .font(LoreType.caption)
+                            .foregroundStyle(LoreColor.ink600)
+                            .lineLimit(2)
+                    }
+
+                    tourFacts
+
+                    if let stopIndex = progress.stopIndex, !progress.isCompleted {
+                        TourRowProgress(current: stopIndex + 1, total: tour.stops.count)
+                    } else if progress.isCompleted {
+                        Label("Saved to your Lore trail", systemImage: "checkmark.seal.fill")
+                            .font(LoreType.caption)
+                            .foregroundStyle(LoreColor.success)
+                    }
                 }
-                if progress.isCompleted {
-                    Label("Completed", systemImage: "checkmark.seal.fill")
-                        .font(LoreType.caption)
-                        .foregroundStyle(LoreColor.brass700)
-                } else if let stopIndex = progress.stopIndex {
-                    Label("Resume at stop \(stopIndex + 1)", systemImage: "arrow.clockwise")
-                        .font(LoreType.caption)
-                        .foregroundStyle(LoreColor.brass700)
-                }
+                Spacer(minLength: 0)
             }
-            // A curated premium walk reads as Lore+ to a free member, so the
-            // gate on the detail screen is never a surprise.
-            if tour.isPremium && !isPlus {
-                Spacer(minLength: 8)
-                LockChip(label: "Lore+", showsLock: true)
-            }
+            .padding(15)
         }
-        .padding(.vertical, 4)
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .strokeBorder(LoreColor.bone300.opacity(0.8), lineWidth: 1)
+        }
+        .loreElevation(.elev1)
+        .accessibilityElement(children: .combine)
         .onAppear {
             progress = TourProgressStore.progress(
                 for: tour.slug,
@@ -290,6 +372,104 @@ struct TourRow: View {
                 stopCount: tour.stops.count
             )
         }
+    }
+
+    private var progressFraction: Double {
+        if progress.isCompleted { return 1 }
+        guard let stopIndex = progress.stopIndex, !tour.stops.isEmpty else { return 0 }
+        return Double(stopIndex + 1) / Double(tour.stops.count)
+    }
+
+    @ViewBuilder
+    private var tourFacts: some View {
+        HStack(spacing: 10) {
+            if let duration = tour.durationMin {
+                Label("\(duration) min", systemImage: "clock")
+            }
+            if let distance = tour.distanceKm {
+                Label(String(format: "%.1f km", distance), systemImage: "figure.walk")
+            }
+            if !tour.stops.isEmpty {
+                Label("\(tour.stops.count)", systemImage: "mappin.and.ellipse")
+            }
+        }
+        .font(LoreType.micro)
+        .foregroundStyle(LoreColor.ink600)
+        .labelStyle(.titleAndIcon)
+    }
+}
+
+/// A compact route signature used across the browse surface. It is decorative;
+/// the adjacent text remains the complete accessible description of the tour.
+private struct TourRouteArtwork: View {
+    let nodeCount: Int
+    let color: Color
+    let activeFraction: Double
+
+    var body: some View {
+        GeometryReader { proxy in
+            let points = routePoints(in: proxy.size)
+            ZStack {
+                Path { path in
+                    guard let first = points.first else { return }
+                    path.move(to: first)
+                    for point in points.dropFirst() { path.addLine(to: point) }
+                }
+                .stroke(color.opacity(0.45), style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round, dash: [3, 7]))
+
+                ForEach(Array(points.enumerated()), id: \.offset) { index, point in
+                    Circle()
+                        .fill(nodeIsActive(index) ? color : LoreColor.bone300)
+                        .frame(width: index == points.count - 1 ? 10 : 7, height: index == points.count - 1 ? 10 : 7)
+                        .overlay(Circle().strokeBorder(LoreColor.ink.opacity(0.7), lineWidth: 1))
+                        .position(point)
+                }
+            }
+        }
+    }
+
+    private func nodeIsActive(_ index: Int) -> Bool {
+        let count = max(nodeCount, 1)
+        return Double(index + 1) / Double(count) <= max(activeFraction, 0.01)
+    }
+
+    private func routePoints(in size: CGSize) -> [CGPoint] {
+        let count = max(nodeCount, 2)
+        return (0..<count).map { index in
+            let fraction = CGFloat(index) / CGFloat(count - 1)
+            let x = 8 + fraction * max(size.width - 16, 0)
+            let wave = index.isMultiple(of: 2) ? 0.28 : 0.72
+            return CGPoint(x: x, y: size.height * wave)
+        }
+    }
+}
+
+private struct TourRowProgress: View {
+    let current: Int
+    let total: Int
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            GeometryReader { proxy in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(LoreColor.bone200)
+                    Capsule()
+                        .fill(LoreColor.amber)
+                        .frame(width: proxy.size.width * fraction)
+                }
+            }
+            .frame(height: 4)
+
+            Text("Resume at checkpoint \(current) of \(total)")
+                .font(LoreType.micro)
+                .foregroundStyle(LoreColor.brass700)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private var fraction: Double {
+        guard total > 0 else { return 0 }
+        return min(max(Double(current) / Double(total), 0), 1)
     }
 }
 

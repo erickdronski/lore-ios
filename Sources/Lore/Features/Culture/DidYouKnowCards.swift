@@ -14,6 +14,15 @@ import SwiftUI
 struct DidYouKnowDeck: View {
     let facts: [CityFact]
     @State private var index = 0
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    private var deckHeight: CGFloat {
+        if dynamicTypeSize >= .accessibility4 { return 620 }
+        if dynamicTypeSize >= .accessibility2 { return 530 }
+        if dynamicTypeSize.isAccessibilitySize { return 452 }
+        if dynamicTypeSize > .large { return 344 }
+        return 318
+    }
 
     var body: some View {
         VStack(spacing: 12) {
@@ -25,7 +34,7 @@ struct DidYouKnowDeck: View {
                 }
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
-            .frame(height: 268)
+            .frame(height: deckHeight)
 
             if facts.count > 1 {
                 dots
@@ -55,21 +64,20 @@ struct DidYouKnowCard: View {
     let position: Int
     let total: Int
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ScaledMetric(relativeTo: .title3) private var headlineSize: CGFloat = 21
+    @ScaledMetric(relativeTo: .title2) private var calloutSize: CGFloat = 26
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top) {
-                categoryChip
-                Spacer(minLength: 8)
-                Text(fact.displayEmoji)
-                    .font(.system(size: 34))
-                    .accessibilityHidden(true)
-            }
+            FactFieldMark(fact: fact)
 
             Text(fact.fact)
-                .font(LoreType.display(size: 21, weight: .medium))
+                .font(LoreType.display(size: headlineSize, weight: .medium))
                 .foregroundStyle(LoreColor.bone)
-                .minimumScaleFactor(0.65)
-                .lineLimit(6)
+                .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 1 : 0.76)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? 8 : 5)
                 .fixedSize(horizontal: false, vertical: true)
 
             if fact.hasStat {
@@ -90,77 +98,186 @@ struct DidYouKnowCard: View {
         .padding(20)
         .background(
             RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(LoreColor.ink800)
+                .fill(
+                    LinearGradient(
+                        colors: [LoreColor.ink800, LoreColor.ink900],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
         )
         .overlay(
             RoundedRectangle(cornerRadius: 24, style: .continuous)
                 .strokeBorder(LoreColor.ink700, lineWidth: 1)
         )
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(accessibilityLabel)
-    }
-
-    private var categoryChip: some View {
-        Text(fact.category.label.uppercased())
-            .loreLabelStyle()
-            .foregroundStyle(LoreColor.brass300)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .background(
-                Capsule().fill(LoreColor.ink900.opacity(0.6))
-            )
-            .overlay(
-                Capsule().strokeBorder(LoreColor.ink700, lineWidth: 1)
-            )
+        .loreElevation(.elev1)
+        .accessibilityElement(children: .contain)
     }
 
     /// The headline number, set big in the display face, with its label beneath.
     private var statCallout: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(fact.statValue ?? "")
-                .font(LoreType.display(size: 26, weight: .semibold))
+        HStack(spacing: 12) {
+            Rectangle()
+                .fill(LoreColor.amber)
+                .frame(width: 3)
+                .clipShape(Capsule())
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 2) {
+                CountUpStat(raw: fact.statValue ?? "", reduceMotion: reduceMotion)
+                .font(LoreType.display(size: calloutSize, weight: .semibold))
                 .foregroundStyle(LoreColor.amber)
                 .monospacedDigit()
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
-            if let label = fact.statLabel, !label.isEmpty {
-                Text(label)
-                    .font(LoreType.micro)
-                    .foregroundStyle(LoreColor.brass300)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
+                if let label = fact.statLabel, !label.isEmpty {
+                    Text(label)
+                        .font(LoreType.micro)
+                        .foregroundStyle(LoreColor.brass300)
+                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
+
+            Spacer(minLength: 0)
+
+            Image(systemName: "ruler.fill")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(LoreColor.brass300.opacity(0.72))
+                .accessibilityHidden(true)
         }
-        .padding(.top, 2)
+        .padding(10)
+        .background(LoreColor.ink950.opacity(0.5), in: RoundedRectangle(cornerRadius: 12))
     }
 
     private var footer: some View {
-        HStack(spacing: 0) {
-            Text("\(position) / \(total)")
-                .font(LoreType.micro)
-                .foregroundStyle(LoreColor.ink600)
-                .monospacedDigit()
-            Spacer()
-            if let url = fact.sourceURL {
-                Link(destination: url) {
-                    Label("Source", systemImage: "link")
-                        .font(LoreType.micro)
-                        .foregroundStyle(LoreColor.brass300)
+        VStack(spacing: 8) {
+            ProgressView(value: Double(position), total: Double(max(total, 1)))
+                .tint(LoreColor.amber)
+                .scaleEffect(y: 0.65)
+                .accessibilityHidden(true)
+
+            HStack(spacing: 0) {
+                Text("FIELD NOTE \(position) OF \(total)")
+                    .font(LoreType.micro)
+                    .tracking(0.5)
+                    .foregroundStyle(LoreColor.ink600)
+                    .monospacedDigit()
+                Spacer()
+                if let url = fact.sourceURL {
+                    Link(destination: url) {
+                        Label("Source", systemImage: "link")
+                            .font(LoreType.micro)
+                            .foregroundStyle(LoreColor.brass300)
+                    }
+                    .accessibilityLabel("Open the source for this fact")
                 }
-                .accessibilityLabel("Open the source for this fact")
             }
         }
     }
 
-    private var accessibilityLabel: String {
-        var parts = [fact.category.label, fact.fact]
-        if fact.hasStat {
-            let stat = [fact.statValue, fact.statLabel].compactMap { $0 }.joined(separator: " ")
-            if !stat.isEmpty { parts.append(stat) }
-        } else if let detail = fact.detail {
-            parts.append(detail)
+}
+
+/// Category is useful metadata, so the visual treatment encodes it consistently
+/// instead of relying on a decorative emoji alone.
+private struct FactFieldMark: View {
+    let fact: CityFact
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isAlive = false
+
+    private var identity: FactVisualIdentity { .init(category: fact.category) }
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 15, style: .continuous)
+                .fill(LoreColor.ink950.opacity(0.5))
+
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(LoreColor.brass300.opacity(0.12))
+                    Circle()
+                        .strokeBorder(LoreColor.brass300.opacity(0.64), lineWidth: 1)
+                    Image(systemName: identity.symbol)
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(LoreColor.brass300)
+                        .scaleEffect(isAlive && !reduceMotion ? 1.07 : 0.96)
+                }
+                .frame(width: 46, height: 46)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(fact.category.label.uppercased())
+                        .loreLabelStyle()
+                        .foregroundStyle(LoreColor.brass300)
+                    Text(identity.prompt)
+                        .font(LoreType.micro)
+                        .foregroundStyle(LoreColor.bone.opacity(0.58))
+                }
+
+                Spacer(minLength: 4)
+
+                categoryMotif
+
+                Text(fact.displayEmoji)
+                    .font(.system(size: 26))
+            }
+            .padding(.horizontal, 12)
         }
-        return parts.joined(separator: ". ")
+        .frame(height: 70)
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(LoreSpring.slow.repeatForever(autoreverses: true)) {
+                isAlive = true
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(fact.category.label)
+    }
+
+    private var categoryMotif: some View {
+        HStack(alignment: .bottom, spacing: 3) {
+            ForEach(identity.bars.indices, id: \.self) { index in
+                Capsule()
+                    .fill(index == identity.bars.indices.last ? LoreColor.amber : LoreColor.brass300.opacity(0.45))
+                    .frame(width: 3, height: identity.bars[index])
+            }
+        }
+        .frame(height: 28, alignment: .bottom)
+        .accessibilityHidden(true)
+    }
+}
+
+private struct FactVisualIdentity {
+    let symbol: String
+    let prompt: String
+    let bars: [CGFloat]
+
+    init(category: CityFact.Category) {
+        switch category {
+        case .superlative:
+            self = .init(symbol: "trophy.fill", prompt: "The city at full scale", bars: [8, 13, 19, 27])
+        case .first:
+            self = .init(symbol: "flag.checkered", prompt: "Where something began", bars: [27, 9, 9, 9])
+        case .record:
+            self = .init(symbol: "chart.line.uptrend.xyaxis", prompt: "A mark worth measuring", bars: [7, 12, 18, 26])
+        case .quirk:
+            self = .init(symbol: "sparkle.magnifyingglass", prompt: "Look twice", bars: [10, 24, 13, 20])
+        case .etymology:
+            self = .init(symbol: "text.book.closed.fill", prompt: "Hidden in the name", bars: [24, 20, 15, 10])
+        case .stat:
+            self = .init(symbol: "number.square.fill", prompt: "A city in figures", bars: [8, 18, 12, 25])
+        case .claimToFame:
+            self = .init(symbol: "star.fill", prompt: "Why locals tell the story", bars: [12, 18, 26, 18])
+        case .funFact:
+            self = .init(symbol: "lightbulb.fill", prompt: "A detail to carry with you", bars: [8, 16, 24, 14])
+        }
+    }
+
+    private init(symbol: String, prompt: String, bars: [CGFloat]) {
+        self.symbol = symbol
+        self.prompt = prompt
+        self.bars = bars
     }
 }
 
@@ -190,15 +307,39 @@ struct ByTheNumbersStrip: View {
 struct StatCard: View {
     let fact: CityFact
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ScaledMetric(relativeTo: .title2) private var figureSize: CGFloat = 28
+
+    private var identity: FactVisualIdentity { .init(category: fact.category) }
+    private var cardWidth: CGFloat { dynamicTypeSize.isAccessibilitySize ? 238 : 178 }
+    private var minimumHeight: CGFloat { dynamicTypeSize.isAccessibilitySize ? 246 : 178 }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(fact.displayEmoji)
-                .font(.system(size: 26))
-                .accessibilityHidden(true)
+            HStack(spacing: 8) {
+                ZStack {
+                    Circle().fill(LoreColor.brass300.opacity(0.12))
+                    Image(systemName: identity.symbol)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(LoreColor.brass300)
+                }
+                .frame(width: 30, height: 30)
+
+                Text(fact.category.label.uppercased())
+                    .font(LoreType.micro)
+                    .tracking(0.5)
+                    .foregroundStyle(LoreColor.brass300)
+                    .lineLimit(2)
+
+                Spacer(minLength: 0)
+
+                Text(fact.displayEmoji)
+                    .font(.system(size: 20))
+            }
+            .accessibilityHidden(true)
 
             CountUpStat(raw: fact.statValue ?? "", reduceMotion: reduceMotion)
-                .font(LoreType.display(size: 28, weight: .semibold))
+                .font(LoreType.display(size: figureSize, weight: .semibold))
                 .foregroundStyle(LoreColor.amber)
                 .monospacedDigit()
                 .lineLimit(1)
@@ -212,21 +353,35 @@ struct StatCard: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
+
+            if let sourceURL = fact.sourceURL {
+                Link(destination: sourceURL) {
+                    Label("Source", systemImage: "link")
+                        .font(LoreType.micro)
+                        .foregroundStyle(LoreColor.brass300)
+                }
+                .accessibilityLabel("Open the source for this statistic")
+            }
         }
-        .frame(width: 158, height: 148, alignment: .topLeading)
         .padding(16)
+        .frame(width: cardWidth, alignment: .topLeading)
+        .frame(minHeight: minimumHeight, alignment: .topLeading)
         .background(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(LoreColor.ink800)
+                .fill(
+                    LinearGradient(
+                        colors: [LoreColor.ink800, LoreColor.ink900],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
         )
         .overlay(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .strokeBorder(LoreColor.ink700, lineWidth: 1)
         )
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(
-            [fact.statValue, fact.statLabel].compactMap { $0 }.joined(separator: " ")
-        )
+        .loreElevation(.elev1)
+        .accessibilityElement(children: .contain)
     }
 }
 

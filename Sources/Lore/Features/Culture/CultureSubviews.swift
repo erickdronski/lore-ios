@@ -15,10 +15,22 @@ struct CultureQuoteCard: View {
     let quotes: [CityCulture]
     @State private var index = 0
     @State private var autoAdvance = true
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ScaledMetric(relativeTo: .title2) private var quoteSize: CGFloat = 24
 
     /// ~9s per quote, long enough to read a sentence, short enough to feel
     /// alive. One sanctioned ambient beat, not decoration for its own sake.
     private let rotation = Timer.publish(every: 9, on: .main, in: .common).autoconnect()
+
+    private var cardHeight: CGFloat {
+        if dynamicTypeSize >= .accessibility4 { return 610 }
+        if dynamicTypeSize >= .accessibility2 { return 500 }
+        if dynamicTypeSize.isAccessibilitySize { return 420 }
+        if dynamicTypeSize > .large { return 288 }
+        return 246
+    }
 
     var body: some View {
         VStack(spacing: 12) {
@@ -33,48 +45,54 @@ struct CultureQuoteCard: View {
                 }
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
-            .frame(height: 210)
+            .frame(height: cardHeight)
 
             if quotes.count > 1 {
                 quoteDots
             }
         }
         .onReceive(rotation) { _ in
-            guard autoAdvance, quotes.count > 1 else { return }
+            guard autoAdvance, !voiceOverEnabled, quotes.count > 1 else { return }
             advance()
         }
     }
 
     /// One quote card face inside the pager.
     private func quoteFace(_ quote: CityCulture) -> some View {
-        ZStack(alignment: .bottomTrailing) {
+        ZStack {
+            QuoteFieldArtwork()
+
             VStack(alignment: .leading, spacing: 12) {
-                Text("\u{201C}")
-                    .font(LoreType.display(size: 52, weight: .semibold))
-                    .foregroundStyle(LoreColor.brass300)
-                    .frame(height: 28, alignment: .top)
-                    .accessibilityHidden(true)
+                HStack(spacing: 8) {
+                    Image(systemName: "quote.opening")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(LoreColor.amber)
+                    Text("A VOICE OF \(quote.city.replacingOccurrences(of: "-", with: " ").uppercased())")
+                        .font(LoreType.micro)
+                        .tracking(0.65)
+                        .foregroundStyle(LoreColor.brass300)
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                    if let year = quote.year {
+                        Text(String(year))
+                            .font(LoreType.micro)
+                            .foregroundStyle(LoreColor.bone.opacity(0.6))
+                            .monospacedDigit()
+                    }
+                }
 
                 Text(quote.headline)
-                    .font(LoreType.display(size: 24, weight: .medium))
+                    .font(LoreType.display(size: quoteSize, weight: .medium))
                     .foregroundStyle(LoreColor.bone)
-                    .minimumScaleFactor(0.6)
-                    .lineLimit(5)
+                    .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 1 : 0.72)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? 8 : 5)
                     .fixedSize(horizontal: false, vertical: true)
 
                 Spacer(minLength: 0)
 
-                if let attribution = quote.attribution ?? quote.body {
-                    Text(attribution)
-                        .font(LoreType.caption)
-                        .foregroundStyle(LoreColor.brass300)
-                        .lineLimit(2)
-                        .padding(.trailing, 68)
-                }
+                authorSignature(for: quote)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-
-            QuoteAuthorPortrait(quote: quote)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         .padding(20)
@@ -86,8 +104,45 @@ struct CultureQuoteCard: View {
             RoundedRectangle(cornerRadius: 24, style: .continuous)
                 .strokeBorder(LoreColor.ink700, lineWidth: 1)
         )
+        .loreElevation(.elev1)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityLabel(for: quote))
+    }
+
+    @ViewBuilder
+    private func authorSignature(for quote: CityCulture) -> some View {
+        let attribution = quote.attribution ?? quote.body
+
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 10) {
+                QuoteAuthorPortrait(quote: quote)
+                if let attribution {
+                    attributionText(attribution)
+                }
+            }
+        } else {
+            HStack(alignment: .bottom, spacing: 12) {
+                if let attribution {
+                    attributionText(attribution)
+                }
+                Spacer(minLength: 0)
+                QuoteAuthorPortrait(quote: quote)
+            }
+        }
+    }
+
+    private func attributionText(_ attribution: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text("IN THEIR WORDS")
+                .font(LoreType.micro)
+                .tracking(0.55)
+                .foregroundStyle(LoreColor.bone.opacity(0.46))
+            Text(attribution)
+                .font(LoreType.caption)
+                .foregroundStyle(LoreColor.brass300)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? 4 : 2)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     private var quoteDots: some View {
@@ -111,9 +166,46 @@ struct CultureQuoteCard: View {
     /// user's swipe on the pager.
     private func advance() {
         guard quotes.count > 1 else { return }
-        withAnimation(LoreSpring.smooth(reduceMotion: false)) {
+        withAnimation(LoreSpring.smooth(reduceMotion: reduceMotion)) {
             index = (index + 1) % quotes.count
         }
+    }
+}
+
+/// A quiet editorial field behind the quote: quotation marks and measured lines
+/// make the card read like a collected voice rather than an undifferentiated
+/// block of copy. Its drift is subtle and completely absent under Reduce Motion.
+private struct QuoteFieldArtwork: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isDrifting = false
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .topTrailing) {
+                Text("\u{201C}")
+                    .font(LoreType.display(size: min(proxy.size.width * 0.46, 150), weight: .semibold))
+                    .foregroundStyle(LoreColor.brass300.opacity(0.055))
+                    .offset(x: isDrifting && !reduceMotion ? 5 : 0, y: -34)
+
+                VStack(alignment: .trailing, spacing: 7) {
+                    ForEach([0.48, 0.34, 0.21], id: \.self) { fraction in
+                        Capsule()
+                            .fill(LoreColor.brass300.opacity(0.09))
+                            .frame(width: proxy.size.width * fraction, height: 1)
+                    }
+                }
+                .padding(.top, 64)
+                .padding(.trailing, 6)
+            }
+        }
+        .allowsHitTesting(false)
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(LoreSpring.slow.repeatForever(autoreverses: true)) {
+                isDrifting = true
+            }
+        }
+        .accessibilityHidden(true)
     }
 }
 
@@ -123,11 +215,17 @@ struct CultureQuoteCard: View {
 private struct QuoteAuthorPortrait: View {
     let quote: CityCulture
     @State private var portraitURL: URL?
+    @State private var didResolve = false
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
-    private let diameter: CGFloat = 52
+    private var diameter: CGFloat { dynamicTypeSize.isAccessibilitySize ? 74 : 60 }
 
     var body: some View {
         ZStack {
+            Circle()
+                .strokeBorder(LoreColor.brass300.opacity(0.2), lineWidth: 1)
+                .padding(-6)
+
             Circle()
                 .fill(
                     LinearGradient(
@@ -137,8 +235,8 @@ private struct QuoteAuthorPortrait: View {
                     )
                 )
                 .overlay(
-                    Text(quote.displayEmoji)
-                        .font(.system(size: 21))
+                        Text(quote.displayEmoji)
+                        .font(.system(size: dynamicTypeSize.isAccessibilitySize ? 28 : 23))
                 )
 
             if let portraitURL {
@@ -166,8 +264,19 @@ private struct QuoteAuthorPortrait: View {
             Circle()
                 .strokeBorder(LoreColor.brass300, lineWidth: 1.5)
         )
-        .shadow(color: .black.opacity(0.24), radius: 8, y: 4)
+        .loreElevation(.elev1)
+        .overlay(alignment: .bottomTrailing) {
+            Image(systemName: portraitURL == nil ? "person.fill" : "checkmark")
+                .font(.system(size: 8, weight: .bold))
+                .foregroundStyle(LoreColor.ink900)
+                .frame(width: 18, height: 18)
+                .background(LoreColor.amber, in: Circle())
+                .overlay(Circle().strokeBorder(LoreColor.ink900, lineWidth: 2))
+                .accessibilityHidden(true)
+        }
         .task(id: portraitTitle) {
+            guard !didResolve else { return }
+            didResolve = true
             guard let portraitTitle else {
                 portraitURL = nil
                 return
@@ -329,7 +438,7 @@ struct LingoFlipCard: View {
                         .lineLimit(2)
                     Text("tap to flip")
                         .font(LoreType.micro)
-                        .foregroundStyle(LoreColor.ink600)
+                        .foregroundStyle(LoreColor.bone.opacity(0.52))
                 }
             }
         } back: {
