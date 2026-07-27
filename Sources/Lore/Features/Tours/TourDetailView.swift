@@ -743,7 +743,7 @@ struct TourDetailView: View {
                         }
                     }
 
-                    if let hook = place.layer1?.hook {
+                    if let hook = place.teaser {
                         Text(hook)
                             .font(LoreType.hook)
                             .foregroundStyle(LoreColor.ink)

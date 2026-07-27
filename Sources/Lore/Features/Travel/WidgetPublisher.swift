@@ -30,7 +30,7 @@ enum WidgetPublisher {
                 id: r.place.id,
                 name: r.place.name,
                 emoji: r.place.displayEmoji,
-                hook: r.place.layer1?.hook,
+                hook: r.place.teaser,
                 year: r.place.layer1?.yearBuilt
             )
         }

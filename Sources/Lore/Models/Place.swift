@@ -23,10 +23,22 @@ struct Place: Codable, Identifiable, Hashable {
     let layer1: Layer1?
     let tags: [String]
     let emoji: String?
+    /// Server-derived teaser: the curated `layer1.hook` when present, else the
+    /// first sentence of the place's dive narrative. 49% of places have no
+    /// curated hook, and reading the fallback here means a shelf card gets real
+    /// text without fetching a dive per card. Prefer `teaser` over
+    /// `layer1?.hook` on any list surface.
+    let hookText: String?
+    /// Photo reference from the place's dive (`dive.media.wikipedia_title`),
+    /// surfaced on the read view so list cards can resolve imagery without an
+    /// extra round-trip each.
+    let wikipediaTitle: String?
 
     enum CodingKeys: String, CodingKey {
         case id, slug, name, kind, lat, lng, city, layer1, tags, emoji
         case heightM = "height_m"
+        case hookText = "hook_text"
+        case wikipediaTitle = "wikipedia_title"
     }
 
     /// Explicit memberwise init — restored because adding a custom `init(from:)`
@@ -34,10 +46,12 @@ struct Place: Codable, Identifiable, Hashable {
     /// construction). Declaration order, with the optionals defaulted.
     init(id: String, slug: String, name: String, kind: String, lat: Double, lng: Double,
          heightM: Double? = nil, city: String, layer1: Layer1? = nil,
-         tags: [String] = [], emoji: String? = nil) {
+         tags: [String] = [], emoji: String? = nil,
+         hookText: String? = nil, wikipediaTitle: String? = nil) {
         self.id = id; self.slug = slug; self.name = name; self.kind = kind
         self.lat = lat; self.lng = lng; self.heightM = heightM; self.city = city
         self.layer1 = layer1; self.tags = tags; self.emoji = emoji
+        self.hookText = hookText; self.wikipediaTitle = wikipediaTitle
     }
 
     /// Resilient decode: a single row with a null `slug` (or null `tags`) must
@@ -61,6 +75,22 @@ struct Place: Codable, Identifiable, Hashable {
         layer1 = try c.decodeIfPresent(Layer1.self, forKey: .layer1)
         tags = (try c.decodeIfPresent([String].self, forKey: .tags)) ?? []
         emoji = try c.decodeIfPresent(String.self, forKey: .emoji)
+        // Absent on older cached payloads and on any surface still selecting the
+        // pre-derived column set, so decode leniently rather than throwing and
+        // emptying the whole list.
+        hookText = try c.decodeIfPresent(String.self, forKey: .hookText)
+        wikipediaTitle = try c.decodeIfPresent(String.self, forKey: .wikipediaTitle)
+    }
+
+    /// The teaser a list card should show: the server-derived hook (curated, or
+    /// the narrative's first sentence) falling back to the raw curated hook for
+    /// any payload predating the derived column.
+    var teaser: String? {
+        if let hookText, !hookText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return hookText
+        }
+        if let hook = layer1?.hook, !hook.isEmpty { return hook }
+        return nil
     }
 
     var coordinate: CLLocationCoordinate2D {

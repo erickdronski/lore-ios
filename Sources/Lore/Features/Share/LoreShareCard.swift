@@ -47,7 +47,7 @@ struct LoreShareCard: View {
                 header
                 Spacer(minLength: 12)
                 nameBlock
-                if let hook = place.layer1?.hook, !hook.isEmpty {
+                if let hook = place.teaser, !hook.isEmpty {
                     Text(hook)
                         .font(LoreType.display(size: format == .story ? 20 : 17, weight: .medium).italic())
                         .foregroundStyle(LoreColor.bone.opacity(0.86))

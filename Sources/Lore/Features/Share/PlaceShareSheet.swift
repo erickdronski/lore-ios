@@ -140,7 +140,7 @@ enum ShareCaption {
     static func text(for place: Place) -> String {
         let city = place.city.replacingOccurrences(of: "-", with: " ").capitalized
         var lines = ["\(place.name) · \(city)"]
-        if let hook = place.layer1?.hook?.trimmingCharacters(in: .whitespacesAndNewlines), !hook.isEmpty {
+        if let hook = place.teaser?.trimmingCharacters(in: .whitespacesAndNewlines), !hook.isEmpty {
             lines.append(hook)
         }
         lines.append("Every place has a story. Discovered with Lore.")

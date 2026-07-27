@@ -285,7 +285,18 @@ struct NearMeCard: View {
     private var place: Place { ranked.place }
     private var accent: Color { theme?.accentColor ?? LoreColor.brass300 }
     private var cardWidth: CGFloat { dynamicTypeSize.isAccessibilitySize ? 260 : 220 }
-    private var cardMinimumHeight: CGFloat { dynamicTypeSize.isAccessibilitySize ? 300 : 246 }
+    /// A floor, not a target. It exists only so a row of cards lines up; the
+    /// teaser below now fills the space that used to sit empty, so this is set
+    /// near the natural content height rather than well above it. It was 246
+    /// while the teaser was capped at one line AND blank for 49% of places,
+    /// which left a large dead gap under the content on half the shelf.
+    private var cardMinimumHeight: CGFloat { dynamicTypeSize.isAccessibilitySize ? 268 : 214 }
+
+    /// Resolved place photo. Nil until it loads, or permanently when the place
+    /// has no `wikipedia_title` (179 of 3,687) — the medallion carries the card
+    /// on its own in that case.
+    @State private var photoURL: URL?
+    @State private var photoResolved = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 11) {
@@ -318,12 +329,19 @@ struct NearMeCard: View {
                         .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 2)
                         .multilineTextAlignment(.leading)
 
-                    if let hook = place.layer1?.hook, !hook.isEmpty {
-                        Text(hook)
+                    // `teaser`, not `layer1?.hook`: the curated hook is empty on
+                    // 49% of places, which used to render nothing here while the
+                    // card kept its height. The server-derived fallback (first
+                    // sentence of the dive narrative) means every card has a
+                    // line to show, and 3 lines lets it fill the tile instead of
+                    // leaving the space blank.
+                    if let teaser = place.teaser, !teaser.isEmpty {
+                        Text(teaser)
                             .font(LoreType.caption)
                             .foregroundStyle(LoreColor.bone.opacity(0.7))
-                            .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 1)
+                            .lineLimit(dynamicTypeSize.isAccessibilitySize ? 4 : 3)
                             .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
 
                     proximityRow
@@ -344,6 +362,20 @@ struct NearMeCard: View {
         .padding(14)
         .frame(width: cardWidth, alignment: .topLeading)
         .frame(minHeight: cardMinimumHeight, alignment: .topLeading)
+        // Resolve from the title the read view now carries, so a shelf of cards
+        // costs zero extra dive fetches. WikipediaService is an actor with a
+        // cache that also remembers misses, so scrolling back does not refetch.
+        .task(id: place.id) {
+            guard !photoResolved else { return }
+            guard let title = place.wikipediaTitle, !title.isEmpty else {
+                photoResolved = true
+                return
+            }
+            let resolved = await WikipediaService.shared.portraitURL(for: title)
+            guard !Task.isCancelled else { return }
+            photoURL = resolved
+            photoResolved = true
+        }
         .background(cardBackground)
         .overlay(
             RoundedRectangle(cornerRadius: 20)
@@ -361,18 +393,36 @@ struct NearMeCard: View {
 
     private var medallion: some View {
         ZStack {
+            // Symbol first, as the placeholder the photo fades over — so a card
+            // is never empty while the image loads, and stays complete for the
+            // 179 places with no photo reference at all.
             Circle().fill(LoreColor.ink900)
             Image(systemName: contextSymbol)
                 .font(.system(size: 25, weight: .medium))
                 .foregroundStyle(accent)
-            Text(place.displayEmoji)
-                .font(.system(size: 13))
-                .frame(width: 22, height: 22)
-                .background(Circle().fill(LoreColor.bone50))
-                .offset(x: 17, y: 16)
+
+            if let photoURL {
+                BlurUpAsyncImage(url: photoURL)
+                    .frame(width: 48, height: 48)
+                    .clipShape(Circle())
+                    .transition(.opacity)
+            }
         }
             .frame(width: 48, height: 48)
             .overlay(Circle().strokeBorder(accent.opacity(0.55), lineWidth: 1))
+            // The emoji badge sits OUTSIDE the 48pt circle, so it must be an
+            // overlay anchored to the frame rather than a member of the ZStack.
+            // As a ZStack child at offset(17, 16) its 22pt disc reached x=52 on a
+            // 48pt box — beyond the frame, where it was clipped by the medallion
+            // and read as a missing emoji.
+            .overlay(alignment: .bottomTrailing) {
+                Text(place.displayEmoji)
+                    .font(.system(size: 13))
+                    .frame(width: 22, height: 22)
+                    .background(Circle().fill(LoreColor.bone50))
+                    .overlay(Circle().strokeBorder(LoreColor.ink900, lineWidth: 1.5))
+                    .offset(x: 6, y: 4)
+            }
             // A quiet brass "offers here" mark, only when one truly exists.
             .overlay(alignment: .bottomTrailing) {
                 if hasOffer { offerMark }
