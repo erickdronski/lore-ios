@@ -71,10 +71,20 @@ platform :ios do
     # from a commit that was never merged.
     screenshot_sha = File.read(source_sha_path).strip
     current_sha = sh("git rev-parse HEAD").strip
-    is_ancestor = system("git merge-base --is-ancestor #{screenshot_sha} #{current_sha}")
-    UI.user_error!(
-      "Screenshots were captured from #{screenshot_sha}, which is not an ancestor of the checkout #{current_sha}. Regenerate them from this branch.",
-    ) unless screenshot_sha == current_sha || is_ancestor
+    unless screenshot_sha == current_sha
+      # Distinguish "genuinely off-branch" from "the commit is not in this
+      # clone". A shallow checkout (actions/checkout defaults to depth 1) has
+      # no parent commits, so the ancestry question is unanswerable rather than
+      # answered "no" — reporting that as a stale-screenshot error sends you
+      # hunting the wrong bug.
+      known = system("git cat-file -e #{screenshot_sha}^{commit} 2>/dev/null")
+      UI.user_error!(
+        "Cannot verify screenshots: commit #{screenshot_sha} is not in this clone. Check out with fetch-depth: 0.",
+      ) unless known
+      UI.user_error!(
+        "Screenshots were captured from #{screenshot_sha}, which is not an ancestor of the checkout #{current_sha}. Regenerate them from this branch.",
+      ) unless system("git merge-base --is-ancestor #{screenshot_sha} #{current_sha}")
+    end
 
     api_key = app_store_connect_api_key(
       key_id: ENV.fetch("ASC_KEY_ID"),

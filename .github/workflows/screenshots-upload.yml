@@ -23,6 +23,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Full history: the screenshots_upload guard checks that the capture
+          # commit in SOURCE_SHA is an ancestor of HEAD, which a depth-1
+          # shallow clone cannot answer (the parent commit simply is not there).
+          fetch-depth: 0
 
       - name: Ruby + Fastlane (cached)
         uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1
