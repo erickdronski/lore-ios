@@ -170,8 +170,9 @@ struct MapScreen: View {
                 )
             }
             .sheet(item: selectedPlaceBinding) { place in
+                // Detents are owned by PlaceCardView so opening the dossier can
+                // promote the sheet to `.large` from every entry point.
                 PlaceCardView(place: place, onMeetCity: onMeetCity, cityTheme: model.theme)
-                    .presentationDetents([.medium, .large])
                     .presentationBackground(.regularMaterial)
                     .presentationCornerRadius(24)
             }

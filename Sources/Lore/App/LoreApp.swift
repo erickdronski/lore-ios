@@ -228,10 +228,10 @@ struct RootTabView: View {
         }
         // A place opened from a search hit (map pin taps are self-contained).
         .sheet(item: $routedPlace) { routed in
+            // Detents are owned by PlaceCardView: it rests at `.medium` and
+            // promotes to `.large` when the dossier opens (including the
+            // screenshot pipeline's autoDive stage).
             PlaceCardView(place: routed.place, onMeetCity: { routedPlace = nil; meetCity = $0 }, autoDive: routed.autoDive)
-                // The screenshot "dive" stage wants the full dossier, so pin the
-                // sheet to `.large`; normal presentations keep the medium grip.
-                .presentationDetents(routed.autoDive ? [.large] : [.medium, .large])
                 .presentationBackground(.regularMaterial)
                 .presentationCornerRadius(24)
         }

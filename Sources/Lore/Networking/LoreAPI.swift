@@ -482,13 +482,23 @@ struct LoreAPI {
     /// derives `user_id` from the JWT, so the payload never carries it.
     /// `POST /rest/v1/user_prefs` with `Prefer: resolution=merge-duplicates`.
     @discardableResult
-    func upsertPrefs(_ prefs: UserPrefs, accessToken: String) async throws -> UserPrefs? {
+    /// Upsert the caller's prefs row. `on_conflict=user_id` is required for
+    /// `resolution=merge-duplicates` to update the existing row instead of
+    /// raising a duplicate-key error. Pass `includeHiddenKinds: false` from
+    /// surfaces that do not own the category filters (onboarding), so a
+    /// merge never blanks them.
+    func upsertPrefs(
+        _ prefs: UserPrefs,
+        accessToken: String,
+        includeHiddenKinds: Bool = true
+    ) async throws -> UserPrefs? {
         let rows: [UserPrefs] = try await write(
             "user_prefs",
             method: "POST",
-            jsonBody: prefs.upsertPayload,
+            jsonBody: prefs.upsertPayload(includingHiddenKinds: includeHiddenKinds),
             accessToken: accessToken,
-            prefer: "resolution=merge-duplicates,return=representation"
+            prefer: "resolution=merge-duplicates,return=representation",
+            query: [URLQueryItem(name: "on_conflict", value: "user_id")]
         )
         return rows.first
     }
@@ -604,9 +614,20 @@ struct LoreAPI {
         method: String,
         jsonBody: [String: Any],
         accessToken: String,
-        prefer: String
+        prefer: String,
+        query: [URLQueryItem] = []
     ) async throws -> T {
-        let url = Config.restURL.appending(path: table)
+        // `appending(path:)` percent-encodes, so a query must never be smuggled
+        // into the table string — it is attached through URLComponents here.
+        var url = Config.restURL.appending(path: table)
+        if !query.isEmpty {
+            guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+                throw APIError.badURL
+            }
+            components.queryItems = query
+            guard let built = components.url else { throw APIError.badURL }
+            url = built
+        }
         var request = URLRequest(url: url)
         request.httpMethod = method
         applyAuth(&request, accessToken: accessToken)

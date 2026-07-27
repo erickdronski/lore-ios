@@ -52,7 +52,9 @@ struct OnboardingPrefsWriter: PrefsWriting {
             affinity: nil,
             onboarded: true
         )
-        try await api.upsertPrefs(prefs, accessToken: creds.accessToken)
+        // Onboarding does not own the category filters — omit them so finishing
+        // first-run never blanks filters configured on web.
+        try await api.upsertPrefs(prefs, accessToken: creds.accessToken, includeHiddenKinds: false)
         clearPending()
     }
 
@@ -105,7 +107,8 @@ struct OnboardingPrefsWriter: PrefsWriting {
             affinity: nil,
             onboarded: true
         )
-        try await api.upsertPrefs(prefs, accessToken: accessToken)
+        // Same contract as the finish write: never blank filters we don't own.
+        try await api.upsertPrefs(prefs, accessToken: accessToken, includeHiddenKinds: false)
         defaults.removeObject(forKey: pendingPersonaKey)
         defaults.removeObject(forKey: pendingInterestsKey)
         defaults.removeObject(forKey: pendingOwnerKey)

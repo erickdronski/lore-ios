@@ -4,10 +4,16 @@ import Foundation
 /// (opt-in rows only, `visible`/`approved` status, caller's blocks applied
 /// server-side). The view projects ONLY safe columns — the author appears as
 /// their chosen display name or "A traveler", never an email.
+///
+/// `authorID` is granted to `authenticated` only: a signed-out reader must not
+/// be able to correlate a stable account id across places into a movement
+/// history, so `anon` has no column privilege on it and the key is simply
+/// absent from their payload. Report/block (which need the id) already require
+/// a session, so this is nil exactly when those affordances are unavailable.
 struct PublicLore: Decodable, Identifiable {
     let id: String
     let placeID: String
-    let authorID: String
+    let authorID: String?
     let displayName: String
     let note: String?
     let visitedAt: String?

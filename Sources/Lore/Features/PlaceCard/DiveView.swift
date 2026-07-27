@@ -285,36 +285,49 @@ struct DiveView: View {
 
     // MARK: Links
 
+    /// The dive's real citations, if it has any. An Apple Maps deep-link is a
+    /// wayfinding affordance, not a source, so it must never be the only thing
+    /// under a "Sources" heading — roughly a thousand dives currently carry no
+    /// citation at all, and claiming provenance we do not have is worse than
+    /// showing none.
+    private var citationLinks: [(icon: String, title: String, subtitle: String?, url: URL)] {
+        guard case .loaded(let dive) = model.state else { return [] }
+        var rows: [(icon: String, title: String, subtitle: String?, url: URL)] = []
+        if let website = dive.links.website,
+           let url = URL(string: website),
+           ["http", "https"].contains(url.scheme?.lowercased() ?? "") {
+            rows.append(("link", "Official site", url.host(), url))
+        }
+        if let url = dive.links.wikipediaURL {
+            rows.append(("book", "Wikipedia", "en.wikipedia.org", url))
+        }
+        return rows
+    }
+
     @ViewBuilder
     private var linksSection: some View {
+        let citations = citationLinks
         VStack(alignment: .leading, spacing: 12) {
-            Text(L10n.t("dossier.sources"))
-                .font(LoreType.displayM)
-                .foregroundStyle(LoreColor.bone)
+            // Only claim "Sources" when there is at least one real citation.
+            if !citations.isEmpty {
+                Text(L10n.t("dossier.sources"))
+                    .font(LoreType.displayM)
+                    .foregroundStyle(LoreColor.bone)
+            }
 
-            // Maps deep-link, always available, built from place coordinates.
+            ForEach(citations, id: \.url) { row in
+                Link(destination: row.url) {
+                    LinkRow(icon: row.icon, title: row.title, subtitle: row.subtitle)
+                }
+                .buttonStyle(.pressable)
+            }
+
+            // Wayfinding, always available, built from place coordinates.
             if let mapsURL = appleMapsURL {
                 Link(destination: mapsURL) {
                     LinkRow(icon: "map", title: "Open in Maps", subtitle: "Walk there")
                 }
                 .buttonStyle(.pressable)
-            }
-
-            if case .loaded(let dive) = model.state {
-                if let website = dive.links.website,
-                   let url = URL(string: website),
-                   ["http", "https"].contains(url.scheme?.lowercased() ?? "") {
-                    Link(destination: url) {
-                        LinkRow(icon: "link", title: "Official site", subtitle: url.host())
-                    }
-                    .buttonStyle(.pressable)
-                }
-                if let url = dive.links.wikipediaURL {
-                    Link(destination: url) {
-                        LinkRow(icon: "book", title: "Wikipedia", subtitle: "en.wikipedia.org")
-                    }
-                    .buttonStyle(.pressable)
-                }
             }
         }
         .padding(.top, 8)

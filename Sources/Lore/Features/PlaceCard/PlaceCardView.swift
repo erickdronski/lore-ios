@@ -20,6 +20,13 @@ struct PlaceCardView: View {
     @State private var showDive = false
     @State private var showShare = false
 
+    /// The sheet's own detent, owned here rather than by each call site so the
+    /// payoff moment behaves identically from a pin tap, a search hit, or a
+    /// near-me card: the Layer-1 card rests at `.medium`, and opening the
+    /// dossier promotes to `.large` so the narrative, gallery and timeline are
+    /// not read through a half-height window.
+    @State private var detent: PresentationDetent = .medium
+
     /// The reader's own layer: log the visit and write their lore right here,
     /// where the place's story lives (owner ask: "their lore is an extension
     /// of the place"). History loads on appear; the editor is the Journal's.
@@ -66,9 +73,16 @@ struct PlaceCardView: View {
             }
         }
         .animation(LoreSpring.smooth(reduceMotion: reduceMotion), value: showDive)
+        .presentationDetents([.medium, .large], selection: $detent)
+        .onChange(of: showDive) { _, isOpen in
+            // Grow the sheet with the dossier, and settle back to the grip when
+            // the reader returns to the Layer-1 card.
+            detent = isOpen ? .large : .medium
+        }
         .onAppear {
             // Screenshot pipeline only: land directly on the dossier.
             if autoDive && !showDive { showDive = true }
+            if autoDive { detent = .large }
         }
         .sheet(isPresented: $showShare) {
             PlaceShareSheet(place: place)

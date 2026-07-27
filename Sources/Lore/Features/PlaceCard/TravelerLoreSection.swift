@@ -68,7 +68,15 @@ struct TravelerLoreSection: View {
     /// as YOUR LORE above, and optimistically-reported rows drop immediately.
     private var visibleEntries: [PublicLore] {
         entries.filter { entry in
-            entry.authorID != auth.session?.user.id && !reportedIDs.contains(entry.id)
+            // `authorID` is nil for signed-out readers (anon has no column
+            // privilege on it), and a signed-out reader has no lore of their
+            // own to de-duplicate — so only hide a row when we can positively
+            // identify it as the reader's own.
+            let isOwn: Bool = {
+                guard let authorID = entry.authorID, let me = auth.session?.user.id else { return false }
+                return authorID == me
+            }()
+            return !isOwn && !reportedIDs.contains(entry.id)
         }
     }
 
@@ -316,9 +324,17 @@ struct TravelerLoreSection: View {
             onNeedsSignIn()
             return
         }
+        // Only `authenticated` receives `author_id`, so a signed-in reader
+        // always has it here; refetch rather than fail silently if a stale
+        // signed-out payload is still in memory.
+        guard let blockedID = entry.authorID else {
+            await load()
+            actionError = "We couldn’t block this traveler yet. Pull to refresh and try again."
+            return
+        }
         do {
             try await TravelReads.blockAuthor(
-                blockerID: blockerID, blockedID: entry.authorID, accessToken: token
+                blockerID: blockerID, blockedID: blockedID, accessToken: token
             )
             Haptics.play(.chipTap)
             // The server's view filters this author from now on; refetch so

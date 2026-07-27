@@ -182,16 +182,27 @@ struct UserPrefs: Codable, Identifiable, Hashable {
         )
     }
 
-    /// Body for `upsertPrefs`, the mutable subset the client writes back
-    /// (never `user_id`; RLS derives it from the JWT). `affinity` is
+    /// Body for `upsertPrefs`, the mutable subset the client writes back.
+    ///
+    /// `user_id` MUST be sent: the column is `uuid NOT NULL` with no default,
+    /// so RLS does *not* derive it (the policy only checks `user_id =
+    /// auth.uid()` — a check cannot populate a value). Omitting it fails the
+    /// INSERT with 23502 before `ON CONFLICT` is ever reached. `affinity` is
     /// server-learned and omitted here.
-    var upsertPayload: [String: Any] {
-        [
+    ///
+    /// `includingHiddenKinds` exists because PostgREST's merge-duplicates only
+    /// merges columns present in the payload. Onboarding does not own the
+    /// category filters, so it must omit them — otherwise finishing first-run
+    /// on iOS would blank whatever the traveler configured on web.
+    func upsertPayload(includingHiddenKinds: Bool = true) -> [String: Any] {
+        var body: [String: Any] = [
+            "user_id": userID,
             "persona": persona.rawValue,
             "interests": interests,
-            "hidden_kinds": hiddenKinds,
             "onboarded": onboarded,
         ]
+        if includingHiddenKinds { body["hidden_kinds"] = hiddenKinds }
+        return body
     }
 
     private static func unique(_ values: [String]) -> [String] {
