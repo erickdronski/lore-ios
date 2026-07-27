@@ -6,8 +6,12 @@
 #
 # Regenerate any time: `bundle exec fastlane screenshots`.
 
+# Device names must exist in the Xcode the runner actually has, or snapshot
+# aborts before capturing anything. Xcode 26 (macos-15 / local 26.6) ships the
+# iPhone 17 family; "iPhone 16 Pro Max" no longer resolves. Re-check against
+# `xcrun simctl list devices available` when bumping Xcode.
 devices([
-  "iPhone 16 Pro Max",
+  "iPhone 17 Pro Max",
   "iPad Pro 13-inch (M5)",
 ])
 

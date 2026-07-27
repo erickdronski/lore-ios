@@ -63,11 +63,18 @@ platform :ios do
       "Missing fastlane/promo_screenshots/SOURCE_SHA. Regenerate screenshots from the release commit before upload.",
     ) unless File.exist?(source_sha_path)
 
+    # The guard exists to stop stale or off-branch screenshots reaching the
+    # store. Requiring SOURCE_SHA == HEAD could never be satisfied: writing the
+    # SHA into the file changes the tree, which changes HEAD. So assert the
+    # weaker-but-actually-checkable property — the capture commit is part of
+    # this history — which still rejects screenshots from a divergent branch or
+    # from a commit that was never merged.
     screenshot_sha = File.read(source_sha_path).strip
     current_sha = sh("git rev-parse HEAD").strip
+    is_ancestor = system("git merge-base --is-ancestor #{screenshot_sha} #{current_sha}")
     UI.user_error!(
-      "Screenshots were captured from #{screenshot_sha}, but the checkout is #{current_sha}. Regenerate them from this exact commit.",
-    ) unless screenshot_sha == current_sha
+      "Screenshots were captured from #{screenshot_sha}, which is not an ancestor of the checkout #{current_sha}. Regenerate them from this branch.",
+    ) unless screenshot_sha == current_sha || is_ancestor
 
     api_key = app_store_connect_api_key(
       key_id: ENV.fetch("ASC_KEY_ID"),
