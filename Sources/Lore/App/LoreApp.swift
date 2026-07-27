@@ -100,7 +100,14 @@ struct LoreApp: App {
                 // Bind purchases to the signed-in account. StoreKit needs this
                 // BEFORE the purchase sheet opens, so it tracks the session.
                 .task(id: auth.session?.user.id) {
-                    store.accountUUID = auth.session?.user.id.flatMap(UUID.init(uuidString:))
+                    // Unwrapped explicitly: `id.flatMap(UUID.init)` resolves to
+                    // String's Sequence flatMap (over Characters), not
+                    // Optional's, and does not compile.
+                    guard let userID = auth.session?.user.id else {
+                        store.accountUUID = nil
+                        return
+                    }
+                    store.accountUUID = UUID(uuidString: userID)
                 }
                 // App chrome is the app's words, Ink/Brass, never Amber
                 // (Amber is reserved for the world: pins, outlines, beacon —
