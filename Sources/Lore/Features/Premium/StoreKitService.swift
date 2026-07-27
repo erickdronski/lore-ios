@@ -93,6 +93,31 @@ enum StoreEntitlementResolver {
 @Observable
 @MainActor
 final class StoreKitService {
+    /// The signed-in Lore account, set by the app whenever the session changes.
+    ///
+    /// This is the ONLY link between an App Store transaction and a Lore
+    /// account. It is passed to `product.purchase()` as `appAccountToken`, so
+    /// Apple echoes it back in the signed transaction and in every App Store
+    /// Server Notification — which is what lets the server write an
+    /// `entitlements` row for the right user. Without it a purchase is
+    /// cryptographically valid but unattributable, and the only proof of
+    /// payment lives on one device.
+    ///
+    /// Nil for a signed-out purchase: StoreKit still grants access on-device
+    /// (`hasActiveEntitlement`), and `syncPurchaseToServer` re-attributes it the
+    /// next time the buyer signs in and restores.
+    var accountUUID: UUID?
+
+    /// Called with a transaction's **JWS representation** so the app can post it
+    /// to the server for entitlement recording. Set by the app; no-op until it
+    /// is.
+    ///
+    /// It must be the JWS, not `Transaction.jsonRepresentation`: the server
+    /// re-verifies Apple's signature over this exact string and trusts nothing
+    /// the client asserts. Handing it unsigned JSON would let any caller mint
+    /// itself a paid entitlement.
+    var onVerifiedTransaction: ((String) async -> Void)?
+
     /// The Lore+ products, App Store Connect identifiers (docs/16 §1). IDs are
     /// price-agnostic on purpose: storefront pricing and offers may change
     /// without requiring new identifiers. `lifetime` is a non-consumable
@@ -298,14 +323,25 @@ final class StoreKitService {
         var current: [StoreEntitlementSnapshot] = []
         var history: [StoreEntitlementSnapshot] = []
         var verificationIssue = false
+        var verifiedJWS: [String] = []
 
         for await result in Transaction.currentEntitlements {
             switch result {
             case .verified(let transaction):
                 current.append(snapshot(for: transaction))
+                verifiedJWS.append(result.jwsRepresentation)
             case .unverified:
                 verificationIssue = true
             }
+        }
+
+        // Re-assert every currently-owned entitlement server-side. This is the
+        // repair path: a restore, a renewal picked up by `Transaction.updates`,
+        // a purchase made while signed out and later attributed at sign-in, or
+        // a first launch after the server row was never written all converge
+        // here. The endpoint is idempotent, so re-posting is harmless.
+        if let sync = onVerifiedTransaction {
+            for jws in verifiedJWS { await sync(jws) }
         }
 
         for await result in Transaction.all {
@@ -397,7 +433,12 @@ final class StoreKitService {
 
     private func purchase(product: Product) async -> PurchaseOutcome {
         do {
-            let result = try await product.purchase()
+            // Bind the transaction to the Lore account so Apple echoes the id
+            // back in the signed transaction and in every server notification.
+            // This is what makes the purchase attributable server-side.
+            var options: Set<Product.PurchaseOption> = []
+            if let accountUUID { options.insert(.appAccountToken(accountUUID)) }
+            let result = try await product.purchase(options: options)
             switch result {
             case .success(let verification):
                 guard case .verified(let transaction) = verification else {
@@ -407,6 +448,11 @@ final class StoreKitService {
                     return .failed(message: message)
                 }
                 let trialing = introductory(in: transaction)
+                // Record it server-side BEFORE finishing, so a crash between
+                // the two still leaves the transaction unfinished and therefore
+                // replayable on next launch. `verification.jwsRepresentation`
+                // is the Apple-signed form the server re-verifies.
+                await onVerifiedTransaction?(verification.jwsRepresentation)
                 await transaction.finish()
                 await refreshEntitlements()
                 return .success(trialing: trialing)

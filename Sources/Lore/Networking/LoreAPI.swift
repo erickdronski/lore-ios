@@ -520,6 +520,36 @@ struct LoreAPI {
         )
     }
 
+    /// Record a verified App Store purchase server-side.
+    ///
+    /// StoreKit already grants access on-device, but that proof lives only on
+    /// the device that bought it. This posts the transaction's signed JWS to an
+    /// edge function which re-verifies the signature against Apple's certificate
+    /// chain (never trusting the client) and writes the `entitlements` row, so
+    /// the purchase is durable, visible on the web, and reconcilable.
+    ///
+    /// Idempotent: safe to call on every purchase, restore, and refresh.
+    /// `POST /functions/v1/sync-apple-purchase { "signed_transaction": "<JWS>" }`
+    @discardableResult
+    func syncApplePurchase(signedTransaction: String, accessToken: String) async throws -> Bool {
+        guard let url = URL(string: "sync-apple-purchase", relativeTo: Config.functionsURL) else {
+            throw APIError.badURL
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        applyAuth(&request, accessToken: accessToken)
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try encodeJSON(["signed_transaction": signedTransaction])
+
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else { return false }
+        guard (200..<300).contains(http.statusCode) else {
+            throw APIError.http(status: http.statusCode, body: String(data: data, encoding: .utf8) ?? "")
+        }
+        return true
+    }
+
     /// Recompute achievements for the signed-in user and return any newly
     /// unlocked badges. RLS-scoped RPC; pass the user's own id as `p_user`.
     /// `POST /rest/v1/rpc/recompute_achievements { "p_user": userID }`

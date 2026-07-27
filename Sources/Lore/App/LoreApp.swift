@@ -82,7 +82,25 @@ struct LoreApp: App {
                 // are @MainActor app-lifetime singletons (docs/16 §1).
                 .task {
                     entitlements.storeKit = store
+                    // Record verified purchases server-side. StoreKit already
+                    // opens the gate on-device; this is what makes the purchase
+                    // durable, visible on the web, and reconcilable. Failures
+                    // are deliberately silent: access is never blocked on it,
+                    // and the next refresh re-posts.
+                    store.onVerifiedTransaction = { [weak auth] signedJWS in
+                        guard let auth else { return }
+                        guard let token = await auth.validAccessToken() else { return }
+                        try? await LoreAPI.shared.syncApplePurchase(
+                            signedTransaction: signedJWS,
+                            accessToken: token
+                        )
+                    }
                     store.start()
+                }
+                // Bind purchases to the signed-in account. StoreKit needs this
+                // BEFORE the purchase sheet opens, so it tracks the session.
+                .task(id: auth.session?.user.id) {
+                    store.accountUUID = auth.session?.user.id.flatMap(UUID.init(uuidString:))
                 }
                 // App chrome is the app's words, Ink/Brass, never Amber
                 // (Amber is reserved for the world: pins, outlines, beacon —
