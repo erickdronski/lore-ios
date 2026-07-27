@@ -236,7 +236,11 @@ enum PlaceCollection: String, CaseIterable, Identifiable {
         case .food: return "Food"
         case .free: return "Free"
         case .art: return "Art"
-        case .nature: return "Nature"
+        // "Outdoors", not "Nature": the kind-category row below already has a
+        // literal "Nature" chip (place_kind == nature), and two identically
+        // labelled chips one row apart read as a duplicate-rendering bug. This
+        // lens is deliberately broader — parks, gardens, springs and trails too.
+        case .nature: return "Outdoors"
         case .nightlife: return "Nightlife"
         }
     }

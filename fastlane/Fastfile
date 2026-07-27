@@ -264,7 +264,32 @@ platform :ios do
     UI.user_error!("Refusing to submit: no build attached to #{version.version_string}") if build.nil?
 
     UI.important("Submitting #{app.name} #{version.version_string} (build #{build.version}) for review…")
-    version.create_app_store_version_submission
+
+    # `version.create_app_store_version_submission` targets the retired
+    # appStoreVersionSubmissions endpoint, which Apple now answers with
+    # "does not allow 'CREATE'. Allowed operation is: DELETE". Submission moved
+    # to the reviewSubmissions model, where a submission is a container that
+    # carries one or more items (the version, and any IAPs) and is then sent as
+    # a unit — which is also what the App Store Connect UI drives.
+    platform = Spaceship::ConnectAPI::Platform::IOS
+    submission = app.get_in_progress_review_submission(platform: platform)
+    if submission.nil?
+      submission = app.create_review_submission(platform: platform)
+    else
+      UI.important("Reusing the in-progress review submission.")
+    end
+
+    # `items` is only populated when the request asked for it, so absence does
+    # not mean "not attached". Attempt the add and treat an already-attached
+    # complaint as success rather than gating on a value we may not have.
+    begin
+      submission.add_app_store_version_to_review_items(app_store_version_id: version.id)
+    rescue => e
+      raise e unless e.message =~ /already|exists|duplicate/i
+      UI.important("Version is already an item on this submission; continuing.")
+    end
+
+    submission.submit_for_review
     UI.success("Submitted #{version.version_string} build #{build.version} for App Store review.")
   end
 
