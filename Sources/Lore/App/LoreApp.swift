@@ -90,7 +90,11 @@ struct LoreApp: App {
                     store.onVerifiedTransaction = { [weak auth] signedJWS in
                         guard let auth else { return }
                         guard let token = await auth.validAccessToken() else { return }
-                        try? await LoreAPI.shared.syncApplePurchase(
+                        // Discarded on purpose: the return value only reports
+                        // whether the row was written, and a failure here must
+                        // never surface to a buyer whose access StoreKit has
+                        // already granted. The next refreshEntitlements re-posts.
+                        _ = try? await LoreAPI.shared.syncApplePurchase(
                             signedTransaction: signedJWS,
                             accessToken: token
                         )
