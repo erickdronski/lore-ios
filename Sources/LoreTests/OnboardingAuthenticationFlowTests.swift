@@ -128,6 +128,57 @@ final class OnboardingAuthenticationFlowTests: XCTestCase {
         XCTAssertEqual(pending?.interests, ["architecture", "history"])
     }
 
+    func testGuestPreferencesRehydrateCoordinatorAfterSignedOutRelaunch() async throws {
+        let writer = OnboardingPrefsWriter(defaults: defaults, credentials: { nil })
+        try await writer.writeOnboardingPrefs(
+            persona: .explorer,
+            interests: ["hidden_gems", "history", "hidden_gems"]
+        )
+
+        let relaunched = PrefsCoordinator(defaults: defaults)
+        await relaunched.load(accessToken: nil, force: true)
+
+        XCTAssertEqual(relaunched.prefs?.userID, "local")
+        XCTAssertEqual(relaunched.prefs?.persona, .explorer)
+        XCTAssertEqual(relaunched.prefs?.interests, ["hidden_gems", "history"])
+        XCTAssertEqual(relaunched.prefs?.onboarded, true)
+    }
+
+    func testSignedOutCoordinatorDoesNotHydrateAnotherAccountsPendingWrite() {
+        defaults.set(UserPrefs.Persona.historian.rawValue, forKey: OnboardingPrefsWriter.pendingPersonaKey)
+        defaults.set(["history"], forKey: OnboardingPrefsWriter.pendingInterestsKey)
+        defaults.set("account-a", forKey: OnboardingPrefsWriter.pendingOwnerKey)
+
+        let relaunched = PrefsCoordinator(defaults: defaults)
+
+        XCTAssertNil(relaunched.prefs)
+    }
+
+    func testFinishSignInCommitsSelectionsBeforeExistingAccountGateDismisses() async {
+        let writeFinished = expectation(description: "signed-in finish prefs write")
+        let writer = RecordingPrefsWriter(writeFinished: writeFinished)
+        let store = OnboardingStore(defaults: defaults)
+        store.step = .finish
+        store.selectedPersona = .architect
+        store.selectedInterests = ["architecture", "public_art"]
+        var completionCount = 0
+
+        let completed = store.finishAfterAuthenticationIfReady(
+            onComplete: { completionCount += 1 },
+            prefsWriter: writer
+        )
+        store.resolveGate(serverPrefs: userPrefs(onboarded: true))
+
+        XCTAssertTrue(completed)
+        XCTAssertEqual(completionCount, 1)
+        XCTAssertEqual(writer.stagedPersona, .architect)
+        XCTAssertEqual(Set(writer.stagedInterests), ["architecture", "public_art"])
+        XCTAssertEqual(store.resolvedPersona, .architect)
+        XCTAssertEqual(Set(store.resolvedInterests), ["architecture", "public_art"])
+        XCTAssertFalse(store.shouldPresent)
+        await fulfillment(of: [writeFinished], timeout: 1)
+    }
+
     func testFailedAccountPreferenceCannotLeakIntoAnotherAccount() async throws {
         let writer = OnboardingPrefsWriter(defaults: defaults) {
             (userID: "account-a", accessToken: "expired-token")

@@ -357,6 +357,19 @@ final class OnboardingStore: NSObject, CLLocationManagerDelegate {
             }
         }
     }
+
+    /// Complete an active Finish selection after authentication succeeds. The
+    /// presenter calls this before resolving the signed-in server gate so an
+    /// already-onboarded account cannot dismiss and discard the visible choices.
+    @discardableResult
+    func finishAfterAuthenticationIfReady(
+        onComplete: @escaping () -> Void,
+        prefsWriter: PrefsWriting
+    ) -> Bool {
+        guard shouldPresent, step == .finish else { return false }
+        finish(onComplete: onComplete, prefsWriter: prefsWriter)
+        return hasFinished
+    }
 }
 
 /// The one dependency the store has on the network, behind a protocol so the

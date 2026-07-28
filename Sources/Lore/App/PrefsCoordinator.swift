@@ -1,3 +1,4 @@
+import Foundation
 import Observation
 import SwiftUI
 
@@ -19,6 +20,8 @@ import SwiftUI
 @Observable
 @MainActor
 final class PrefsCoordinator {
+    private static let guestPendingOwner = "guest"
+
     /// The signed-in user's curation prefs, once loaded. `nil` before the first
     /// load or when signed out, consumers read this as the un-personalized map.
     private(set) var prefs: UserPrefs?
@@ -33,8 +36,11 @@ final class PrefsCoordinator {
     /// caller can distinguish "not loaded yet" from "loaded, no prefs row".
     private(set) var loaded = false
 
-    init(prefs: UserPrefs? = nil) {
-        self.prefs = prefs
+    private let defaults: UserDefaults
+
+    init(prefs: UserPrefs? = nil, defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        self.prefs = prefs ?? Self.pendingGuestPrefs(defaults: defaults)
     }
 
     /// Load `user_prefs` for the current session. A `nil` token (signed out)
@@ -43,7 +49,7 @@ final class PrefsCoordinator {
     func load(accessToken: String?, force: Bool = false) async {
         guard force || !loaded else { return }
         guard let accessToken else {
-            prefs = nil
+            prefs = Self.pendingGuestPrefs(defaults: defaults)
             loaded = true
             lastError = nil
             return
@@ -74,5 +80,18 @@ final class PrefsCoordinator {
     func adopt(_ newPrefs: UserPrefs?) {
         prefs = newPrefs
         loaded = true
+    }
+
+    private static func pendingGuestPrefs(defaults: UserDefaults) -> UserPrefs? {
+        guard defaults.string(forKey: OnboardingPrefsWriter.pendingOwnerKey) == guestPendingOwner,
+              let pending = OnboardingPrefsWriter.pendingSelection(defaults: defaults) else {
+            return nil
+        }
+        return UserPrefs(
+            userID: "local",
+            persona: pending.persona,
+            interests: pending.interests,
+            onboarded: true
+        )
     }
 }

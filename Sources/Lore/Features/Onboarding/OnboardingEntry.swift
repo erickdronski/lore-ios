@@ -86,20 +86,11 @@ struct OnboardingPresenter: ViewModifier {
     func body(content: Content) -> some View {
         content
             .fullScreenCover(isPresented: $isPresented) {
-                OnboardingView(store: store, prefsWriter: prefsWriter) {
-                    isPresented = false
-                    // Adopt the just-staged lens so the map/scanner personalize
-                    // this session. Mirrors the Profile editor's optimistic
-                    // adopt; a later server load reconciles for signed-in users.
-                    if let persona = store.resolvedPersona {
-                        prefsCoordinator.adopt(UserPrefs(
-                            userID: auth.session?.user.id ?? "local",
-                            persona: persona,
-                            interests: store.resolvedInterests,
-                            onboarded: true
-                        ))
-                    }
-                }
+                OnboardingView(
+                    store: store,
+                    prefsWriter: prefsWriter,
+                    onFinished: finishPresentation
+                )
             }
             .task(id: gateIdentity) { await resolvePresentationGate() }
     }
@@ -121,8 +112,35 @@ struct OnboardingPresenter: ViewModifier {
             isPresented = store.shouldPresent
             return
         }
+
+        // Signing in from the visible Finish sheet must commit the choices that
+        // are already on screen before an existing account's server gate can
+        // dismiss onboarding. The normal writer keeps its merge contract and
+        // leaves hidden kinds untouched.
+        if isPresented,
+           store.finishAfterAuthenticationIfReady(
+               onComplete: finishPresentation,
+               prefsWriter: prefsWriter
+           ) {
+            return
+        }
+
         let prefs = try? await LoreAPI.shared.userPrefs(accessToken: token)
         store.resolveGate(serverPrefs: prefs)
         isPresented = store.shouldPresent
+    }
+
+    private func finishPresentation() {
+        isPresented = false
+        // Adopt the just-staged lens so the map/scanner personalize this
+        // session. A later server load reconciles for signed-in users.
+        if let persona = store.resolvedPersona {
+            prefsCoordinator.adopt(UserPrefs(
+                userID: auth.session?.user.id ?? "local",
+                persona: persona,
+                interests: store.resolvedInterests,
+                onboarded: true
+            ))
+        }
     }
 }
