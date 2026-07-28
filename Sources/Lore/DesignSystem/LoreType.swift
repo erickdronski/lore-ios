@@ -20,23 +20,34 @@ enum LoreType {
     }
 
     /// A display (serif) font: Fraunces when bundled, New York otherwise.
-    static func display(size: CGFloat, weight: Font.Weight = .semibold) -> Font {
+    ///
+    /// `relativeTo` anchors the size to a Dynamic Type text style so headlines
+    /// grow for large-text users instead of staying fixed — previously every
+    /// display/headline ignored Dynamic Type entirely (audit docs/30). Both
+    /// paths scale: the custom face via `Font.custom(_:size:relativeTo:)`, the
+    /// system-serif fallback via `UIFontMetrics` on the mapped style.
+    static func display(
+        size: CGFloat,
+        weight: Font.Weight = .semibold,
+        relativeTo textStyle: Font.TextStyle = .body
+    ) -> Font {
         if frauncesAvailable {
-            return .custom(frauncesFamily, size: size).weight(weight)
+            return .custom(frauncesFamily, size: size, relativeTo: textStyle).weight(weight)
         }
-        return .system(size: size, weight: weight, design: .serif)
+        let scaled = UIFontMetrics(forTextStyle: textStyle.uiKit).scaledValue(for: size)
+        return .system(size: scaled, weight: weight, design: .serif)
     }
 
     // MARK: Scale
 
     /// 40/44 semibold, deep-dive place name.
-    static var displayXL: Font { display(size: 40, weight: .semibold) }
+    static var displayXL: Font { display(size: 40, weight: .semibold, relativeTo: .largeTitle) }
     /// 28/34 semibold, Layer-1 card place name.
-    static var displayL: Font { display(size: 28, weight: .semibold) }
+    static var displayL: Font { display(size: 28, weight: .semibold, relativeTo: .title) }
     /// 22/28 medium, section heads, tour titles.
-    static var displayM: Font { display(size: 22, weight: .medium) }
+    static var displayM: Font { display(size: 22, weight: .medium, relativeTo: .title2) }
     /// 17/24 medium italic, the Layer-1 hook line.
-    static var hook: Font { display(size: 17, weight: .medium).italic() }
+    static var hook: Font { display(size: 17, weight: .medium, relativeTo: .body).italic() }
     /// 17/24 regular SF Pro, UI copy, forms, settings.
     static var body: Font { .body }
     /// 13/18 regular SF Pro, provenance, timestamps, distances, meters.
@@ -56,5 +67,26 @@ extension Text {
     /// Badge/chip style: `label` token with its +0.6 tracking baked in.
     func loreLabelStyle() -> Text {
         self.font(LoreType.label).tracking(0.6)
+    }
+}
+
+private extension Font.TextStyle {
+    /// The matching UIKit style, so the system-serif fallback can scale a fixed
+    /// point size with Dynamic Type via `UIFontMetrics`.
+    var uiKit: UIFont.TextStyle {
+        switch self {
+        case .largeTitle: return .largeTitle
+        case .title: return .title1
+        case .title2: return .title2
+        case .title3: return .title3
+        case .headline: return .headline
+        case .subheadline: return .subheadline
+        case .body: return .body
+        case .callout: return .callout
+        case .footnote: return .footnote
+        case .caption: return .caption1
+        case .caption2: return .caption2
+        @unknown default: return .body
+        }
     }
 }

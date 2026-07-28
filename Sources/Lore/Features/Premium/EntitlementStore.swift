@@ -20,7 +20,7 @@ enum EntitlementCachePolicy {
         guard let record,
               let userID,
               record.entitlement.userID == userID,
-              record.entitlement.isActive,
+              record.entitlement.isActive(asOf: now),
               now.timeIntervalSince(record.verifiedAt) >= 0,
               now.timeIntervalSince(record.verifiedAt) <= maximumAge
         else { return nil }

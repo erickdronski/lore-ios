@@ -30,6 +30,13 @@ final class OnboardingStore: NSObject, CLLocationManagerDelegate {
     /// The integrator calls this after resolving prefs (see `resolveGate`).
     private(set) var shouldPresent: Bool
 
+    /// The persona/interests actually staged by the last `finish()` (skip
+    /// defaults folded in). The presenter reads these to adopt a guest lens into
+    /// `PrefsCoordinator` the instant the flow ends, so the map/scanner
+    /// re-weight in-session rather than waiting for a sign-in (audit docs/30).
+    private(set) var resolvedPersona: UserPrefs.Persona?
+    private(set) var resolvedInterests: [String] = []
+
     /// Stable persisted step identifiers. Navigation order is owned by
     /// `activeSteps` so optional release capabilities never depend on raw-value
     /// arithmetic.
@@ -321,6 +328,12 @@ final class OnboardingStore: NSObject, CLLocationManagerDelegate {
         let interests = selectedInterests.isEmpty
             ? OnboardingContent.skipInterests
             : Array(selectedInterests)
+
+        // Expose the resolved choices (skip-defaults folded in) so the presenter
+        // can adopt them into PrefsCoordinator immediately — without this the
+        // signed-out map/scanner ran the neutral lens all session (audit docs/30).
+        resolvedPersona = persona
+        resolvedInterests = interests
 
         Haptics.play(.badgeEarned)
 

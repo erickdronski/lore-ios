@@ -28,8 +28,12 @@ extension View {
     ///     `OnboardingPrefsWriter`).
     ///   - forcePresent: bypass the gate and always show the flow (a "replay
     ///     onboarding" hook for Profile / debug). Default `false`.
-    func loreOnboarding(auth: AuthService, forcePresent: Bool = false) -> some View {
-        modifier(OnboardingPresenter(auth: auth, forcePresent: forcePresent))
+    func loreOnboarding(
+        auth: AuthService,
+        prefs: PrefsCoordinator,
+        forcePresent: Bool = false
+    ) -> some View {
+        modifier(OnboardingPresenter(auth: auth, prefsCoordinator: prefs, forcePresent: forcePresent))
     }
 }
 
@@ -39,11 +43,19 @@ struct OnboardingPresenter: ViewModifier {
     let auth: AuthService
     let forcePresent: Bool
 
+    /// The shared prefs lens, passed in explicitly (NOT via @Environment): this
+    /// modifier is applied outside `.environment(prefs)` in LoreApp, so it sits
+    /// above that injection and could not read it from the environment. Adopting
+    /// the just-chosen onboarding prefs here makes the map/scanner personalize
+    /// immediately, including on the default signed-out path (audit docs/30).
+    let prefsCoordinator: PrefsCoordinator
+
     @State private var store: OnboardingStore
     @State private var isPresented: Bool
 
-    init(auth: AuthService, forcePresent: Bool) {
+    init(auth: AuthService, prefsCoordinator: PrefsCoordinator, forcePresent: Bool) {
         self.auth = auth
+        self.prefsCoordinator = prefsCoordinator
         self.forcePresent = forcePresent
         let store = OnboardingStore(forcePresent: forcePresent)
         _store = State(initialValue: store)
@@ -76,6 +88,17 @@ struct OnboardingPresenter: ViewModifier {
             .fullScreenCover(isPresented: $isPresented) {
                 OnboardingView(store: store, prefsWriter: prefsWriter) {
                     isPresented = false
+                    // Adopt the just-staged lens so the map/scanner personalize
+                    // this session. Mirrors the Profile editor's optimistic
+                    // adopt; a later server load reconciles for signed-in users.
+                    if let persona = store.resolvedPersona {
+                        prefsCoordinator.adopt(UserPrefs(
+                            userID: auth.session?.user.id ?? "local",
+                            persona: persona,
+                            interests: store.resolvedInterests,
+                            onboarded: true
+                        ))
+                    }
                 }
             }
             .task(id: gateIdentity) { await resolvePresentationGate() }

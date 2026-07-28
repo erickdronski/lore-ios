@@ -1,5 +1,6 @@
 import MapKit
 import SwiftUI
+import UIKit
 
 /// The 2D living map, degraded-modes rung 3 surface (docs/05 §5) and the
 /// App-Review-reviewable surface from anywhere on Earth (docs/10 §5 row 4).
@@ -175,6 +176,7 @@ struct MapScreen: View {
                 PlaceCardView(place: place, onMeetCity: onMeetCity, cityTheme: model.theme)
                     .presentationBackground(.regularMaterial)
                     .presentationCornerRadius(24)
+                    .loreDossierIPadSizing()
             }
             // A ghost story opened from its wisp on the night map.
             .sheet(item: $nightStory) { story in
@@ -892,5 +894,21 @@ struct StatusChip: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
             .background(.ultraThinMaterial, in: Capsule())
+    }
+}
+
+extension View {
+    /// On iPad a plain `.sheet` becomes a small fixed form sheet that ignores
+    /// `presentationDetents`, so the deep-dive dossier renders as a cramped
+    /// floating card with its gallery clipped (audit docs/30). Promote it to a
+    /// full page presentation on iPad; iPhone keeps its detent behavior
+    /// untouched, and pre-iOS 18 is a no-op.
+    @ViewBuilder
+    func loreDossierIPadSizing() -> some View {
+        if #available(iOS 18.0, *), UIDevice.current.userInterfaceIdiom == .pad {
+            self.presentationSizing(.page)
+        } else {
+            self
+        }
     }
 }

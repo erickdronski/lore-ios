@@ -197,10 +197,11 @@ struct DealSection: View {
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(LoreColor.ink600)
                 }
-                // Preview the families — a quiet row of glyphs shows there are
-                // tours, a place to stay, a table to book… just not the
-                // specifics. Icon-only so it never truncates and stays premium;
-                // the subcopy below names them in words.
+                // Preview the families actually present as a quiet row of
+                // glyphs — the shape of the value, not the specifics. Icon-only
+                // so it never truncates and stays premium; `families` is derived
+                // from the loaded offers, so the row is always honest about
+                // what's really here.
                 HStack(spacing: 7) {
                     ForEach(families.prefix(7)) { family in
                         Image(systemName: family.icon)
@@ -212,7 +213,11 @@ struct DealSection: View {
                             .accessibilityLabel(Text(family.teaserWord))
                     }
                 }
-                Text("Real tours, stays and tables for the places you explore — named, checked, and yours with Lore+.")
+                // Category-agnostic on purpose: the surfaced offers today are
+                // checked museum admissions, and this stays accurate if more
+                // families are approved later (no "tours, stays and tables"
+                // promise the catalog doesn't yet keep).
+                Text("Real, checked offers for the places you explore — each one named, sourced, and yours with Lore+.")
                     .font(LoreType.caption)
                     .foregroundStyle(LoreColor.ink600)
                     .fixedSize(horizontal: false, vertical: true)

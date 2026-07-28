@@ -15,8 +15,11 @@ enum OfferCategory: CaseIterable, Identifiable, Hashable {
 
     init(_ raw: String) {
         switch raw.lowercased() {
-        case "tours", "tour", "experiences", "attractions": self = .tours
-        case "pass", "passes", "admission", "tickets": self = .pass
+        case "tours", "tour", "experiences": self = .tours
+        // Museum/attraction admission belongs under Passes & admission with the
+        // ticket glyph, not "Tours & experiences" (walking figure) — that is what
+        // actually ships today (source `museum`, category `attractions`).
+        case "pass", "passes", "admission", "tickets", "attractions", "museum", "museums": self = .pass
         case "stay", "hotel", "hotels", "lodging": self = .stay
         case "dine", "dining", "food", "restaurant", "restaurants": self = .dine
         case "drive", "car", "cars", "rental", "transport": self = .drive

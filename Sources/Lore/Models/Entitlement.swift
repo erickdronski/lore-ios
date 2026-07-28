@@ -10,8 +10,13 @@ struct Entitlement: Codable, Identifiable, Hashable {
     let userID: String
     /// The grant name (`lore_plus`, …).
     let entitlement: String
-    /// `active` | `trialing` | `expired` | `canceled` | `grace_period` | …
+    /// `active` | `trialing` | `expired` | `refunded` | `grace` | …
     let status: Status
+    /// When this grant's paid window closes. `nil` means open-ended (a lifetime
+    /// purchase or a founder comp). Enforced in `isActive` so a stale server
+    /// `active`/`grace` row — a Trip Pass with no Apple expiry event, or a
+    /// dropped EXPIRED webhook — can no longer over-grant Plus (audit docs/30).
+    let expiresAt: Date?
 
     /// One row per (user, entitlement).
     var id: String { "\(userID)#\(entitlement)" }
@@ -19,6 +24,7 @@ struct Entitlement: Codable, Identifiable, Hashable {
     enum CodingKeys: String, CodingKey {
         case entitlement, status
         case userID = "user_id"
+        case expiresAt = "expires_at"
     }
 
     init(from decoder: Decoder) throws {
@@ -26,13 +32,30 @@ struct Entitlement: Codable, Identifiable, Hashable {
         userID = try container.decode(String.self, forKey: .userID)
         entitlement = try container.decode(String.self, forKey: .entitlement)
         status = try container.decodeIfPresent(Status.self, forKey: .status) ?? .unknown
+        // `expires_at` is an ISO-8601 timestamptz; decode leniently so a null,
+        // missing, or unparseable value never empties the whole entitlement.
+        if let raw = try container.decodeIfPresent(String.self, forKey: .expiresAt) {
+            expiresAt = Entitlement.iso8601.date(from: raw)
+                ?? ISO8601DateFormatter().date(from: raw)
+        } else {
+            expiresAt = nil
+        }
     }
 
-    init(userID: String, entitlement: String, status: Status) {
+    init(userID: String, entitlement: String, status: Status, expiresAt: Date? = nil) {
         self.userID = userID
         self.entitlement = entitlement
         self.status = status
+        self.expiresAt = expiresAt
     }
+
+    /// Postgres `timestamptz` serializes with fractional seconds; a plain
+    /// ISO8601DateFormatter rejects those, so parse with fractional support first.
+    private static let iso8601: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
 
     /// Entitlement lifecycle states. Billing grace remains entitled while
     /// Apple retries payment; expiration and cancellation fail closed unless
@@ -41,22 +64,32 @@ struct Entitlement: Codable, Identifiable, Hashable {
         case active
         case trialing
         case expired
+        case refunded
         case canceled
-        case gracePeriod = "grace_period"
+        case gracePeriod = "grace"
         case unknown
 
         /// Forward-compatible: unrecognized statuses decode as `.unknown`
-        /// (which does NOT unlock, failing closed).
+        /// (which does NOT unlock, failing closed). Accepts the legacy
+        /// `grace_period` spelling as well as the canonical server `grace`.
         init(from decoder: Decoder) throws {
             let raw = try decoder.singleValueContainer().decode(String.self)
+            if raw == "grace_period" { self = .gracePeriod; return }
             self = Status(rawValue: raw) ?? .unknown
         }
     }
 
     /// True when this grant currently confers access. A billing grace period is
     /// paid access under Apple's subscription lifecycle and must not strand a
-    /// traveler while the App Store retries payment.
-    var isActive: Bool {
-        status == .active || status == .trialing || status == .gracePeriod
+    /// traveler while the App Store retries payment — but an expired window
+    /// never unlocks, even if the stored status still reads active/grace.
+    func isActive(asOf now: Date = Date()) -> Bool {
+        let statusGrants = status == .active || status == .trialing || status == .gracePeriod
+        guard statusGrants else { return false }
+        if let expiresAt { return expiresAt > now }
+        return true
     }
+
+    /// Non-parameterized accessor for call sites that don't thread a clock.
+    var isActive: Bool { isActive() }
 }

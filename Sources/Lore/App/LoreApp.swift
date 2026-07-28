@@ -117,7 +117,7 @@ struct LoreApp: App {
                 // (Amber is reserved for the world: pins, outlines, beacon —
                 // brand/DESIGN.md §4). brass700 is the AA-safe brass on Bone.
                 .tint(LoreColor.brass700)
-                .loreOnboarding(auth: auth)
+                .loreOnboarding(auth: auth, prefs: prefs)
         }
     }
 }
