@@ -1,21 +1,24 @@
 name: App Store · Preflight / Submit
 
-# Two manual, API-only operations against App Store Connect:
-#   preflight — READ-ONLY audit of the real submission state (changes nothing)
-#   submit    — submits the editable version for App Store review
+# Manual, API-only operations against App Store Connect:
+#   preflight   — READ-ONLY audit of the real submission state (changes nothing)
+#   submit      — submits the editable version for App Store review
+#   swap-latest — swaps the newest processed build onto the version and resubmits
+#                 (cancels the in-progress submission first if one exists)
 # Runs on Linux: pure ASC API calls, no Xcode, no Simulator, 1x runner cost.
 
 on:
   workflow_dispatch:
     inputs:
       action:
-        description: "preflight (read-only audit) or submit (sends for review)"
+        description: "preflight (audit), submit, or swap-latest (new build + resubmit)"
         required: true
         default: preflight
         type: choice
         options:
           - preflight
           - submit
+          - swap-latest
 
 concurrency:
   group: app-store-preflight
@@ -45,8 +48,8 @@ jobs:
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_KEY_CONTENT: ${{ secrets.ASC_KEY_CONTENT }}
         run: |
-          if [ "${{ inputs.action }}" = "submit" ]; then
-            bundle exec fastlane submit_for_review
-          else
-            bundle exec fastlane preflight
-          fi
+          case "${{ inputs.action }}" in
+            submit)      bundle exec fastlane submit_for_review ;;
+            swap-latest) bundle exec fastlane swap_latest_build_and_resubmit ;;
+            *)           bundle exec fastlane preflight ;;
+          esac

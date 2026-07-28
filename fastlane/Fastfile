@@ -293,6 +293,53 @@ platform :ios do
     UI.success("Submitted #{version.version_string} build #{build.version} for App Store review.")
   end
 
+  desc "Swap the newest processed build onto the editable version and (re)submit"
+  lane :swap_latest_build_and_resubmit do
+    asc_token!
+    platform = Spaceship::ConnectAPI::Platform::IOS
+    app = Spaceship::ConnectAPI::App.find(BUNDLE_ID)
+    UI.user_error!("No app for #{BUNDLE_ID}") if app.nil?
+    version = app.get_edit_app_store_version
+    UI.user_error!("No editable version to submit") if version.nil?
+
+    # Newest fully-processed build. A build still in PROCESSING cannot be
+    # attached, so require VALID and fail loudly rather than silently leaving
+    # the older build in place.
+    builds = Spaceship::ConnectAPI::Build.all(
+      app_id: app.id, version: version.version_string,
+      processing_states: "VALID", sort: "-uploadedDate", limit: 1,
+    )
+    newest = builds&.first
+    UI.user_error!(
+      "No VALID build for #{version.version_string} yet — it is still processing. Re-run once processing completes.",
+    ) if newest.nil?
+
+    current = version.get_build
+    if current&.id == newest.id
+      UI.important("Version #{version.version_string} already carries build #{newest.version}; no swap needed.")
+    else
+      UI.important("Swapping build #{current&.version || 'none'} -> #{newest.version} on #{version.version_string}.")
+      # An existing review submission locks the version's build; cancel it before
+      # reselecting, then a fresh submission carries the new build in.
+      existing = app.get_in_progress_review_submission(platform: platform)
+      unless existing.nil?
+        UI.important("Cancelling the in-progress review submission to unlock the build.")
+        existing.cancel_submission
+      end
+      version.select_build(build_id: newest.id)
+    end
+
+    submission = app.get_in_progress_review_submission(platform: platform)
+    submission = app.create_review_submission(platform: platform) if submission.nil?
+    begin
+      submission.add_app_store_version_to_review_items(app_store_version_id: version.id)
+    rescue => e
+      raise e unless e.message =~ /already|exists|duplicate/i
+    end
+    submission.submit_for_review
+    UI.success("Resubmitted #{version.version_string} build #{newest.version} for App Store review.")
+  end
+
   desc "Build Lore and upload the build to TestFlight"
   lane :beta do
     # Local/manual invocations cannot bypass tests. CI sets LORE_TESTED=1 only
