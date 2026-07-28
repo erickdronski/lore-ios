@@ -350,6 +350,24 @@ platform :ios do
     UI.success("Resubmitted #{version.version_string} build #{newest.version} for App Store review.")
   end
 
+  desc "Set the editable version to release automatically after approval"
+  lane :set_auto_release do
+    asc_token!
+    app = Spaceship::ConnectAPI::App.find(BUNDLE_ID)
+    UI.user_error!("No app for #{BUNDLE_ID}") if app.nil?
+    version = app.get_edit_app_store_version
+    UI.user_error!("No editable version") if version.nil?
+
+    target = Spaceship::ConnectAPI::AppStoreVersion::ReleaseType::AFTER_APPROVAL
+    if version.release_type == target
+      UI.important("#{version.version_string} is already set to auto-release after approval.")
+    else
+      UI.important("Setting #{version.version_string} release: #{version.release_type} -> #{target}.")
+      version.update(attributes: { releaseType: target })
+      UI.success("#{version.version_string} will now release automatically once approved.")
+    end
+  end
+
   desc "Build Lore and upload the build to TestFlight"
   lane :beta do
     # Local/manual invocations cannot bypass tests. CI sets LORE_TESTED=1 only

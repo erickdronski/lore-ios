@@ -19,6 +19,7 @@ on:
           - preflight
           - submit
           - swap-latest
+          - auto-release
 
 concurrency:
   group: app-store-preflight
@@ -49,7 +50,8 @@ jobs:
           ASC_KEY_CONTENT: ${{ secrets.ASC_KEY_CONTENT }}
         run: |
           case "${{ inputs.action }}" in
-            submit)      bundle exec fastlane submit_for_review ;;
-            swap-latest) bundle exec fastlane swap_latest_build_and_resubmit ;;
-            *)           bundle exec fastlane preflight ;;
+            submit)       bundle exec fastlane submit_for_review ;;
+            swap-latest)  bundle exec fastlane swap_latest_build_and_resubmit ;;
+            auto-release) bundle exec fastlane set_auto_release ;;
+            *)            bundle exec fastlane preflight ;;
           esac
