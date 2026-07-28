@@ -3,6 +3,123 @@ import XCTest
 
 @MainActor
 final class PremiumEntitlementTests: XCTestCase {
+    func testEntitlementDecodesAppleEnvironmentAndFractionalExpiry() throws {
+        let production = try decodeEntitlement(
+            environment: "Production",
+            expiresAt: "2026-07-28T15:00:00.250Z"
+        )
+        let sandbox = try decodeEntitlement(environment: "sandbox")
+        let legacy = try decodeEntitlement(environment: nil)
+        let unknown = try decodeEntitlement(environment: "Preview")
+
+        XCTAssertEqual(production.environment, .production)
+        XCTAssertNotNil(production.expiresAt)
+        XCTAssertEqual(sandbox.environment, .sandbox)
+        XCTAssertNil(legacy.environment)
+        XCTAssertEqual(unknown.environment, .unknown)
+    }
+
+    func testProductionPolicyRejectsSandboxButPreservesProductionAndLegacyRows() {
+        let now = Date(timeIntervalSince1970: 10_000)
+
+        XCTAssertTrue(EntitlementEnvironmentPolicy.production.grantsAccess(
+            entitlement(.active, environment: .production),
+            asOf: now
+        ))
+        XCTAssertTrue(EntitlementEnvironmentPolicy.production.grantsAccess(
+            entitlement(.active),
+            asOf: now
+        ))
+        XCTAssertFalse(EntitlementEnvironmentPolicy.production.grantsAccess(
+            entitlement(.active, environment: .sandbox),
+            asOf: now
+        ))
+        XCTAssertFalse(EntitlementEnvironmentPolicy.production.grantsAccess(
+            entitlement(.active, environment: .unknown),
+            asOf: now
+        ))
+    }
+
+    func testSandboxPolicyAcceptsProductionSandboxAndLegacyRows() {
+        let now = Date(timeIntervalSince1970: 10_000)
+
+        for environment in [
+            Entitlement.Environment.production,
+            .sandbox,
+            nil
+        ] {
+            XCTAssertTrue(EntitlementEnvironmentPolicy.sandbox.grantsAccess(
+                entitlement(.active, environment: environment),
+                asOf: now
+            ))
+        }
+    }
+
+    func testRuntimePolicyUsesDebugOrSandboxReceipt() {
+        let sandboxReceipt = URL(fileURLWithPath: "/receipt/sandboxReceipt")
+        let productionReceipt = URL(fileURLWithPath: "/receipt/receipt")
+
+        XCTAssertEqual(
+            EntitlementEnvironmentPolicy.resolved(
+                receiptURL: sandboxReceipt,
+                isDebugBuild: false
+            ),
+            .sandbox
+        )
+        XCTAssertEqual(
+            EntitlementEnvironmentPolicy.resolved(
+                receiptURL: productionReceipt,
+                isDebugBuild: false
+            ),
+            .production
+        )
+        XCTAssertEqual(
+            EntitlementEnvironmentPolicy.resolved(
+                receiptURL: nil,
+                isDebugBuild: true
+            ),
+            .sandbox
+        )
+        XCTAssertEqual(
+            EntitlementEnvironmentPolicy.resolved(
+                receiptURL: nil,
+                isDebugBuild: false
+            ),
+            .production
+        )
+    }
+
+    func testEntitlementExpiryBoundaryFailsClosed() {
+        let expiry = Date(timeIntervalSince1970: 10_000)
+        let grant = entitlement(
+            .active,
+            expiresAt: expiry,
+            environment: .production
+        )
+
+        XCTAssertTrue(grant.isActive(asOf: expiry.addingTimeInterval(-0.001)))
+        XCTAssertFalse(grant.isActive(asOf: expiry))
+        XCTAssertFalse(grant.isActive(asOf: expiry.addingTimeInterval(0.001)))
+    }
+
+    func testEntitlementStoreAppliesEnvironmentPolicyToServerRows() {
+        let now = Date(timeIntervalSince1970: 10_000)
+        let sandboxGrant = entitlement(.active, environment: .sandbox)
+        let productionStore = EntitlementStore(
+            entitlement: sandboxGrant,
+            now: { now },
+            environmentPolicy: .production
+        )
+        let sandboxStore = EntitlementStore(
+            entitlement: sandboxGrant,
+            now: { now },
+            environmentPolicy: .sandbox
+        )
+
+        XCTAssertFalse(productionStore.isPlus)
+        XCTAssertTrue(sandboxStore.isPlus)
+    }
+
     func testServerStatusesPreserveGraceButFailClosedAfterCancellationOrExpiration() {
         XCTAssertTrue(entitlement(.active).isActive)
         XCTAssertTrue(entitlement(.trialing).isActive)
@@ -95,22 +212,26 @@ final class PremiumEntitlementTests: XCTestCase {
         XCTAssertNotNil(EntitlementCachePolicy.usable(
             record,
             for: "traveler-a",
-            now: verifiedAt.addingTimeInterval(EntitlementCachePolicy.maximumAge)
+            now: verifiedAt.addingTimeInterval(EntitlementCachePolicy.maximumAge),
+            environmentPolicy: .production
         ))
         XCTAssertNil(EntitlementCachePolicy.usable(
             record,
             for: "traveler-b",
-            now: verifiedAt.addingTimeInterval(60)
+            now: verifiedAt.addingTimeInterval(60),
+            environmentPolicy: .production
         ))
         XCTAssertNil(EntitlementCachePolicy.usable(
             record,
             for: "traveler-a",
-            now: verifiedAt.addingTimeInterval(EntitlementCachePolicy.maximumAge + 1)
+            now: verifiedAt.addingTimeInterval(EntitlementCachePolicy.maximumAge + 1),
+            environmentPolicy: .production
         ))
         XCTAssertNil(EntitlementCachePolicy.usable(
             record,
             for: "traveler-a",
-            now: verifiedAt.addingTimeInterval(-1)
+            now: verifiedAt.addingTimeInterval(-1),
+            environmentPolicy: .production
         ))
     }
 
@@ -121,8 +242,34 @@ final class PremiumEntitlementTests: XCTestCase {
                 entitlement: entitlement(status, userID: "traveler"),
                 verifiedAt: now
             )
-            XCTAssertNil(EntitlementCachePolicy.usable(record, for: "traveler", now: now))
+            XCTAssertNil(EntitlementCachePolicy.usable(
+                record,
+                for: "traveler",
+                now: now,
+                environmentPolicy: .production
+            ))
         }
+    }
+
+    func testOfflineCacheHonorsEnvironmentPolicy() {
+        let now = Date(timeIntervalSince1970: 100_000)
+        let record = CachedEntitlementRecord(
+            entitlement: entitlement(.active, environment: .sandbox),
+            verifiedAt: now
+        )
+
+        XCTAssertNil(EntitlementCachePolicy.usable(
+            record,
+            for: "traveler",
+            now: now,
+            environmentPolicy: .production
+        ))
+        XCTAssertNotNil(EntitlementCachePolicy.usable(
+            record,
+            for: "traveler",
+            now: now,
+            environmentPolicy: .sandbox
+        ))
     }
 
     func testJWTSubjectBindsCacheToAuthenticatedTraveler() throws {
@@ -175,9 +322,34 @@ final class PremiumEntitlementTests: XCTestCase {
 
     private func entitlement(
         _ status: Entitlement.Status,
-        userID: String = "traveler"
+        userID: String = "traveler",
+        expiresAt: Date? = nil,
+        environment: Entitlement.Environment? = nil
     ) -> Entitlement {
-        Entitlement(userID: userID, entitlement: StoreKitService.entitlementName, status: status)
+        Entitlement(
+            userID: userID,
+            entitlement: StoreKitService.entitlementName,
+            status: status,
+            expiresAt: expiresAt,
+            environment: environment
+        )
+    }
+
+    private func decodeEntitlement(
+        environment: String?,
+        expiresAt: String? = nil
+    ) throws -> Entitlement {
+        var json: [String: Any] = [
+            "user_id": "traveler",
+            "entitlement": StoreKitService.entitlementName,
+            "status": "active"
+        ]
+        if let environment { json["environment"] = environment }
+        if let expiresAt { json["expires_at"] = expiresAt }
+        return try JSONDecoder().decode(
+            Entitlement.self,
+            from: JSONSerialization.data(withJSONObject: json)
+        )
     }
 
     private func snapshot(

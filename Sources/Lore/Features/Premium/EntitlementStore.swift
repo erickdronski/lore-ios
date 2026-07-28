@@ -15,12 +15,13 @@ enum EntitlementCachePolicy {
     static func usable(
         _ record: CachedEntitlementRecord?,
         for userID: String?,
-        now: Date
+        now: Date,
+        environmentPolicy: EntitlementEnvironmentPolicy
     ) -> Entitlement? {
         guard let record,
               let userID,
               record.entitlement.userID == userID,
-              record.entitlement.isActive(asOf: now),
+              environmentPolicy.grantsAccess(record.entitlement, asOf: now),
               now.timeIntervalSince(record.verifiedAt) >= 0,
               now.timeIntervalSince(record.verifiedAt) <= maximumAge
         else { return nil }
@@ -83,7 +84,9 @@ enum EntitlementCachePolicy {
 @MainActor
 final class EntitlementStore {
     private enum CacheKey {
-        static let verifiedEntitlement = "lore.premium.cachedEntitlement.v1"
+        // v1 did not retain Apple's environment, so it cannot safely
+        // distinguish a historical Sandbox grant from a legacy non-Apple row.
+        static let verifiedEntitlement = "lore.premium.cachedEntitlement.v2"
     }
 
     /// The grant currently on file, if we've loaded one. `nil` before the first
@@ -111,6 +114,7 @@ final class EntitlementStore {
 
     private let defaults: UserDefaults
     @ObservationIgnored private let now: () -> Date
+    private let environmentPolicy: EntitlementEnvironmentPolicy
     private var cachedRecord: CachedEntitlementRecord?
     private var activeCachedEntitlement: Entitlement?
 
@@ -130,8 +134,13 @@ final class EntitlementStore {
         // Settings toggle. Compiled out of Release entirely, never ships.
         if EntitlementStore.devForcePlus { return true }
         #endif
-        let server = entitlement?.isActive ?? false
-        let cached = activeCachedEntitlement?.isActive ?? false
+        let currentDate = now()
+        let server = entitlement.map {
+            environmentPolicy.grantsAccess($0, asOf: currentDate)
+        } ?? false
+        let cached = activeCachedEntitlement.map {
+            environmentPolicy.grantsAccess($0, asOf: currentDate)
+        } ?? false
         let onDevice = storeKit?.hasActiveEntitlement ?? false
         return server || cached || onDevice
     }
@@ -152,19 +161,28 @@ final class EntitlementStore {
     /// Unions the server status with StoreKit's introductory-period read so the
     /// trial framing shows even when only the on-device path knows about it.
     var isTrialing: Bool {
-        (entitlement?.status == .trialing)
-            || (activeCachedEntitlement?.status == .trialing)
+        let currentDate = now()
+        let serverTrial = entitlement.map {
+            $0.status == .trialing && environmentPolicy.grantsAccess($0, asOf: currentDate)
+        } ?? false
+        let cachedTrial = activeCachedEntitlement.map {
+            $0.status == .trialing && environmentPolicy.grantsAccess($0, asOf: currentDate)
+        } ?? false
+        return serverTrial
+            || cachedTrial
             || (storeKit?.isInIntroPeriod ?? false)
     }
 
     init(
         entitlement: Entitlement? = nil,
         defaults: UserDefaults = .standard,
-        now: @escaping () -> Date = Date.init
+        now: @escaping () -> Date = Date.init,
+        environmentPolicy: EntitlementEnvironmentPolicy = .current
     ) {
         self.entitlement = entitlement
         self.defaults = defaults
         self.now = now
+        self.environmentPolicy = environmentPolicy
         if let data = defaults.data(forKey: CacheKey.verifiedEntitlement) {
             cachedRecord = try? JSONDecoder().decode(CachedEntitlementRecord.self, from: data)
         }
@@ -207,7 +225,8 @@ final class EntitlementStore {
             activeCachedEntitlement = EntitlementCachePolicy.usable(
                 cachedRecord,
                 for: currentUserID,
-                now: now()
+                now: now(),
+                environmentPolicy: environmentPolicy
             )
             isUsingCachedEntitlement = activeCachedEntitlement != nil
             lastError = isUsingCachedEntitlement

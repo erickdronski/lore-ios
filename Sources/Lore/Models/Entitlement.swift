@@ -5,13 +5,17 @@ import Foundation
 /// gate is open.
 /// `GET /rest/v1/entitlements` (with a user bearer token)
 ///
-/// Live columns: `user_id`, `entitlement`, `status`.
+/// Live columns: `user_id`, `entitlement`, `status`, `expires_at`,
+/// `environment`.
 struct Entitlement: Codable, Identifiable, Hashable {
     let userID: String
     /// The grant name (`lore_plus`, …).
     let entitlement: String
     /// `active` | `trialing` | `expired` | `refunded` | `grace` | …
     let status: Status
+    /// Apple transaction environment. Legacy non-Apple grants predate this
+    /// column and decode as `nil` so they remain compatible.
+    let environment: Environment?
     /// When this grant's paid window closes. `nil` means open-ended (a lifetime
     /// purchase or a founder comp). Enforced in `isActive` so a stale server
     /// `active`/`grace` row — a Trip Pass with no Apple expiry event, or a
@@ -25,6 +29,7 @@ struct Entitlement: Codable, Identifiable, Hashable {
         case entitlement, status
         case userID = "user_id"
         case expiresAt = "expires_at"
+        case environment
     }
 
     init(from decoder: Decoder) throws {
@@ -32,6 +37,7 @@ struct Entitlement: Codable, Identifiable, Hashable {
         userID = try container.decode(String.self, forKey: .userID)
         entitlement = try container.decode(String.self, forKey: .entitlement)
         status = try container.decodeIfPresent(Status.self, forKey: .status) ?? .unknown
+        environment = try container.decodeIfPresent(Environment.self, forKey: .environment)
         // `expires_at` is an ISO-8601 timestamptz; decode leniently so a null,
         // missing, or unparseable value never empties the whole entitlement.
         if let raw = try container.decodeIfPresent(String.self, forKey: .expiresAt) {
@@ -42,11 +48,18 @@ struct Entitlement: Codable, Identifiable, Hashable {
         }
     }
 
-    init(userID: String, entitlement: String, status: Status, expiresAt: Date? = nil) {
+    init(
+        userID: String,
+        entitlement: String,
+        status: Status,
+        expiresAt: Date? = nil,
+        environment: Environment? = nil
+    ) {
         self.userID = userID
         self.entitlement = entitlement
         self.status = status
         self.expiresAt = expiresAt
+        self.environment = environment
     }
 
     /// Postgres `timestamptz` serializes with fractional seconds; a plain
@@ -79,6 +92,24 @@ struct Entitlement: Codable, Identifiable, Hashable {
         }
     }
 
+    /// Apple names transaction environments with title-case strings in signed
+    /// transaction data. Unknown non-null values fail closed; only a missing
+    /// value is treated as a compatible legacy non-Apple grant.
+    enum Environment: String, Codable, Hashable {
+        case production = "Production"
+        case sandbox = "Sandbox"
+        case unknown
+
+        init(from decoder: Decoder) throws {
+            let raw = try decoder.singleValueContainer().decode(String.self)
+            switch raw.lowercased() {
+            case "production": self = .production
+            case "sandbox": self = .sandbox
+            default: self = .unknown
+            }
+        }
+    }
+
     /// True when this grant currently confers access. A billing grace period is
     /// paid access under Apple's subscription lifecycle and must not strand a
     /// traveler while the App Store retries payment — but an expired window
@@ -92,4 +123,61 @@ struct Entitlement: Codable, Identifiable, Hashable {
 
     /// Non-parameterized accessor for call sites that don't thread a clock.
     var isActive: Bool { isActive() }
+}
+
+/// Controls which server-side Apple entitlement environments may unlock this
+/// installation. App Store builds accept Production rows only. TestFlight and
+/// local sandbox builds accept both Production and Sandbox rows.
+struct EntitlementEnvironmentPolicy: Equatable {
+    enum Runtime: Equatable {
+        case production
+        case sandbox
+    }
+
+    let runtime: Runtime
+
+    static let production = EntitlementEnvironmentPolicy(runtime: .production)
+    static let sandbox = EntitlementEnvironmentPolicy(runtime: .sandbox)
+
+    static var current: EntitlementEnvironmentPolicy {
+        resolved(
+            receiptURL: Bundle.main.appStoreReceiptURL,
+            isDebugBuild: isDebugBuild
+        )
+    }
+
+    /// Kept parameterized so release/TestFlight detection can be tested without
+    /// depending on the host test bundle's receipt or build configuration.
+    static func resolved(
+        receiptURL: URL?,
+        isDebugBuild: Bool
+    ) -> EntitlementEnvironmentPolicy {
+        if isDebugBuild || receiptURL?.lastPathComponent.lowercased() == "sandboxreceipt" {
+            return .sandbox
+        }
+        return .production
+    }
+
+    func allows(_ entitlement: Entitlement) -> Bool {
+        switch entitlement.environment {
+        case nil, .production:
+            return true
+        case .sandbox:
+            return runtime == .sandbox
+        case .unknown:
+            return false
+        }
+    }
+
+    func grantsAccess(_ entitlement: Entitlement, asOf now: Date) -> Bool {
+        allows(entitlement) && entitlement.isActive(asOf: now)
+    }
+
+    private static var isDebugBuild: Bool {
+        #if DEBUG
+        true
+        #else
+        false
+        #endif
+    }
 }
