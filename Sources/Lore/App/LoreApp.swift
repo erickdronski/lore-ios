@@ -263,6 +263,7 @@ struct RootTabView: View {
             PlaceCardView(place: routed.place, onMeetCity: { routedPlace = nil; meetCity = $0 }, autoDive: routed.autoDive)
                 .presentationBackground(.regularMaterial)
                 .presentationCornerRadius(24)
+                .loreDossierIPadSizing()
         }
         .sheet(item: $routedStory) { story in
             StorySheet(story: story)

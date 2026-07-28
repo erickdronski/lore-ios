@@ -1,5 +1,6 @@
 import XCTest
 import CoreLocation
+import AVFoundation
 @testable import Lore
 
 /// Unit tests for the scanner's pure honesty math, the logic that decides
@@ -34,6 +35,42 @@ final class ScannerLogicTests: XCTestCase {
     func testDistanceLabel() {
         XCTAssertEqual(BearingProjector.distanceLabel(meters: 604), "600 m")
         XCTAssertEqual(BearingProjector.distanceLabel(meters: 1200), "1.2 km")
+    }
+
+    // MARK: - Camera permission rationale
+
+    func testCameraPermissionWaitsForRationaleBeforeFirstSystemPrompt() {
+        XCTAssertEqual(
+            ScannerCameraService.permissionAction(
+                for: .notDetermined,
+                requestPermissionIfNeeded: false
+            ),
+            .waitForRationale
+        )
+        XCTAssertEqual(
+            ScannerCameraService.permissionAction(
+                for: .notDetermined,
+                requestPermissionIfNeeded: true
+            ),
+            .requestAccess
+        )
+    }
+
+    func testAuthorizedCameraStartsWithoutRationale() {
+        XCTAssertEqual(
+            ScannerCameraService.permissionAction(
+                for: .authorized,
+                requestPermissionIfNeeded: false
+            ),
+            .startSession
+        )
+        XCTAssertEqual(
+            ScannerCameraService.permissionAction(
+                for: .denied,
+                requestPermissionIfNeeded: true
+            ),
+            .denied
+        )
     }
 
     // MARK: - ScannerRanking scoring

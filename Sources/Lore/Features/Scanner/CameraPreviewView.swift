@@ -15,6 +15,14 @@ import UIKit
 /// The AR pipeline (ARKit + GARSession) replaces this session wholesale at P1
 /// (docs/05 §2.2 step 1).
 final class ScannerCameraService: NSObject, AVCaptureMetadataOutputObjectsDelegate, AVCaptureVideoDataOutputSampleBufferDelegate, @unchecked Sendable {
+    enum PermissionAction: Equatable {
+        case startSession
+        case requestAccess
+        case waitForRationale
+        case denied
+        case unavailable
+    }
+
     let session = AVCaptureSession()
     private let sessionQueue = DispatchQueue(label: "com.erickdronski.lore.camera-session")
     private var configured = false
@@ -71,14 +79,40 @@ final class ScannerCameraService: NSObject, AVCaptureMetadataOutputObjectsDelega
     private var lastMarkerPayload: String?
     private var lastMarkerAt: TimeInterval = 0
 
-    /// Requests camera permission if needed, then configures + starts the
-    /// session off the main thread. Surfaces a denial via `onPermissionDenied`
-    /// so the scanner shows a Settings path instead of dead-ending on black.
-    func start() {
-        switch AVCaptureDevice.authorizationStatus(for: .video) {
+    var needsPermissionRationale: Bool {
+        Self.permissionAction(
+            for: AVCaptureDevice.authorizationStatus(for: .video),
+            requestPermissionIfNeeded: false
+        ) == .waitForRationale
+    }
+
+    static func permissionAction(
+        for status: AVAuthorizationStatus,
+        requestPermissionIfNeeded: Bool
+    ) -> PermissionAction {
+        switch status {
         case .authorized:
-            startSession()
+            .startSession
         case .notDetermined:
+            requestPermissionIfNeeded ? .requestAccess : .waitForRationale
+        case .denied, .restricted:
+            .denied
+        @unknown default:
+            .unavailable
+        }
+    }
+
+    /// Configures + starts the session off the main thread. A first system
+    /// permission prompt is only allowed after the scanner has shown its
+    /// in-app rationale; already-authorized travelers start without delay.
+    func start(requestPermissionIfNeeded: Bool) {
+        switch Self.permissionAction(
+            for: AVCaptureDevice.authorizationStatus(for: .video),
+            requestPermissionIfNeeded: requestPermissionIfNeeded
+        ) {
+        case .startSession:
+            startSession()
+        case .requestAccess:
             AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
                 guard let self else { return }
                 if granted {
@@ -87,9 +121,11 @@ final class ScannerCameraService: NSObject, AVCaptureMetadataOutputObjectsDelega
                     DispatchQueue.main.async { self.onPermissionDenied?() }
                 }
             }
-        case .denied, .restricted:
+        case .waitForRationale:
+            break
+        case .denied:
             DispatchQueue.main.async { [weak self] in self?.onPermissionDenied?() }
-        @unknown default:
+        case .unavailable:
             DispatchQueue.main.async { [weak self] in
                 self?.onUnavailable?("The camera isn't available on this device right now.")
             }

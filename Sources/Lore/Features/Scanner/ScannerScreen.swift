@@ -55,6 +55,7 @@ struct ScannerScreen: View {
     @State private var showPaywall = false
     @State private var showSignIn = false
     @State private var isVisible = false
+    @State private var showCameraRationale = false
     @State private var showCloudIdentificationDisclosure = false
     @AppStorage("lore.cloudLandmarkDisclosureAccepted.v1")
     private var acceptedCloudIdentificationDisclosure = false
@@ -152,7 +153,9 @@ struct ScannerScreen: View {
 
                 // Camera/location denied: a first-class Settings path, never a
                 // black viewfinder with pins floating on nothing.
-                if model.permissionDenied {
+                if showCameraRationale {
+                    cameraRationaleOverlay
+                } else if model.permissionDenied {
                     permissionOverlay
                 } else if let message = model.cameraUnavailableMessage {
                     cameraUnavailableOverlay(message: message)
@@ -165,6 +168,7 @@ struct ScannerScreen: View {
                 .presentationDetents([.medium, .large])
                 .presentationBackground(.regularMaterial)
                 .presentationCornerRadius(24)
+                .loreDossierIPadSizing()
         }
         .sheet(item: $model.selectedStory) { story in
             StorySheet(story: story)
@@ -194,7 +198,12 @@ struct ScannerScreen: View {
         }
         .task {
             model.apply(prefs: prefs)
-            await model.start(city: city)
+            let needsCameraRationale = model.needsCameraPermissionRationale
+            showCameraRationale = needsCameraRationale
+            await model.start(
+                city: city,
+                requestCameraPermission: !needsCameraRationale
+            )
         }
         .onChange(of: prefs) { _, newValue in model.apply(prefs: newValue) }
         .onChange(of: city) { _, newValue in
@@ -207,7 +216,11 @@ struct ScannerScreen: View {
         // Tab switches are covered by onAppear/onDisappear.
         .onChange(of: scenePhase) { _, phase in
             guard isVisible else { return }
-            if phase == .active { model.resumeSensors() } else { model.stopSensors() }
+            if phase == .active {
+                model.resumeSensors(requestCameraPermission: !showCameraRationale)
+            } else {
+                model.stopSensors()
+            }
         }
         // A fresh on-device read while nothing is locked — a gentle tick so the
         // user feels the scanner respond to what they aim at (never a buzz: the
@@ -688,6 +701,45 @@ struct ScannerScreen: View {
         .transition(.move(edge: .bottom).combined(with: .opacity))
     }
 
+    // MARK: Camera permission
+
+    /// A first-run primer shown before Apple's system dialog. The camera does
+    /// not start or request access until Continue; returning travelers who have
+    /// already decided never see this surface.
+    private var cameraRationaleOverlay: some View {
+        ZStack {
+            LoreColor.ink950.opacity(0.97).ignoresSafeArea()
+            VStack(spacing: 16) {
+                Image(systemName: "camera.viewfinder")
+                    .font(.system(size: 42, weight: .light))
+                    .foregroundStyle(LoreColor.amber)
+                Text("Reveal the stories around you")
+                    .font(LoreType.displayM)
+                    .foregroundStyle(LoreColor.bone)
+                    .multilineTextAlignment(.center)
+                Text("Lore uses your camera to match nearby places and layer their stories into the view. Live scanning stays on your device.")
+                    .font(LoreType.body)
+                    .foregroundStyle(LoreColor.bone.opacity(0.78))
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("Continue") {
+                    showCameraRationale = false
+                    model.requestCameraAccess()
+                }
+                .font(LoreType.button)
+                .foregroundStyle(LoreColor.ink)
+                .padding(.horizontal, 22)
+                .frame(height: 46)
+                .background(BrassSheenSurface(shape: Capsule(), sweepOnAppear: false))
+                .buttonStyle(.plain)
+            }
+            .padding(28)
+            .frame(maxWidth: 430)
+        }
+        .accessibilityElement(children: .contain)
+        .transition(.opacity)
+    }
+
     // MARK: Permission dead-end
 
     /// Shown when the camera or location was denied: an honest explanation and a
@@ -1143,13 +1195,20 @@ final class ScannerModel {
     /// only refetches when it actually changed.
     private var loadedCity: String?
 
+    var needsCameraPermissionRationale: Bool {
+        camera.needsPermissionRationale
+    }
+
     /// Adopt the shared curation prefs (persona lens). Cheap and idempotent —
     /// called on appear and whenever the app's prefs change.
     func apply(prefs: UserPrefs?) {
         self.prefs = prefs
     }
 
-    func start(city: String = Config.defaultCity) async {
+    func start(
+        city: String = Config.defaultCity,
+        requestCameraPermission: Bool = true
+    ) async {
         // Marker rung (docs/05 §5, rung 0): a scanned Lore QR is ground truth
         // at a known point, an instant honest resolve no GPS could earn.
         camera.onMarkerSlug = { [weak self] slug in
@@ -1173,7 +1232,7 @@ final class ScannerModel {
         camera.onFrame = { buffer, orientation in
             recognizer.recognize(pixelBuffer: buffer, orientation: orientation)
         }
-        camera.start()
+        camera.start(requestPermissionIfNeeded: requestCameraPermission)
         pose.start()
         // A single "I'm awake and looking" pulse so raising the phone always
         // *feels* like the scan began (the old scanner started dead-silent).
@@ -1241,7 +1300,7 @@ final class ScannerModel {
     /// Restart the coarse sensors after a foreground return (the content is
     /// already loaded, so this only re-wakes the camera, pose, and 5 Hz loop).
     /// Precise mode is torn down on background and re-offered, never auto-resumed.
-    func resumeSensors() {
+    func resumeSensors(requestCameraPermission: Bool = true) {
         guard !preciseMode, projectionTask == nil else { return }
         cameraDenied = false
         locationDenied = false
@@ -1250,7 +1309,7 @@ final class ScannerModel {
         camera.onFrame = { buffer, orientation in
             recognizer.recognize(pixelBuffer: buffer, orientation: orientation)
         }
-        camera.start()
+        camera.start(requestPermissionIfNeeded: requestCameraPermission)
         pose.start()
         Haptics.play(.scanAttempt)
         acquiringSince = Date()
@@ -1259,7 +1318,13 @@ final class ScannerModel {
 
     func retryCamera() {
         cameraUnavailableMessage = nil
-        camera.start()
+        camera.start(requestPermissionIfNeeded: true)
+    }
+
+    func requestCameraAccess() {
+        cameraDenied = false
+        cameraUnavailableMessage = nil
+        camera.start(requestPermissionIfNeeded: true)
     }
 
     // MARK: Precise mode (docs/05 §5 ladder, rung 1)
@@ -1312,7 +1377,7 @@ final class ScannerModel {
         guard preciseMode else { return }
         preciseMode = false
         geoAR.stop()
-        camera.start()
+        camera.start(requestPermissionIfNeeded: true)
         reproject()
     }
 
