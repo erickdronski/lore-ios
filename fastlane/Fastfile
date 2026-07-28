@@ -316,7 +316,17 @@ platform :ios do
 
     current = version.get_build
     if current&.id == newest.id
-      UI.important("Version #{version.version_string} already carries build #{newest.version}; no swap needed.")
+      # No build newer than the attached one is VALID yet. If the version is
+      # already in review, resubmitting would be a no-op at best, so stop and
+      # say so plainly rather than churn the submission. Re-run once the newer
+      # build finishes processing.
+      if %w[WAITING_FOR_REVIEW IN_REVIEW PENDING_DEVELOPER_RELEASE].include?(version.app_store_state)
+        UI.user_error!(
+          "Newest VALID build for #{version.version_string} is still #{newest.version} (the one already submitted). " \
+          "A newer build has not finished processing yet — re-run once it has.",
+        )
+      end
+      UI.important("Version #{version.version_string} already carries build #{newest.version}; resubmitting.")
     else
       UI.important("Swapping build #{current&.version || 'none'} -> #{newest.version} on #{version.version_string}.")
       # An existing review submission locks the version's build; cancel it before
