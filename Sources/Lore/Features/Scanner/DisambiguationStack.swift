@@ -4,10 +4,9 @@ import SwiftUI
 /// inside one bearing cone (a dense skyline, a row of Beaux-Arts façades) the
 /// scanner refuses to guess and instead shows one stack chip with a count.
 /// Tapping opens a distance-sorted, live-reordering list; the one the user
-/// confirms is what snaps to a Tier-A pin and (silently, opt-in) would feed a
-/// `verification` at P1, the crowd sharpening the model with every confirmed
-/// look. Here we render the honest UI and surface the confirmation callback;
-/// the network verification write is the P1 hook (docs/06 crowdsourcing).
+/// confirms opens its dossier and records local confirmation feedback. Durable
+/// crowd verification is intentionally left to a server-owned path so weighting,
+/// RLS, and self-vote rules stay enforceable.
 ///
 /// Chrome over live camera: Amber/Ink/Bone only, `material.overlay` so the
 /// camera stays legible through it (brand/DESIGN.md §3–4).

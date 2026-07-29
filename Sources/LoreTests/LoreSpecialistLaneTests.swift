@@ -40,6 +40,52 @@ final class LoreSpecialistLaneTests: XCTestCase {
         XCTAssertNotNil(JournalDraftPolicy.validationMessage(text: rejected))
     }
 
+    @MainActor
+    func testVisitStoreLoadFailureCompletesWithRetryableErrorState() async {
+        let store = VisitStore(
+            credentials: { ("user-1", "token-1") },
+            visitsLoader: { _ in throw URLError(.notConnectedToInternet) },
+            visitHistoryLoader: { _ in [] }
+        )
+
+        await store.load()
+
+        XCTAssertTrue(store.loaded)
+        XCTAssertEqual(store.lastError, "Couldn't load your visits.")
+        XCTAssertTrue(store.visitedPlaceIDs.isEmpty)
+    }
+
+    @MainActor
+    func testVisitHistoryForceRetryClearsPriorJournalSyncError() async {
+        var attempts = 0
+        let entry = VisitLogEntry(
+            placeID: "place-1",
+            visitedAt: "2026-07-29T05:00:00Z",
+            note: "Morning light",
+            photos: [],
+            legacyIsPublic: false,
+            place: nil
+        )
+        let store = VisitStore(
+            credentials: { ("user-1", "token-1") },
+            visitsLoader: { _ in [] },
+            visitHistoryLoader: { _ in
+                attempts += 1
+                if attempts == 1 { throw URLError(.timedOut) }
+                return [entry]
+            }
+        )
+
+        await store.loadHistory(force: true)
+        XCTAssertFalse(store.historyLoaded)
+        XCTAssertEqual(store.lastError, "Couldn't load your journal.")
+
+        await store.loadHistory(force: true)
+        XCTAssertTrue(store.historyLoaded)
+        XCTAssertNil(store.lastError)
+        XCTAssertEqual(store.visitHistory.map(\.placeID), ["place-1"])
+    }
+
     func testUserStatsIgnoresLegacyPublicLoreCount() throws {
         let payload = """
         {

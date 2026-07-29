@@ -1287,6 +1287,28 @@ enum IdentifyState: Equatable {
     case quotaReached  // authenticated daily quota exhausted
 }
 
+struct ScannerConfirmationFeedback: Equatable {
+    let placeName: String
+    let distanceLabel: String
+    let isAtLocation: Bool
+
+    private var displayName: String {
+        let trimmed = placeName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "Place" : trimmed
+    }
+
+    var statusLine: String {
+        "Confirmed \(displayName)"
+    }
+
+    var accessibilityAnnouncement: String {
+        if isAtLocation {
+            return "\(displayName) selected from the stack. You're here."
+        }
+        return "\(displayName) selected from the stack. \(distanceLabel) ahead."
+    }
+}
+
 enum ScannerAccessibilityAnnouncement {
     static func lockedPlace(_ ranked: ScannerRanking.Ranked) -> String {
         lockedPlace(
@@ -1449,6 +1471,10 @@ final class ScannerModel {
     /// The opt-in cloud landmark identification (Google Cloud Vision), fired one
     /// frame per explicit tap in the nothing-recognized state.
     private(set) var identifyState: IdentifyState = .idle
+    /// A short local acknowledgement after the traveler resolves a dense stack.
+    /// Durable verification remains server-owned; this only confirms selection.
+    private(set) var stackConfirmationFeedback: ScannerConfirmationFeedback?
+    private var stackConfirmationTask: Task<Void, Never>?
 
     /// Places the user has ever opened, the novelty signal (docs/12 §3 `w_fresh`).
     /// Persisted across launches so a repeat visitor stops re-scoring already-seen
@@ -1502,6 +1528,7 @@ final class ScannerModel {
     var statusLine: String {
         if loadError { return "Couldn't load \(CityPackStore.label(loadedCity ?? "city")) stories" }
         if let preciseFallbackNotice { return preciseFallbackNotice }
+        if let stackConfirmationFeedback { return stackConfirmationFeedback.statusLine }
         if isTransitioningToPreciseMode { return "Starting precise mode…" }
         if preciseMode {
             // The precise ladder rung narrated honestly: localizing keeps
@@ -1702,6 +1729,9 @@ final class ScannerModel {
         cityRosterTask = nil
         preciseNoticeTask?.cancel()
         preciseNoticeTask = nil
+        stackConfirmationTask?.cancel()
+        stackConfirmationTask = nil
+        stackConfirmationFeedback = nil
         tierStabilizer.reset()
     }
 
@@ -1933,14 +1963,30 @@ final class ScannerModel {
         }
     }
 
-    /// A stack candidate the user confirmed → it becomes the locked pin and
-    /// (P1) would feed a `verification` (docs/12 §2.1 confirm-a-look).
+    /// A stack candidate the user confirmed → it becomes the selected place. This
+    /// is immediate local scanner feedback; durable crowd verification must go
+    /// through a server-owned path so RLS, weighting, and self-vote rules hold.
     func confirmFromStack(_ ranked: ScannerRanking.Ranked) {
         seenPlaceIDs.insert(ranked.place.id)
+        let feedback = ScannerConfirmationFeedback(
+            placeName: ranked.place.name,
+            distanceLabel: ranked.projected.distanceLabel,
+            isAtLocation: ranked.projected.isAtLocation
+        )
+        stackConfirmationFeedback = feedback
+        stackConfirmationTask?.cancel()
+        stackConfirmationTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(4))
+            guard !Task.isCancelled else { return }
+            if self?.stackConfirmationFeedback == feedback {
+                self?.stackConfirmationFeedback = nil
+            }
+        }
+        UIAccessibility.post(
+            notification: .announcement,
+            argument: feedback.accessibilityAnnouncement
+        )
         select(ranked.place)
-        // TODO(P1): POST a `verification` for the confirmed look so the crowd
-        // sharpens the ODbL-tainted geometry (docs/06 crowdsourcing, docs/09
-        // clean-room path). RLS-scoped write via LoreAPI once auth is wired in.
     }
 
     func toggleHaunted() {

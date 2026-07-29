@@ -20,6 +20,8 @@ import Observation
 @Observable
 @MainActor
 final class VisitStore {
+    typealias VisitsLoader = (String) async throws -> [Visit]
+    typealias VisitHistoryLoader = (String) async throws -> [VisitLogEntry]
 
     /// Place ids the user has visited at least once. Membership is what the
     /// toggle and shelf read; the map integrator dims/marks visited pins from it.
@@ -58,14 +60,24 @@ final class VisitStore {
     /// Signed Storage URLs are valid for an hour. Keep them for 50 minutes so
     /// scrolling the journal does not re-sign every thumbnail on every appear.
     private var photoURLCache: [String: CachedPhotoURL] = [:]
+    private let visitsLoader: VisitsLoader
+    private let visitHistoryLoader: VisitHistoryLoader
 
     init(
         api: LoreAPI = .shared,
         credentials: @escaping () -> (userID: String, accessToken: String)?,
+        visitsLoader: @escaping VisitsLoader = { accessToken in
+            try await TravelReads.visits(accessToken: accessToken)
+        },
+        visitHistoryLoader: @escaping VisitHistoryLoader = { accessToken in
+            try await TravelReads.visitHistory(accessToken: accessToken)
+        },
         onUnlocks: @escaping ([Achievement]) -> Void = { _ in }
     ) {
         self.api = api
         self.credentials = credentials
+        self.visitsLoader = visitsLoader
+        self.visitHistoryLoader = visitHistoryLoader
         self.onUnlocks = onUnlocks
     }
 
@@ -97,13 +109,14 @@ final class VisitStore {
             return
         }
         do {
-            let rows = try await TravelReads.visits(accessToken: creds.accessToken)
+            let rows = try await visitsLoader(creds.accessToken)
             guard credentials()?.userID == creds.userID else { return }
             visitedPlaceIDs = Set(rows.map(\.placeID))
             loaded = true
             lastError = nil
         } catch {
             guard credentials()?.userID == creds.userID else { return }
+            loaded = true
             lastError = "Couldn't load your visits."
         }
     }
@@ -126,7 +139,7 @@ final class VisitStore {
             return
         }
         do {
-            let rows = try await TravelReads.visitHistory(accessToken: creds.accessToken)
+            let rows = try await visitHistoryLoader(creds.accessToken)
             guard generation == historyLoadGeneration,
                   credentials()?.userID == creds.userID else { return }
             // One entry per place (a place visited twice shows once, latest
