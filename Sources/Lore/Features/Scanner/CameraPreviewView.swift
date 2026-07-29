@@ -23,8 +23,49 @@ final class ScannerCameraService: NSObject, AVCaptureMetadataOutputObjectsDelega
         case unavailable
     }
 
+    /// A synchronous intent gate for asynchronous camera-start work. Every
+    /// start receives a generation token; a newer start or stop invalidates
+    /// callbacks still holding an older token.
+    final class RunIntentGate: @unchecked Sendable {
+        struct Token: Equatable, Sendable {
+            fileprivate let generation: UInt64
+        }
+
+        private let lock = NSLock()
+        private var generation: UInt64 = 0
+        private var intendsToRun = false
+
+        func beginStart() -> Token {
+            lock.lock()
+            defer { lock.unlock() }
+            generation &+= 1
+            intendsToRun = true
+            return Token(generation: generation)
+        }
+
+        func stop() {
+            lock.lock()
+            defer { lock.unlock() }
+            generation &+= 1
+            intendsToRun = false
+        }
+
+        func accepts(_ token: Token) -> Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            return intendsToRun && token.generation == generation
+        }
+
+        var hasActiveStartIntent: Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            return intendsToRun
+        }
+    }
+
     let session = AVCaptureSession()
     private let sessionQueue = DispatchQueue(label: "com.erickdronski.lore.camera-session")
+    private let runIntentGate = RunIntentGate()
     private var configured = false
 
     /// Live-frame output for on-device Vision recognition (docs/05 §5 ladder:
@@ -118,14 +159,18 @@ final class ScannerCameraService: NSObject, AVCaptureMetadataOutputObjectsDelega
             requestPermissionIfNeeded: requestPermissionIfNeeded
         ) {
         case .startSession:
-            startSession()
+            startSession(for: runIntentGate.beginStart())
         case .requestAccess:
+            let token = runIntentGate.beginStart()
             AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
                 guard let self else { return }
                 if granted {
-                    self.startSession()
+                    self.startSession(for: token)
                 } else {
-                    DispatchQueue.main.async { self.onPermissionDenied?() }
+                    DispatchQueue.main.async { [weak self] in
+                        guard let self, self.runIntentGate.accepts(token) else { return }
+                        self.onPermissionDenied?()
+                    }
                 }
             }
         case .waitForRationale:
@@ -139,15 +184,20 @@ final class ScannerCameraService: NSObject, AVCaptureMetadataOutputObjectsDelega
         }
     }
 
-    private func startSession() {
+    private func startSession(for token: RunIntentGate.Token) {
         sessionQueue.async { [weak self] in
-            guard let self else { return }
+            guard let self, self.runIntentGate.accepts(token) else { return }
             self.wantsRunning = true
             guard self.configureIfNeeded() else {
                 self.wantsRunning = false
                 DispatchQueue.main.async { [weak self] in
-                    self?.onUnavailable?("Lore couldn't start the back camera. Close other camera apps and try again.")
+                    guard let self, self.runIntentGate.accepts(token) else { return }
+                    self.onUnavailable?("Lore couldn't start the back camera. Close other camera apps and try again.")
                 }
+                return
+            }
+            guard self.runIntentGate.accepts(token) else {
+                self.wantsRunning = false
                 return
             }
             if !self.session.isRunning {
@@ -157,6 +207,7 @@ final class ScannerCameraService: NSObject, AVCaptureMetadataOutputObjectsDelega
     }
 
     func stop() {
+        runIntentGate.stop()
         sessionQueue.async { [weak self] in
             self?.stopSession()
         }
@@ -165,6 +216,7 @@ final class ScannerCameraService: NSObject, AVCaptureMetadataOutputObjectsDelega
     /// Stop the AVCapture owner and return only after the hardware is released.
     /// ARKit must await this before starting its own camera session.
     func stopAndWait() async {
+        runIntentGate.stop()
         await withCheckedContinuation { continuation in
             sessionQueue.async { [weak self] in
                 self?.stopSession()
@@ -261,7 +313,12 @@ final class ScannerCameraService: NSObject, AVCaptureMetadataOutputObjectsDelega
     /// still want it running (never fight a deliberate stop).
     @objc private func handleSessionRecovery(_ notification: Notification) {
         sessionQueue.async { [weak self] in
-            guard let self, self.wantsRunning, self.configured, !self.session.isRunning else { return }
+            guard let self,
+                  self.runIntentGate.hasActiveStartIntent,
+                  self.wantsRunning,
+                  self.configured,
+                  !self.session.isRunning
+            else { return }
             guard self.session.inputs.contains(where: { $0 is AVCaptureDeviceInput }) else {
                 self.wantsRunning = false
                 DispatchQueue.main.async { [weak self] in
