@@ -88,16 +88,15 @@ struct LoreApp: App {
                     // are deliberately silent: access is never blocked on it,
                     // and the next refresh re-posts.
                     store.onVerifiedTransaction = { [weak auth] signedJWS in
-                        guard let auth else { return }
-                        guard let token = await auth.validAccessToken() else { return }
-                        // Discarded on purpose: the return value only reports
-                        // whether the row was written, and a failure here must
-                        // never surface to a buyer whose access StoreKit has
-                        // already granted. The next refreshEntitlements re-posts.
-                        _ = try? await LoreAPI.shared.syncApplePurchase(
+                        guard let auth else { return false }
+                        guard let token = await auth.validAccessToken() else { return false }
+                        // A false result covers expected non-production writes
+                        // such as TestFlight Sandbox. Transport failures retry
+                        // naturally on the next entitlement refresh.
+                        return (try? await LoreAPI.shared.syncApplePurchase(
                             signedTransaction: signedJWS,
                             accessToken: token
-                        )
+                        )) ?? false
                     }
                     store.start()
                 }
@@ -109,9 +108,11 @@ struct LoreApp: App {
                     // Optional's, and does not compile.
                     guard let userID = auth.session?.user.id else {
                         store.accountUUID = nil
+                        await store.refreshEntitlements()
                         return
                     }
                     store.accountUUID = UUID(uuidString: userID)
+                    await store.refreshEntitlements()
                 }
                 // App chrome is the app's words, Ink/Brass, never Amber
                 // (Amber is reserved for the world: pins, outlines, beacon —

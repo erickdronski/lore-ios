@@ -8,10 +8,9 @@ import StoreKit
 /// background so the camera/world recedes, a brass-sheen hero, the honest
 /// free-vs-plus table, and the monthly / annual choice with an App Store offer.
 ///
-/// The purchase runs through **StoreKit 2** today (the real client path,
-/// `StoreKitService`); RevenueCat remains the planned server-side truth
-/// and lands at P3 (docs/16-APPLE-TOOLKITS.md §1, docs/00 §2). Localized prices
-/// come only from loaded `Product`s, never a hardcoded storefront assumption.
+/// The purchase runs through **StoreKit 2** (`StoreKitService`); Lore's Apple
+/// transaction verifier remains the server authority for cloud-gated access.
+/// Localized prices come only from loaded `Product`s, never a hardcoded storefront assumption.
 /// Trial copy requires both a real free-trial offer and Apple Account
 /// eligibility, and derives the duration from StoreKit.
 ///
@@ -521,7 +520,7 @@ struct PaywallView: View {
         case .success(let trialing):
             // Optimistically flip to Lore+ so the gate reopens now. StoreKit's
             // `currentEntitlements` (re-read by `refresh`) is the real on-device
-            // truth; the RevenueCat webhook writes the server row at P3.
+            // truth; Lore's Apple verifier writes the durable server row.
             entitlements.applyLocalPurchase(userID: userID, trialing: trialing)
             let token = await auth.validAccessToken()
             await entitlements.refresh(accessToken: token)
@@ -902,11 +901,6 @@ final class PaywallModel {
     }
 
     /// Purchase the selected plan through StoreKit 2.
-    ///
-    /// TODO(P3, docs/16 §1): once the RevenueCat SDK is wired, route this through
-    /// `Purchases.shared.purchase(package:)` so RC records the transaction and
-    /// its webhook writes the `entitlements` row. Keep the `PurchaseOutcome`
-    /// return so the paywall wiring is untouched by that swap.
     func purchase() async -> StoreKitService.PurchaseOutcome {
         await purchase(productID: selectedPlan.productID)
     }

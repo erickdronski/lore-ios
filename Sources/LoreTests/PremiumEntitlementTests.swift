@@ -141,6 +141,7 @@ final class PremiumEntitlementTests: XCTestCase {
         let resolution = StoreEntitlementResolver.resolve(
             current: [shared],
             history: [],
+            accountUUID: testAccountUUID,
             now: now
         )
 
@@ -169,6 +170,7 @@ final class PremiumEntitlementTests: XCTestCase {
         let resolution = StoreEntitlementResolver.resolve(
             current: [expired, revoked, upgraded],
             history: [],
+            accountUUID: testAccountUUID,
             now: now
         )
 
@@ -192,6 +194,7 @@ final class PremiumEntitlementTests: XCTestCase {
         let resolution = StoreEntitlementResolver.resolve(
             current: [lifetime],
             history: [shortPass, longPass],
+            accountUUID: testAccountUUID,
             now: now
         )
 
@@ -200,6 +203,31 @@ final class PremiumEntitlementTests: XCTestCase {
             resolution.tripPassExpiresAt,
             longPass.purchaseDate.addingTimeInterval(7 * 24 * 3_600)
         )
+    }
+
+    func testResolverRejectsAnotherLoreAccountsTransactions() {
+        let now = Date(timeIntervalSince1970: 10_000)
+        let otherAccount = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
+        let lifetime = snapshot(id: StoreKitService.ProductID.lifetime)
+        let pass = snapshot(id: StoreKitService.ProductID.pass72h, purchase: now)
+
+        let switchedAccount = StoreEntitlementResolver.resolve(
+            current: [lifetime],
+            history: [pass],
+            accountUUID: otherAccount,
+            now: now
+        )
+        let signedOut = StoreEntitlementResolver.resolve(
+            current: [lifetime],
+            history: [pass],
+            accountUUID: nil,
+            now: now
+        )
+
+        XCTAssertTrue(switchedAccount.ownedProductIDs.isEmpty)
+        XCTAssertNil(switchedAccount.tripPassExpiresAt)
+        XCTAssertTrue(signedOut.ownedProductIDs.isEmpty)
+        XCTAssertNil(signedOut.tripPassExpiresAt)
     }
 
     func testOfflineCacheIsIdentityBoundActiveAndTimeLimited() {
@@ -359,7 +387,8 @@ final class PremiumEntitlementTests: XCTestCase {
         revoked: Date? = nil,
         upgraded: Bool = false,
         introductory: Bool = false,
-        ownership: StoreEntitlementSnapshot.Ownership = .purchased
+        ownership: StoreEntitlementSnapshot.Ownership = .purchased,
+        appAccountToken: UUID? = UUID(uuidString: "11111111-1111-1111-1111-111111111111")
     ) -> StoreEntitlementSnapshot {
         StoreEntitlementSnapshot(
             productID: id,
@@ -368,8 +397,13 @@ final class PremiumEntitlementTests: XCTestCase {
             revocationDate: revoked,
             isUpgraded: upgraded,
             isIntroductory: introductory,
-            ownership: ownership
+            ownership: ownership,
+            appAccountToken: appAccountToken
         )
+    }
+
+    private var testAccountUUID: UUID {
+        UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
     }
 
     private func base64URL(_ object: [String: String]) throws -> String {

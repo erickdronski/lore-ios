@@ -194,9 +194,9 @@ final class EntitlementStore {
     ///
     /// Call this: on sign-in, on app foreground, and after a purchase settles.
     func refresh(accessToken: String?) async {
-        // Always re-read the on-device StoreKit path, it's valid even when
-        // signed out of Supabase (the purchase lives on the Apple ID, not the
-        // account) and needs no token.
+        // Always re-read StoreKit. Local access remains account-token scoped;
+        // an authenticated server sync separately handles verified recovery
+        // after a Lore account was deleted and recreated.
         await storeKit?.refreshEntitlements()
 
         guard let accessToken else {
@@ -235,11 +235,10 @@ final class EntitlementStore {
         }
     }
 
-    /// Clear the *server* grant on sign-out, the next Supabase user starts from
-    /// free. The StoreKit path is deliberately **not** cleared: the purchase
-    /// belongs to the Apple ID, not the account, so `isPlus` can still resolve
-    /// from `Transaction.currentEntitlements` for a signed-out purchaser
-    /// (docs/16 §1 offline belt-and-suspenders).
+    /// Clear the server grant on sign-out so the next Supabase user starts from
+    /// free. StoreKit transactions remain on-device, but the local resolver
+    /// grants them only when their signed account token matches the active Lore
+    /// account.
     func clear() {
         entitlement = nil
         activeCachedEntitlement = nil
@@ -252,8 +251,8 @@ final class EntitlementStore {
     /// before the server-side webhook has written the `entitlements` row. The
     /// next `refresh` reconciles with the backend truth.
     ///
-    /// Called by the paywall's purchase handler once RevenueCat reports a
-    /// successful transaction (see `PaywallView` purchase stub). `userID` lets
+    /// Called by the paywall after StoreKit reports a successful transaction.
+    /// `userID` lets
     /// us build a plausible local row; `trialing` picks the status so the
     /// 7-day-trial framing shows immediately.
     func applyLocalPurchase(userID: String, trialing: Bool) {

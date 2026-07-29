@@ -561,7 +561,15 @@ struct LoreAPI {
         guard (200..<300).contains(http.statusCode) else {
             throw APIError.http(status: http.statusCode, body: String(data: data, encoding: .utf8) ?? "")
         }
-        return true
+        do {
+            return try decoder.decode(ApplePurchaseSyncResponse.self, from: data).recorded
+        } catch {
+            throw APIError.decoding(error)
+        }
+    }
+
+    private struct ApplePurchaseSyncResponse: Decodable {
+        let recorded: Bool
     }
 
     /// Recompute achievements for the signed-in user and return any newly
