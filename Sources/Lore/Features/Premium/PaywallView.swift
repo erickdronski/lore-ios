@@ -362,7 +362,7 @@ struct PaywallView: View {
                     : "Sign in to continue to Lore plus")
                 .accessibilityHint("Apple shows a confirmation sheet before any purchase is completed")
 
-                Button("Restore purchases") {
+                Button(auth.isSignedIn ? "Restore purchases" : "Sign in to restore purchases") {
                     Task { await restore() }
                 }
                 .font(LoreType.caption)
@@ -544,6 +544,12 @@ struct PaywallView: View {
     }
 
     private func restore() async {
+        guard let userID = auth.session?.user.id,
+              let accountUUID = UUID(uuidString: userID) else {
+            showSignIn = true
+            return
+        }
+        store.accountUUID = accountUUID
         let outcome = await model.restore()
         if case .restored = outcome {
             let token = await auth.validAccessToken()

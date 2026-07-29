@@ -511,6 +511,9 @@ final class StoreKitService {
         guard !isRestoreInProgress, !isPurchaseInProgress else {
             return .failed(message: "Another App Store request is already in progress.")
         }
+        guard accountUUID != nil else {
+            return .failed(message: "Sign in to Lore before restoring so Apple can link access to your account.")
+        }
         isRestoreInProgress = true
         defer { isRestoreInProgress = false }
         lastError = nil

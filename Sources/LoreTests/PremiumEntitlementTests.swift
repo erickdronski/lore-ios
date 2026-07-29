@@ -323,6 +323,18 @@ final class PremiumEntitlementTests: XCTestCase {
         XCTAssertTrue(model.finePrintText.contains("No purchase can begin"))
     }
 
+    func testSignedOutRestoreFailsBeforeContactingAppStore() async {
+        let store = StoreKitService()
+
+        let outcome = await store.restore()
+
+        XCTAssertEqual(
+            outcome,
+            .failed(message: "Sign in to Lore before restoring so Apple can link access to your account.")
+        )
+        XCTAssertFalse(store.isRestoreInProgress)
+    }
+
     func testStoreKitConfigurationMatchesRuntimeCoreProducts() throws {
         let bundle = Bundle(for: Self.self)
         let configurationURL = try XCTUnwrap(
