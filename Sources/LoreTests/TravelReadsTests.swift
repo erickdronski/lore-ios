@@ -42,6 +42,99 @@ final class TravelReadsTests: XCTestCase {
         )
     }
 
+    func testVisitHistoryPagesUntilTheServerReturnsAShortPage() async throws {
+        let lock = NSLock()
+        var requestedRanges: [String] = []
+
+        TravelReadsURLProtocol.handler = { request in
+            let range = try XCTUnwrap(request.value(forHTTPHeaderField: "Range"))
+            lock.lock()
+            requestedRanges.append(range)
+            lock.unlock()
+
+            let rows: [[String: Any]]
+            switch range {
+            case "0-199": rows = (0..<200).map(Self.historyRow)
+            case "200-399": rows = [Self.historyRow(200)]
+            default: XCTFail("Unexpected page \(range)"); rows = []
+            }
+            let response = try XCTUnwrap(HTTPURLResponse(
+                url: try XCTUnwrap(request.url),
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: ["Content-Type": "application/json"]
+            ))
+            return (response, try JSONSerialization.data(withJSONObject: rows))
+        }
+
+        let rows = try await TravelReads.visitHistory(
+            accessToken: "token-123",
+            session: makeSession()
+        )
+
+        XCTAssertEqual(rows.count, 201)
+        XCTAssertEqual(rows.first?.placeID, "place-0")
+        XCTAssertEqual(rows.last?.placeID, "place-200")
+        XCTAssertEqual(requestedRanges, ["0-199", "200-399"])
+    }
+
+    func testUpdateVisitNoteRequiresOneReturnedOwnerRow() async throws {
+        let placeID = "7c26d345-a8c0-43b9-b56b-f7c58b6da972"
+        TravelReadsURLProtocol.handler = { request in
+            XCTAssertEqual(request.httpMethod, "PATCH")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Prefer"), "return=representation")
+            XCTAssertTrue(request.url?.query?.contains("select=place_id") == true)
+            let response = try XCTUnwrap(HTTPURLResponse(
+                url: try XCTUnwrap(request.url),
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: ["Content-Type": "application/json"]
+            ))
+            return (response, Data("[{\"place_id\":\"\(placeID)\"}]".utf8))
+        }
+
+        try await TravelReads.updateVisitNote(
+            placeID: placeID,
+            note: "A private field note",
+            accessToken: "token-123",
+            session: makeSession()
+        )
+    }
+
+    func testUpdateVisitNoteRejectsAZeroRowSuccess() async throws {
+        TravelReadsURLProtocol.handler = { request in
+            let response = try XCTUnwrap(HTTPURLResponse(
+                url: try XCTUnwrap(request.url),
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: ["Content-Type": "application/json"]
+            ))
+            return (response, Data("[]".utf8))
+        }
+
+        do {
+            try await TravelReads.updateVisitNote(
+                placeID: "7c26d345-a8c0-43b9-b56b-f7c58b6da972",
+                note: "A private field note",
+                accessToken: "token-123",
+                session: makeSession()
+            )
+            XCTFail("A zero-row update must not look successful")
+        } catch TravelReads.TravelError.missingVisit {
+            // Expected: the editor remains open and shows its save error.
+        }
+    }
+
+    private static func historyRow(_ index: Int) -> [String: Any] {
+        [
+            "place_id": "place-\(index)",
+            "visited_at": "2026-07-29T05:00:00Z",
+            "photos": [],
+            "is_public": false,
+            "place": NSNull(),
+        ]
+    }
+
     private func makeSession() -> URLSession {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [TravelReadsURLProtocol.self]

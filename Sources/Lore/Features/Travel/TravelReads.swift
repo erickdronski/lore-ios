@@ -19,6 +19,7 @@ enum TravelReads {
         case http(status: Int, body: String)
         case decoding(Error)
         case encoding(Error)
+        case missingVisit
 
         var errorDescription: String? {
             switch self {
@@ -26,6 +27,7 @@ enum TravelReads {
             case .http(let status, let body): return "Server returned \(status): \(body)"
             case .decoding(let error): return "Could not read the response: \(error.localizedDescription)"
             case .encoding(let error): return "Could not build the request body: \(error.localizedDescription)"
+            case .missingVisit: return "The journal entry no longer exists."
             }
         }
     }
@@ -99,8 +101,8 @@ enum TravelReads {
         try ensureOK(response, data: data)
     }
 
-    /// The signed-in user's visit history with the place details + their own
-    /// note ("your lore"), newest first, for the Journal surface.
+    /// The signed-in user's complete visit history with place details and their
+    /// own note ("your lore"), newest first, for the Journal surface.
     /// `GET /rest/v1/visit?select=place_id,visited_at,note,place(name,emoji,city,kind)&order=visited_at.desc`
     static func visitHistory(
         accessToken: String,
@@ -112,22 +114,36 @@ enum TravelReads {
         )
         components?.queryItems = [
             URLQueryItem(name: "select", value: "place_id,visited_at,note,photos,is_public,place(name,emoji,city,kind)"),
-            URLQueryItem(name: "order", value: "visited_at.desc"),
-            URLQueryItem(name: "limit", value: "200"),
+            URLQueryItem(name: "order", value: "visited_at.desc,place_id.asc"),
         ]
         guard let url = components?.url else { throw TravelError.badURL }
 
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        apply(&request, accessToken: accessToken)
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        let pageSize = 200
+        var lowerBound = 0
+        var history: [VisitLogEntry] = []
 
-        let (data, response) = try await session.data(for: request)
-        try ensureOK(response, data: data)
-        do {
-            return try JSONDecoder().decode([VisitLogEntry].self, from: data)
-        } catch {
-            throw TravelError.decoding(error)
+        while true {
+            var request = URLRequest(url: url)
+            request.httpMethod = "GET"
+            apply(&request, accessToken: accessToken)
+            request.setValue("application/json", forHTTPHeaderField: "Accept")
+            request.setValue("items", forHTTPHeaderField: "Range-Unit")
+            request.setValue(
+                "\(lowerBound)-\(lowerBound + pageSize - 1)",
+                forHTTPHeaderField: "Range"
+            )
+
+            let (data, response) = try await session.data(for: request)
+            try ensureOK(response, data: data)
+            let page: [VisitLogEntry]
+            do {
+                page = try JSONDecoder().decode([VisitLogEntry].self, from: data)
+            } catch {
+                throw TravelError.decoding(error)
+            }
+            history.append(contentsOf: page)
+            if page.count < pageSize { return history }
+            lowerBound += pageSize
         }
     }
 
@@ -144,18 +160,38 @@ enum TravelReads {
             url: Config.restURL.appending(path: "visit"),
             resolvingAgainstBaseURL: false
         )
-        components?.queryItems = [URLQueryItem(name: "place_id", value: "eq.\(placeID)")]
+        components?.queryItems = [
+            URLQueryItem(name: "place_id", value: "eq.\(placeID)"),
+            URLQueryItem(name: "select", value: "place_id"),
+        ]
         guard let url = components?.url else { throw TravelError.badURL }
 
         var request = URLRequest(url: url)
         request.httpMethod = "PATCH"
         apply(&request, accessToken: accessToken)
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("return=minimal", forHTTPHeaderField: "Prefer")
-        request.httpBody = try? JSONSerialization.data(withJSONObject: ["note": note])
+        request.setValue("return=representation", forHTTPHeaderField: "Prefer")
+        do {
+            request.httpBody = try JSONSerialization.data(withJSONObject: ["note": note])
+        } catch {
+            throw TravelError.encoding(error)
+        }
 
         let (data, response) = try await session.data(for: request)
         try ensureOK(response, data: data)
+        struct UpdatedVisit: Decodable {
+            let placeID: String
+            enum CodingKeys: String, CodingKey { case placeID = "place_id" }
+        }
+        let rows: [UpdatedVisit]
+        do {
+            rows = try JSONDecoder().decode([UpdatedVisit].self, from: data)
+        } catch {
+            throw TravelError.decoding(error)
+        }
+        guard rows.count == 1, rows[0].placeID == placeID else {
+            throw TravelError.missingVisit
+        }
     }
 
     /// Append one private photo path atomically. The RPC validates that the

@@ -114,13 +114,21 @@ final class VisitStore {
     /// first. Loaded on demand when the Journal appears.
     private(set) var visitHistory: [VisitLogEntry] = []
     private(set) var historyLoaded = false
+    private var historyLoadGeneration = 0
 
     func loadHistory(force: Bool = false) async {
         guard force || !historyLoaded else { return }
-        guard let creds = credentials() else { visitHistory = []; historyLoaded = true; return }
+        historyLoadGeneration &+= 1
+        let generation = historyLoadGeneration
+        guard let creds = credentials() else {
+            visitHistory = []
+            historyLoaded = true
+            return
+        }
         do {
             let rows = try await TravelReads.visitHistory(accessToken: creds.accessToken)
-            guard credentials()?.userID == creds.userID else { return }
+            guard generation == historyLoadGeneration,
+                  credentials()?.userID == creds.userID else { return }
             // One entry per place (a place visited twice shows once, latest
             // first), which also keeps the ForEach ids unique.
             var seen = Set<String>()
@@ -128,7 +136,8 @@ final class VisitStore {
             historyLoaded = true
             lastError = nil
         } catch {
-            guard credentials()?.userID == creds.userID else { return }
+            guard generation == historyLoadGeneration,
+                  credentials()?.userID == creds.userID else { return }
             lastError = "Couldn't load your journal."
         }
     }
@@ -302,6 +311,7 @@ final class VisitStore {
         loaded = false
         visitHistory = []
         historyLoaded = false
+        historyLoadGeneration &+= 1
         photoURLCache = [:]
         lastError = nil
     }

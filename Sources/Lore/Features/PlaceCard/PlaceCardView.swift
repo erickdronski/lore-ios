@@ -34,7 +34,7 @@ struct PlaceCardView: View {
     /// where the place's story lives (owner ask: "their lore is an extension
     /// of the place"). History loads on appear; the editor is the Journal's.
     @Environment(VisitStore.self) private var visits
-    @State private var showLoreEditor = false
+    @State private var loreEditorEntry: VisitLogEntry?
     @State private var showSignIn = false
 
     /// The place's lead photo (TestFlight feedback: "photo of the place should
@@ -92,13 +92,19 @@ struct PlaceCardView: View {
         }
         // The user's journal entries, so `yourLore` can render this place's note
         // + photos the moment the card opens (cheap: one RLS-scoped GET).
-        .task(id: place.id) { await visits.loadHistory() }
+        .task(id: visits.hasVisited(place.id)) {
+            if !visits.historyLoaded {
+                await visits.loadHistory()
+            } else if visits.hasVisited(place.id), myEntry == nil {
+                await visits.loadHistory(force: true)
+            }
+        }
         .task(id: place.city) {
             guard cityTheme == nil else { return }
             loadedTheme = (try? await LoreAPI.shared.cityTheme(city: place.city)) ?? nil
         }
-        .sheet(isPresented: $showLoreEditor) {
-            NoteEditorSheet(entry: loreEntry) { note in
+        .sheet(item: $loreEditorEntry) { entry in
+            NoteEditorSheet(entry: entry) { note in
                 await visits.saveNote(placeID: place.id, note: note)
             }
         }
@@ -113,20 +119,6 @@ struct PlaceCardView: View {
     /// This place's entry in the user's visit history, once loaded.
     private var myEntry: VisitLogEntry? {
         visits.visitHistory.first { $0.placeID == place.id }
-    }
-
-    /// The entry the editor opens with: the real history row when it exists,
-    /// otherwise a local stub for a just-logged visit whose history row hasn't
-    /// landed yet (the save PATCHes by place_id either way).
-    private var loreEntry: VisitLogEntry {
-        myEntry ?? VisitLogEntry(
-            placeID: place.id,
-            visitedAt: "",
-            note: nil,
-            photos: nil,
-            legacyIsPublic: nil,
-            place: .init(name: place.name, emoji: place.displayEmoji, city: place.city, kind: place.kind)
-        )
     }
 
     /// The user's own note + photos, rendered as part of the place. Shows only
@@ -146,20 +138,36 @@ struct PlaceCardView: View {
                             .foregroundStyle(LoreColor.ink600)
                     }
                     Spacer()
-                    Button {
-                        Haptics.play(.chipTap)
-                        showLoreEditor = true
-                    } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: (myEntry?.note?.isEmpty == false) ? "square.and.pencil" : "plus.circle")
-                                .font(.system(size: 13, weight: .semibold))
-                            Text((myEntry?.note?.isEmpty == false) ? "Edit" : "Add")
-                                .font(LoreType.button)
+                    if let entry = myEntry {
+                        Button {
+                            Haptics.play(.chipTap)
+                            loreEditorEntry = entry
+                        } label: {
+                            HStack(spacing: 5) {
+                                Image(systemName: (entry.note?.isEmpty == false) ? "square.and.pencil" : "plus.circle")
+                                    .font(.system(size: 13, weight: .semibold))
+                                Text((entry.note?.isEmpty == false) ? "Edit" : "Add")
+                                    .font(LoreType.button)
+                            }
+                            .foregroundStyle(LoreColor.brass700)
                         }
-                        .foregroundStyle(LoreColor.brass700)
+                        .buttonStyle(.pressable)
+                        .accessibilityLabel(Text("Write your own lore for \(place.name)"))
+                    } else if visits.lastError == "Couldn't load your journal." || visits.historyLoaded {
+                        Button {
+                            Task { await visits.loadHistory(force: true) }
+                        } label: {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(LoreColor.brass700)
+                        }
+                        .buttonStyle(.pressable)
+                        .accessibilityLabel("Retry loading your journal entry")
+                    } else {
+                        ProgressView()
+                            .controlSize(.small)
+                            .accessibilityLabel("Loading your journal entry")
                     }
-                    .buttonStyle(.pressable)
-                    .accessibilityLabel(Text("Write your own lore for \(place.name)"))
                 }
                 if let note = myEntry?.note, !note.isEmpty {
                     Text(note)
@@ -228,9 +236,15 @@ struct PlaceCardView: View {
                             place: place,
                             source: visitSource,
                             onNeedsSignIn: { showSignIn = true },
-                            // Mark visited → the lore editor opens, ready to
-                            // write. The fluid "you were here, tell us" moment.
-                            onLogged: { showLoreEditor = true }
+                            // Open only after the server-backed history row is
+                            // available; a synthetic blank draft could overwrite
+                            // an existing note on a delayed or duplicate visit.
+                            onLogged: {
+                                Task {
+                                    await visits.loadHistory(force: true)
+                                    loreEditorEntry = myEntry
+                                }
+                            }
                         )
                         Spacer(minLength: 0)
                     }
