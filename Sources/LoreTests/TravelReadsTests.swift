@@ -42,6 +42,71 @@ final class TravelReadsTests: XCTestCase {
         )
     }
 
+    func testStoreJournalPhotoDeletesUploadWhenDatabaseAppendFails() async throws {
+        let placeID = "7c26d345-a8c0-43b9-b56b-f7c58b6da972"
+        let lock = NSLock()
+        var uploadedPath: String?
+        var calls: [String] = []
+
+        TravelReadsURLProtocol.handler = { request in
+            let method = try XCTUnwrap(request.httpMethod)
+            let requestPath = try XCTUnwrap(request.url?.path)
+            lock.lock()
+            calls.append("\(method) \(requestPath)")
+            lock.unlock()
+
+            let status: Int
+            let responseData: Data
+            if method == "POST", requestPath.hasPrefix("/storage/v1/object/journal-photos/") {
+                uploadedPath = String(requestPath.dropFirst("/storage/v1/object/journal-photos/".count))
+                status = 200
+                responseData = Data("{}".utf8)
+            } else if method == "POST", requestPath == "/rest/v1/rpc/append_visit_photo" {
+                status = 500
+                responseData = Data(#"{"message":"append failed"}"#.utf8)
+            } else if method == "DELETE", requestPath == "/storage/v1/object/journal-photos" {
+                XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer token-123")
+                let body = try self.requestBody(request)
+                let json = try XCTUnwrap(
+                    JSONSerialization.jsonObject(with: body) as? [String: [String]]
+                )
+                XCTAssertEqual(json["prefixes"], [try XCTUnwrap(uploadedPath)])
+                status = 200
+                responseData = Data("[]".utf8)
+            } else {
+                XCTFail("Unexpected request: \(method) \(requestPath)")
+                status = 404
+                responseData = Data()
+            }
+
+            let response = try XCTUnwrap(HTTPURLResponse(
+                url: try XCTUnwrap(request.url),
+                statusCode: status,
+                httpVersion: nil,
+                headerFields: ["Content-Type": "application/json"]
+            ))
+            return (response, responseData)
+        }
+
+        do {
+            _ = try await TravelReads.storeJournalPhoto(
+                data: Data("jpeg".utf8),
+                userID: "user-123",
+                placeID: placeID,
+                accessToken: "token-123",
+                session: makeSession()
+            )
+            XCTFail("A failed database append must remain a failed photo save")
+        } catch TravelReads.TravelError.http(let status, _) {
+            XCTAssertEqual(status, 500)
+        }
+
+        XCTAssertEqual(calls.count, 3)
+        XCTAssertTrue(calls[0].hasPrefix("POST /storage/v1/object/journal-photos/user-123/\(placeID)/"))
+        XCTAssertEqual(calls[1], "POST /rest/v1/rpc/append_visit_photo")
+        XCTAssertEqual(calls[2], "DELETE /storage/v1/object/journal-photos")
+    }
+
     func testVisitHistoryPagesUntilTheServerReturnsAShortPage() async throws {
         let lock = NSLock()
         var requestedRanges: [String] = []

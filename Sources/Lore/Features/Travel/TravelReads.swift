@@ -244,6 +244,46 @@ enum TravelReads {
 
     // MARK: - Journal photo storage (private `journal-photos` bucket)
 
+    /// Persist a private journal photo across Storage and the visit row. Storage
+    /// cannot participate in the Postgres transaction, so a failed append is
+    /// compensated by deleting the just-uploaded object before the error escapes.
+    @discardableResult
+    static func storeJournalPhoto(
+        data imageData: Data,
+        userID: String,
+        placeID: String,
+        accessToken: String,
+        session: URLSession = .shared
+    ) async throws -> String {
+        let path = try await uploadJournalPhoto(
+            data: imageData,
+            userID: userID,
+            placeID: placeID,
+            accessToken: accessToken,
+            session: session
+        )
+        do {
+            try await appendVisitPhoto(
+                placeID: placeID,
+                path: path,
+                accessToken: accessToken,
+                session: session
+            )
+            return path
+        } catch {
+            // An unstructured cleanup task is not cancelled with the failed
+            // caller, which gives the compensation request a chance to finish.
+            _ = await Task.detached(priority: .utility) {
+                try? await removeJournalPhoto(
+                    path: path,
+                    accessToken: accessToken,
+                    session: session
+                )
+            }.value
+            throw error
+        }
+    }
+
     /// Upload image bytes to the user's own folder and return the object PATH
     /// (`{userID}/{placeID}/{uuid}.jpg`). RLS lets a user write only under their
     /// own uid folder. `POST /storage/v1/object/journal-photos/{path}`
@@ -265,6 +305,30 @@ enum TravelReads {
         let (data, response) = try await session.data(for: request)
         try ensureOK(response, data: data)
         return path
+    }
+
+    /// Remove an exact object path through the Storage API. The live bucket's
+    /// DELETE policy limits this operation to the caller's own uid folder.
+    /// `DELETE /storage/v1/object/journal-photos` `{ "prefixes": [path] }`
+    static func removeJournalPhoto(
+        path: String,
+        accessToken: String,
+        session: URLSession = .shared
+    ) async throws {
+        let url = Config.storageURL.appending(path: "object/journal-photos")
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        apply(&request, accessToken: accessToken)
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        do {
+            request.httpBody = try JSONSerialization.data(withJSONObject: [
+                "prefixes": [path],
+            ])
+        } catch {
+            throw TravelError.encoding(error)
+        }
+        let (data, response) = try await session.data(for: request)
+        try ensureOK(response, data: data)
     }
 
     /// A short-lived signed URL to display a private journal photo.

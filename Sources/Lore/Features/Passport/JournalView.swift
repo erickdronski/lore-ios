@@ -1,6 +1,8 @@
+import ImageIO
 import PhotosUI
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 
 /// One visit row from the server, with the place details and the user's own
 /// note ("their lore"). Decoded from
@@ -731,15 +733,25 @@ struct NoteEditorSheet: View {
                 uploading = true
                 Task {
                     sheetError = nil
-                    if let data = try? await item.loadTransferable(type: Data.self),
-                       let jpeg = Self.downscaledJPEG(data) {
+                    defer {
+                        picked = nil
+                        uploading = false
+                    }
+                    do {
+                        guard let data = try await item.loadTransferable(type: Data.self),
+                              let jpeg = await JournalImageProcessor.preparedJPEG(data) else {
+                            sheetError = "That photo couldn't be prepared for upload."
+                            return
+                        }
                         let added = await visits.addPhoto(placeID: entry.placeID, imageData: jpeg)
-                        if !added { sheetError = visits.lastError ?? "Couldn't add that photo." }
-                    } else {
+                        if !added {
+                            sheetError = visits.lastError ?? "Couldn't add that photo."
+                        }
+                    } catch is CancellationError {
+                        return
+                    } catch {
                         sheetError = "That photo couldn't be prepared for upload."
                     }
-                    picked = nil
-                    uploading = false
                 }
             }
             .onAppear {
@@ -833,21 +845,60 @@ struct NoteEditorSheet: View {
         .background(LoreColor.bone200, in: RoundedRectangle(cornerRadius: 14))
     }
 
-    /// Downscale + JPEG-encode the picked image so uploads stay small.
-    static func downscaledJPEG(_ data: Data, maxDimension: CGFloat = 1600, quality: CGFloat = 0.8) -> Data? {
-        guard maxDimension.isFinite, maxDimension > 0,
-              quality.isFinite, (0...1).contains(quality),
-              let image = UIImage(data: data) else { return nil }
-        let longestEdge = max(image.size.width, image.size.height)
-        guard longestEdge.isFinite, longestEdge > 0 else { return nil }
-        let scale = min(1, maxDimension / longestEdge)
-        let target = CGSize(width: image.size.width * scale, height: image.size.height * scale)
-        let format = UIGraphicsImageRendererFormat.default()
-        format.scale = 1
-        let rendered = UIGraphicsImageRenderer(size: target, format: format).image { _ in
-            image.draw(in: CGRect(origin: .zero, size: target))
-        }
-        return rendered.jpegData(compressionQuality: quality)
+}
+
+enum JournalImageProcessor {
+    /// ImageIO creates a decode-time thumbnail instead of materializing the
+    /// camera's full-resolution bitmap on the UI actor.
+    static func preparedJPEG(
+        _ data: Data,
+        maxDimension: CGFloat = 1_600,
+        quality: CGFloat = 0.8
+    ) async -> Data? {
+        await Task.detached(priority: .userInitiated) {
+            autoreleasepool {
+                downscaledJPEG(data, maxDimension: maxDimension, quality: quality)
+            }
+        }.value
+    }
+
+    static nonisolated func downscaledJPEG(
+        _ data: Data,
+        maxDimension: CGFloat = 1_600,
+        quality: CGFloat = 0.8
+    ) -> Data? {
+        guard !data.isEmpty,
+              maxDimension.isFinite, maxDimension > 0,
+              quality.isFinite, (0...1).contains(quality) else { return nil }
+
+        let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
+        guard let source = CGImageSourceCreateWithData(data as CFData, sourceOptions) else { return nil }
+        let thumbnailOptions: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: Int(maxDimension.rounded(.down)),
+            kCGImageSourceShouldCacheImmediately: true,
+        ]
+        guard let thumbnail = CGImageSourceCreateThumbnailAtIndex(
+            source,
+            0,
+            thumbnailOptions as CFDictionary
+        ) else { return nil }
+
+        let output = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(
+            output,
+            UTType.jpeg.identifier as CFString,
+            1,
+            nil
+        ) else { return nil }
+        CGImageDestinationAddImage(
+            destination,
+            thumbnail,
+            [kCGImageDestinationLossyCompressionQuality: quality] as CFDictionary
+        )
+        guard CGImageDestinationFinalize(destination) else { return nil }
+        return output as Data
     }
 }
 
@@ -873,6 +924,8 @@ struct JournalPhotoThumb: View {
     let path: String
     var size: CGFloat = 72
     @State private var url: URL?
+    @State private var hasResolvedURL = false
+    @State private var reloadToken = 0
 
     var body: some View {
         Group {
@@ -880,17 +933,23 @@ struct JournalPhotoThumb: View {
                 AsyncImage(url: url) { phase in
                     switch phase {
                     case .success(let image):
-                        image.resizable().scaledToFill()
+                        image
+                            .resizable()
+                            .scaledToFill()
+                            .accessibilityLabel("Private journal photo")
                     case .failure:
-                        placeholder(systemName: "exclamationmark.triangle")
+                        retryPlaceholder
                     case .empty:
-                        placeholder(systemName: "photo")
+                        loadingPlaceholder
                     @unknown default:
-                        placeholder(systemName: "photo")
+                        loadingPlaceholder
                     }
                 }
+                .id(reloadToken)
+            } else if hasResolvedURL {
+                retryPlaceholder
             } else {
-                placeholder(systemName: "photo")
+                loadingPlaceholder
             }
         }
         .frame(width: size, height: size)
@@ -904,8 +963,33 @@ struct JournalPhotoThumb: View {
                 .strokeBorder(LoreColor.bone300.opacity(0.8), lineWidth: 1)
         )
         .loreElevation(.elev1)
-        .task(id: path) { url = await visits.signedPhotoURL(path: path) }
-        .accessibilityLabel("Private journal photo")
+        .task(id: "\(path)#\(reloadToken)") {
+            hasResolvedURL = false
+            url = nil
+            let resolved = await visits.signedPhotoURL(
+                path: path,
+                forceRefresh: reloadToken > 0
+            )
+            guard !Task.isCancelled else { return }
+            url = resolved
+            hasResolvedURL = true
+        }
+    }
+
+    private var loadingPlaceholder: some View {
+        placeholder(systemName: "photo")
+            .accessibilityLabel("Loading private journal photo")
+    }
+
+    private var retryPlaceholder: some View {
+        Button {
+            reloadToken &+= 1
+        } label: {
+            placeholder(systemName: "arrow.clockwise")
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Retry private journal photo")
+        .accessibilityHint("Requests a new secure image link")
     }
 
     private func placeholder(systemName: String) -> some View {
