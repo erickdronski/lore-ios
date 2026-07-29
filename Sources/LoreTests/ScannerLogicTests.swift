@@ -88,6 +88,31 @@ final class ScannerLogicTests: XCTestCase {
         XCTAssertFalse(LocationHeadingProvider.isHeadingSampleFresh(stale, now: now))
     }
 
+    func testScannerLocalContextLocksNearestLiveCityWithinCoverage() {
+        let chicago = city(slug: "chicago", lat: 41.8827, lng: -87.6233)
+        let paris = city(slug: "paris", lat: 48.8566, lng: 2.3522)
+        let location = CLLocation(latitude: 41.889, longitude: -87.63)
+
+        XCTAssertEqual(
+            ScannerLocalContextResolver.resolve(location: location, cities: [paris, chicago]),
+            .locked(chicago)
+        )
+    }
+
+    func testScannerLocalContextFailsClosedOutsideCoverage() throws {
+        let chicago = city(slug: "chicago", lat: 41.8827, lng: -87.6233)
+        let location = CLLocation(latitude: 39.9526, longitude: -75.1652)
+
+        guard case .outsideCoverage(let nearest, let distance) =
+            ScannerLocalContextResolver.resolve(location: location, cities: [chicago])
+        else {
+            return XCTFail("Expected scanner to fail closed outside the city radius")
+        }
+
+        XCTAssertEqual(nearest?.slug, "chicago")
+        XCTAssertGreaterThan(try XCTUnwrap(distance), ScannerLocalContextResolver.defaultCoverageRadiusM)
+    }
+
     // MARK: - Camera permission rationale
 
     func testCameraPermissionWaitsForRationaleBeforeFirstSystemPrompt() {
@@ -211,6 +236,20 @@ final class ScannerLogicTests: XCTestCase {
     private func place(kind: String, height: Double? = nil) -> Place {
         Place(id: "t", slug: "t", name: "Test", kind: kind, lat: 0, lng: 0,
               heightM: height, city: "test", layer1: nil, tags: [], emoji: nil)
+    }
+
+    private func city(slug: String, lat: Double, lng: Double, status: String = "live") -> City {
+        City(
+            slug: slug,
+            name: slug.capitalized,
+            country: "US",
+            emoji: nil,
+            lat: lat,
+            lng: lng,
+            zoom: nil,
+            status: status,
+            sort: nil
+        )
     }
 }
 

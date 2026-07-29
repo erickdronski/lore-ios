@@ -36,6 +36,7 @@ struct PaywallView: View {
     @State private var appeared = false
     @State private var showManageSubscriptions = false
     @State private var showSignIn = false
+    @State private var pendingProductAfterSignIn: String?
 
     var body: some View {
         ZStack {
@@ -75,6 +76,11 @@ struct PaywallView: View {
         .manageSubscriptionsSheet(isPresented: $showManageSubscriptions)
         .sheet(isPresented: $showSignIn) {
             SignInView()
+        }
+        .onChange(of: auth.session?.user.id) { _, newValue in
+            guard newValue != nil, let productID = pendingProductAfterSignIn else { return }
+            pendingProductAfterSignIn = nil
+            Task { await purchase(productID: productID) }
         }
         .onAppear {
             appeared = true
@@ -362,13 +368,15 @@ struct PaywallView: View {
                     : "Sign in to continue to Lore plus")
                 .accessibilityHint("Apple shows a confirmation sheet before any purchase is completed")
 
-                Button(auth.isSignedIn ? "Restore purchases" : "Sign in to restore purchases") {
-                    Task { await restore() }
+                if auth.isSignedIn {
+                    Button("Restore purchases") {
+                        Task { await restore() }
+                    }
+                    .font(LoreType.caption)
+                    .foregroundStyle(LoreColor.bone.opacity(0.72))
+                    .disabled(model.isPurchasing)
+                    .frame(minHeight: 44)
                 }
-                .font(LoreType.caption)
-                .foregroundStyle(LoreColor.bone.opacity(0.72))
-                .disabled(model.isPurchasing)
-                .frame(minHeight: 44)
 
                 if store.productLoadState == .partial, let message = store.lastError {
                     Text(message)
@@ -429,7 +437,7 @@ struct PaywallView: View {
 
     private func passButton(title: String, price: String, id: String) -> some View {
         Button {
-            Task { await purchasePass(id: id) }
+            Task { await purchase(productID: id) }
         } label: {
             VStack(spacing: 4) {
                 Text(title).font(LoreType.button).foregroundStyle(LoreColor.bone)
@@ -444,17 +452,6 @@ struct PaywallView: View {
         .disabled(model.isPurchasing)
         .opacity(model.isPurchasing ? 0.6 : 1)
         .accessibilityLabel("\(title), \(price)")
-    }
-
-    private func purchasePass(id: String) async {
-        let outcome = await model.purchase(productID: id)
-        if case .success = outcome {
-            await store.refreshEntitlements()
-            let token = await auth.validAccessToken()
-            await entitlements.refresh(accessToken: token)
-            Haptics.play(.badgeEarned)
-            dismiss()
-        }
     }
 
     private var finePrint: some View {
@@ -509,21 +506,37 @@ struct PaywallView: View {
     // MARK: Actions
 
     private func purchase() async {
+        await purchase(productID: model.selectedPlan.productID)
+    }
+
+    private func purchase(productID: String) async {
         guard let userID = auth.session?.user.id,
               let accountUUID = UUID(uuidString: userID) else {
+            pendingProductAfterSignIn = productID
             showSignIn = true
             return
         }
         store.accountUUID = accountUUID
-        let outcome = await model.purchase()
+        let outcome = await model.purchase(productID: productID)
         switch outcome {
         case .success(let trialing):
-            // Optimistically flip to Lore+ so the gate reopens now. StoreKit's
-            // `currentEntitlements` (re-read by `refresh`) is the real on-device
-            // truth; Lore's Apple verifier writes the durable server row.
-            entitlements.applyLocalPurchase(userID: userID, trialing: trialing)
+            // StoreKit's current entitlement read is the real on-device truth;
+            // the Apple verifier writes the durable server row. Subscriptions
+            // can present immediate trial framing from the returned outcome.
+            if StoreKitService.ProductID.requiredSubscriptions.contains(productID)
+                || productID == StoreKitService.ProductID.lifetime {
+                entitlements.applyLocalPurchase(userID: userID, trialing: trialing)
+            }
             let token = await auth.validAccessToken()
+            await store.refreshEntitlements()
             await entitlements.refresh(accessToken: token)
+            guard store.hasActiveEntitlement || entitlements.isPlus else {
+                UIAccessibility.post(
+                    notification: .announcement,
+                    argument: "Purchase recorded by Apple. Lore plus will refresh when entitlement verification completes."
+                )
+                return
+            }
             Haptics.play(.badgeEarned)  // the unlock is a reward moment
             UIAccessibility.post(notification: .announcement, argument: "Lore plus unlocked")
             dismiss()

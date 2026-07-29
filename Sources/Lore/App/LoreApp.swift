@@ -8,9 +8,9 @@ import SwiftUI
 /// Travel filter chips + near-me shelf + persona-weighted pins composed in),
 /// Scanner (the v2 intelligence viewfinder), Tours, Passport (the reward wall),
 /// and Profile, under a first-run Onboarding cover, with a global search entry
-/// and city switcher in the map header. The AR pipeline proper (ARKit + ARCore
-/// Geospatial + RealityKit) replaces the Scanner tab's internals at P1; the tab
-/// structure and everything wired here survives that swap.
+/// and city switcher in the map header. The scanner owns the camera and Apple
+/// location/AR stack; the tab structure and everything wired here survives
+/// future precision upgrades.
 ///
 /// This file is the one composition seam: it owns the shared observables
 /// (`AuthService`, `AppRouter`, `EntitlementStore`, `PrefsCoordinator`,
@@ -535,7 +535,14 @@ struct RootTabView: View {
                 onNeedsSignIn: { showSignIn = true }
             )
         case .scanner:
-            ScannerScreen(city: router.selectedCity, prefs: prefs.prefs, onMeetCity: { meetCity = $0 })
+            ScannerScreen(
+                prefs: prefs.prefs,
+                onMeetCity: { meetCity = $0 },
+                onBrowseCities: {
+                    selection = .map
+                    showCitySwitcher = true
+                }
+            )
         case .tours:
             ToursScreen()
         case .passport:

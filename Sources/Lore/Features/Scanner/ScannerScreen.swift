@@ -35,13 +35,8 @@ import UIKit
 /// projected screen points once the tracker reports localized. While it is
 /// still localizing the reticle keeps the scanning treatment; on any hard
 /// failure the scanner falls silently back to this coarse mode, which stays
-/// the default and the fallback (the ladder, docs/05 §5). ARCore Geospatial
-/// (Streetscape occlusion, dual VPS) lands at P1.5 behind the same
-/// `VPSProvider` seam.
+/// the default and the fallback (the ladder, docs/05 §5).
 struct ScannerScreen: View {
-    /// The active city the scanner scopes its place/story load to. Defaults to
-    /// the pilot so the scanner works before the city switcher is ever opened.
-    let city: String
     /// The shared curation prefs (persona lens for ranking + voice register).
     /// `nil` ⇒ the neutral traveler lens.
     let prefs: UserPrefs?
@@ -61,15 +56,17 @@ struct ScannerScreen: View {
     /// Raised so a scanner-opened place card can hand off to the city's culture
     /// surface (wired by the tab shell); the no-op default keeps previews working.
     var onMeetCity: (String) -> Void = { _ in }
+    /// Raised when the user is outside scanner coverage and wants map browsing.
+    var onBrowseCities: () -> Void = {}
 
     init(
-        city: String = Config.defaultCity,
         prefs: UserPrefs? = nil,
-        onMeetCity: @escaping (String) -> Void = { _ in }
+        onMeetCity: @escaping (String) -> Void = { _ in },
+        onBrowseCities: @escaping () -> Void = {}
     ) {
-        self.city = city
         self.prefs = prefs
         self.onMeetCity = onMeetCity
+        self.onBrowseCities = onBrowseCities
     }
 
     var body: some View {
@@ -126,8 +123,8 @@ struct ScannerScreen: View {
                     StatusChip(text: model.statusLine)
                         .padding(.top, 8)
                     if model.hasContentLoadError {
-                        Button("Retry city stories") {
-                            Task { await model.retryContent(city: city) }
+                        Button("Retry local stories") {
+                            Task { await model.retryLoadedContent() }
                         }
                         .font(LoreType.micro)
                         .foregroundStyle(LoreColor.ink)
@@ -167,6 +164,8 @@ struct ScannerScreen: View {
                     preciseLocationOverlay
                 } else if let message = model.cameraUnavailableMessage {
                     cameraUnavailableOverlay(message: message)
+                } else if model.localContextBlocksScanning {
+                    localContextOverlay
                 }
             }
         }
@@ -213,14 +212,10 @@ struct ScannerScreen: View {
             let needsCameraRationale = model.needsCameraPermissionRationale
             showCameraRationale = needsCameraRationale
             await model.start(
-                city: city,
                 requestCameraPermission: !needsCameraRationale
             )
         }
         .onChange(of: prefs) { _, newValue in model.apply(prefs: newValue) }
-        .onChange(of: city) { _, newValue in
-            Task { await model.reload(city: newValue) }
-        }
         .onAppear { isVisible = true }
         .onDisappear { isVisible = false; model.stopSensors() }
         // Pause camera/location/loop when the app leaves the foreground (privacy
@@ -583,10 +578,7 @@ struct ScannerScreen: View {
 
     private var bottomBar: some View {
         ZStack {
-            // The shutter sits dead-center of the bar (coarse mode only; the
-            // precise-mode ARSession owns the frame). Centered via a ZStack so
-            // the flanking controls can never shift it off-center.
-            if !model.preciseMode && !model.isTransitioningToPreciseMode {
+            if model.canCaptureMoment {
                 shutterButton
             }
             HStack {
@@ -604,9 +596,8 @@ struct ScannerScreen: View {
         .padding(.bottom, 16)
     }
 
-    /// The camera shutter (Phase 2 "magic capture"): freeze the real facade +
-    /// the Lore pin into a shareable AR postcard. Coarse mode only for now, the
-    /// precise-mode ARSession owns the frame.
+    /// Contextual postcard capture: offered only after the scanner has resolved
+    /// local content and the coarse camera owns the frame.
     private var shutterButton: some View {
         Button {
             Haptics.play(.scannerLock)
@@ -614,19 +605,19 @@ struct ScannerScreen: View {
         } label: {
             ZStack {
                 Circle()
-                    .strokeBorder(LoreColor.bone.opacity(0.9), lineWidth: 3)
-                    .frame(width: 58, height: 58)
+                    .strokeBorder(LoreColor.bone.opacity(0.9), lineWidth: 2)
+                    .frame(width: 44, height: 44)
                 Circle()
                     .fill(LoreColor.bone)
-                    .frame(width: 46, height: 46)
-                Image(systemName: "camera.fill")
-                    .font(.system(size: 17))
+                    .frame(width: 34, height: 34)
+                Image(systemName: "camera.aperture")
+                    .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(LoreColor.ink)
             }
             .shadow(color: LoreColor.ink.opacity(0.4), radius: 6, x: 0, y: 2)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(Text("Capture this view"))
+        .accessibilityLabel(Text("Capture Lore postcard"))
     }
 
     /// The precise-mode affordance (docs/05 §5): offered only when the
@@ -898,6 +889,106 @@ struct ScannerScreen: View {
         .transition(.opacity)
     }
 
+    /// Scanner coverage is resolved from the live device location. When someone
+    /// is browsing a far-away city, this keeps camera claims local and gives a
+    /// clean route back to map exploration.
+    private var localContextOverlay: some View {
+        ZStack {
+            LoreColor.ink950.opacity(0.94).ignoresSafeArea()
+            VStack(spacing: 16) {
+                Image(systemName: localContextIcon)
+                    .font(.system(size: 42, weight: .light))
+                    .foregroundStyle(LoreColor.amber)
+                Text(localContextTitle)
+                    .font(LoreType.displayM)
+                    .foregroundStyle(LoreColor.bone)
+                    .multilineTextAlignment(.center)
+                Text(localContextMessage)
+                    .font(LoreType.body)
+                    .foregroundStyle(LoreColor.bone.opacity(0.78))
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if model.canRetryLocalContext {
+                    Button("Try again") {
+                        model.retryLocalContext()
+                    }
+                    .font(LoreType.button)
+                    .foregroundStyle(LoreColor.ink)
+                    .padding(.horizontal, 22)
+                    .frame(height: 46)
+                    .background(LoreColor.amber, in: Capsule())
+                    .buttonStyle(.plain)
+                }
+
+                Button("Browse city maps") {
+                    onBrowseCities()
+                }
+                .font(LoreType.button)
+                .foregroundStyle(LoreColor.brass300)
+                .frame(minHeight: 44)
+                .buttonStyle(.plain)
+            }
+            .padding(28)
+            .frame(maxWidth: 430)
+        }
+        .accessibilityElement(children: .contain)
+        .transition(.opacity)
+    }
+
+    private var localContextIcon: String {
+        switch model.localContext {
+        case .waitingForLocation, .loadingCities:
+            return "location.magnifyingglass"
+        case .unavailable:
+            return "wifi.exclamationmark"
+        case .outsideCoverage:
+            return "map.fill"
+        case .locked:
+            return "camera.viewfinder"
+        }
+    }
+
+    private var localContextTitle: String {
+        switch model.localContext {
+        case .waitingForLocation:
+            return "Finding your block"
+        case .loadingCities:
+            return "Checking Lore coverage"
+        case .unavailable:
+            return "Coverage unavailable"
+        case .outsideCoverage:
+            return "No live scanner coverage here"
+        case .locked:
+            return "Scanner ready"
+        }
+    }
+
+    private var localContextMessage: String {
+        switch model.localContext {
+        case .waitingForLocation:
+            return "Lore is waiting for a current location before it loads nearby scanner stories."
+        case .loadingCities:
+            return "Lore is matching your current location to a live city catalog."
+        case .unavailable:
+            return "Lore could not load the live city roster. Map and Tours still work from the city browser."
+        case .outsideCoverage(let nearest, let distance):
+            if let nearest, let distance {
+                return "The nearest scanner city is \(nearest.name), \(distanceLabel(distance)) away. Explore by map or try the scanner when you arrive."
+            }
+            return "Explore by map or try the scanner when you are in a live Lore city."
+        case .locked(let city):
+            return "Loading \(city.name)'s nearby stories."
+        }
+    }
+
+    private func distanceLabel(_ meters: CLLocationDistance) -> String {
+        if meters >= 1_000 {
+            return String(format: "%.0f km", meters / 1_000)
+        }
+        return "\(Int(meters.rounded())) m"
+    }
+
     private var cameraFallbackCopy: String {
         #if targetEnvironment(simulator)
         return "You can still explore every place from Map and Tours. Simulator has no live camera; use a real iPhone for scanning and AR."
@@ -1166,7 +1257,7 @@ enum IdentifyFailure: Equatable {
 
     var message: String {
         switch self {
-        case .capture: return "The camera couldn't capture a clear frame. Hold steady and try again."
+        case .capture: return "Lore couldn't grab that frame. Aim again and retry."
         case .network: return "Landmark ID needs a connection. Check your signal and retry."
         case .service: return "Google landmark matching is temporarily unavailable. Try again in a moment."
         case .invalidResponse: return "The match came back incomplete, so Lore didn't guess. Try another angle."
@@ -1251,6 +1342,12 @@ enum ScanState: Equatable {
     case preciseLocationRequired
     /// A current location exists but no valid compass heading arrived.
     case headingUnavailable
+    /// Local city coverage is being resolved or content is loading.
+    case resolvingCoverage
+    /// The user is outside the scanner radius of every live city.
+    case outsideCoverage
+    /// The local coverage roster or content request failed.
+    case coverageUnavailable
     /// Known places resolved around the user (a lock, chips, or rail hints).
     case foundNearby(Int)
     /// Sensors are ready but Lore knows nothing here; the honest on-device
@@ -1284,6 +1381,7 @@ final class ScannerModel {
     private(set) var places: [Place] = []
     private(set) var stories: [Story] = []
     private(set) var prefs: UserPrefs?
+    private(set) var localContext: ScannerLocalContext = .waitingForLocation
 
     /// The current frame, resolved into tiers and clusters.
     private(set) var lockedRanked: ScannerRanking.Ranked?
@@ -1330,8 +1428,12 @@ final class ScannerModel {
     }
 
     private var loadError = false
+    private var isLoadingContent = false
     var hasContentLoadError: Bool { loadError }
     private var contentLoadID = UUID()
+    private var availableCities: [City]?
+    private var cityRosterTask: Task<Void, Never>?
+    private var cityRosterLoadFailed = false
     /// Coverage is area-specific. Re-probe after a meaningful move instead of
     /// keeping the first block's result for the rest of the app session.
     private var lastScoutedLocation: CLLocation?
@@ -1370,6 +1472,12 @@ final class ScannerModel {
             return "Precise Location is off"
         case .headingUnavailable:
             return "Compass unavailable · try away from magnetic interference"
+        case .resolvingCoverage:
+            return "Finding local Lore coverage"
+        case .outsideCoverage:
+            return "Scanner coverage not available here"
+        case .coverageUnavailable:
+            return "Couldn't check local scanner coverage"
         case .foundNearby(let n):
             return String(format: L10n.t("scan.foundNearby"), n)
         case .nothingRecognized:
@@ -1381,6 +1489,26 @@ final class ScannerModel {
     /// lock, or the precise tracker reaching localized.
     var reticleLocked: Bool {
         preciseMode ? geoAR.state == .locked : lockedPlace != nil
+    }
+
+    var localContextBlocksScanning: Bool { localContext.isBlockingScanner }
+
+    var canRetryLocalContext: Bool {
+        switch localContext {
+        case .unavailable, .outsideCoverage:
+            return true
+        case .waitingForLocation, .loadingCities, .locked:
+            return false
+        }
+    }
+
+    var canCaptureMoment: Bool {
+        !preciseMode
+            && !isTransitioningToPreciseMode
+            && !permissionDenied
+            && !needsPreciseLocation
+            && !localContextBlocksScanning
+            && !isLoadingContent
     }
 
     /// Whether the "Lock on" upgrade is offered: coverage scouted available
@@ -1424,10 +1552,7 @@ final class ScannerModel {
         self.prefs = prefs
     }
 
-    func start(
-        city: String = Config.defaultCity,
-        requestCameraPermission: Bool = true
-    ) async {
+    func start(requestCameraPermission: Bool = true) async {
         // Marker rung (docs/05 §5, rung 0): a scanned Lore QR is ground truth
         // at a known point, an instant honest resolve no GPS could earn.
         camera.onMarkerSlug = { [weak self] slug in
@@ -1458,17 +1583,22 @@ final class ScannerModel {
         Haptics.play(.scanAttempt)
         acquiringSince = Date()
         startProjectionLoop()
+        resolveLocalContext(location: pose.freshLocation())
+        ensureCityRosterLoaded()
+    }
+
+    func retryLoadedContent() async {
+        guard let city = localContext.lockedCity?.slug ?? loadedCity else { return }
         await loadContent(city: city)
     }
 
-    /// Refetch places/stories for a newly-selected city, keeping sensors live.
-    func reload(city: String) async {
-        guard city != loadedCity || loadError else { return }
-        await loadContent(city: city)
-    }
-
-    func retryContent(city: String) async {
-        await loadContent(city: city)
+    func retryLocalContext() {
+        cityRosterTask?.cancel()
+        cityRosterTask = nil
+        availableCities = nil
+        cityRosterLoadFailed = false
+        resolveLocalContext(location: pose.freshLocation())
+        ensureCityRosterLoaded(force: true)
     }
 
     private func loadContent(city: String) async {
@@ -1476,6 +1606,7 @@ final class ScannerModel {
         contentLoadID = requestID
         loadedCity = city
         loadError = false
+        isLoadingContent = true
         places = []
         stories = []
         lockedRanked = nil
@@ -1489,10 +1620,13 @@ final class ScannerModel {
             guard contentLoadID == requestID else { return }
             places = newPlaces
             stories = newStories
+            isLoadingContent = false
             reproject()
         } catch {
             guard contentLoadID == requestID else { return }
+            isLoadingContent = false
             loadError = true
+            setScanState(.coverageUnavailable)
         }
     }
 
@@ -1513,6 +1647,8 @@ final class ScannerModel {
         }
         projectionTask?.cancel()
         projectionTask = nil
+        cityRosterTask?.cancel()
+        cityRosterTask = nil
         preciseNoticeTask?.cancel()
         preciseNoticeTask = nil
         tierStabilizer.reset()
@@ -1821,20 +1957,15 @@ final class ScannerModel {
         }
 
         if needsPreciseLocation {
-            lockedRanked = nil
-            inViewClusters = []
-            inViewStories = []
-            directionalCandidates = []
+            clearProjectedContent()
             acquiringSince = nil
             setScanState(.preciseLocationRequired)
             return
         }
 
         guard let location = pose.freshLocation() else {
-            lockedRanked = nil
-            inViewClusters = []
-            inViewStories = []
-            directionalCandidates = []
+            clearProjectedContent()
+            resolveLocalContext(location: nil)
             // A missing fix may genuinely improve outdoors. Approximate access
             // is handled above and never receives this copy.
             if acquiringSince == nil { acquiringSince = Date() }
@@ -1843,11 +1974,40 @@ final class ScannerModel {
             return
         }
 
+        resolveLocalContext(location: location)
+        guard case .locked(let localCity) = localContext else {
+            clearProjectedContent()
+            acquiringSince = nil
+            switch localContext {
+            case .waitingForLocation:
+                setScanState(.acquiringSensors)
+            case .loadingCities:
+                setScanState(.resolvingCoverage)
+            case .unavailable:
+                setScanState(.coverageUnavailable)
+            case .outsideCoverage:
+                setScanState(.outsideCoverage)
+            case .locked:
+                break
+            }
+            return
+        }
+
+        if loadedCity != localCity.slug {
+            clearProjectedContent()
+            setScanState(.resolvingCoverage)
+            Task { await loadContent(city: localCity.slug) }
+            return
+        }
+
+        if isLoadingContent {
+            clearProjectedContent()
+            setScanState(.resolvingCoverage)
+            return
+        }
+
         guard let heading = pose.freshHeading() else {
-            lockedRanked = nil
-            inViewClusters = []
-            inViewStories = []
-            directionalCandidates = []
+            clearProjectedContent()
             if acquiringSince == nil { acquiringSince = Date() }
             let waited = Date().timeIntervalSince(acquiringSince ?? Date())
             setScanState(waited > 8 ? .headingUnavailable : .acquiringSensors)
@@ -1871,8 +2031,8 @@ final class ScannerModel {
         )
 
         // 2. Sensor quality gates the tier ceiling (docs/05 §4.2). Compass-grade
-        // coarse mode until the ARCore VPS lands; the probe below only tells us
-        // coverage exists, not that we're localized, so `hasVPS` stays false.
+        // coarse mode until precise AR is actually localized; the probe below
+        // only tells us coverage exists, so `hasVPS` stays false here.
         // Camera pitch (scanner-lab port) blocks ground/sky overclaims.
         var quality = ScannerRanking.PoseQuality(
             horizontalAccuracyM: location.horizontalAccuracy > 0 ? location.horizontalAccuracy : 30,
@@ -1950,6 +2110,66 @@ final class ScannerModel {
         // "gaze"; brand/ELEVATION §4 `.scannerChipPass`). Fire once per chip as
         // it enters the center band, not every frame it's inside.
         updateCenterCrossing(inViewClusters.map(\.lead))
+    }
+
+    private func clearProjectedContent() {
+        lockedRanked = nil
+        inViewClusters = []
+        inViewStories = []
+        directionalCandidates = []
+    }
+
+    private func ensureCityRosterLoaded(force: Bool = false) {
+        if force {
+            cityRosterTask?.cancel()
+            cityRosterTask = nil
+        }
+        guard availableCities == nil, cityRosterTask == nil else { return }
+        guard !cityRosterLoadFailed || force else { return }
+        cityRosterLoadFailed = false
+        cityRosterTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let cities = try await LoreAPI.shared.cities()
+                guard !Task.isCancelled else { return }
+                self.availableCities = cities
+                self.cityRosterTask = nil
+                self.resolveLocalContext(location: self.pose.freshLocation())
+                self.reproject()
+            } catch {
+                guard !Task.isCancelled else { return }
+                self.cityRosterLoadFailed = true
+                self.cityRosterTask = nil
+                self.localContext = .unavailable
+                self.clearProjectedContent()
+                self.setScanState(.coverageUnavailable)
+            }
+        }
+    }
+
+    private func resolveLocalContext(location: CLLocation?) {
+        ensureCityRosterLoaded()
+        let previousCity = localContext.lockedCity?.slug
+        let resolved: ScannerLocalContext
+        if cityRosterLoadFailed {
+            resolved = .unavailable
+        } else {
+            resolved = ScannerLocalContextResolver.resolve(
+                location: location,
+                cities: availableCities
+            )
+        }
+        localContext = resolved
+        if previousCity != resolved.lockedCity?.slug {
+            contentLoadID = UUID()
+            loadedCity = nil
+            loadError = false
+            isLoadingContent = false
+            places = []
+            stories = []
+            clearProjectedContent()
+            tierStabilizer.reset()
+        }
     }
 
     /// Track which candidates are within the center band so we can fire a

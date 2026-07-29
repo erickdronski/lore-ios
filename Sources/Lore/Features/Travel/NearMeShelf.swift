@@ -38,12 +38,16 @@ struct NearMeShelf: View {
     @Environment(MapFilterStore.self) private var filters
     @Environment(\.openURL) private var openURL
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     /// Flips once per shelf population so the cards cascade in (LUXURY-MOTION §6).
     @State private var appeared = false
     /// Which of the shelf's places have a live offer — one bulk query per
     /// ranking, so a tile can wear a quiet "offers here" mark. Shown to
     /// everyone (the honest hook); the detail unlocks with Lore+.
     @State private var offerPlaceIDs: Set<String> = []
+    /// Tallest natural card in the current row. Applying it back to every card
+    /// prevents a jagged horizontal shelf without clipping Dynamic Type.
+    @State private var equalizedCardHeight: CGFloat = 0
 
     private var ranked: [RankedPlace] {
         NearMe.nearest(
@@ -155,11 +159,22 @@ struct NearMeShelf: View {
                         appeared: appeared,
                         reduceMotion: reduceMotion
                     ))
+                    .background(NearMeCardHeightReader())
+                    .frame(
+                        height: equalizedCardHeight > 0 ? equalizedCardHeight : nil,
+                        alignment: .top
+                    )
                 }
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 4)
         }
+        .onPreferenceChange(NearMeCardHeightPreferenceKey.self) { height in
+            guard height.isFinite, height > 0 else { return }
+            equalizedCardHeight = height
+        }
+        .onChange(of: ranked.map(\.id)) { _, _ in equalizedCardHeight = 0 }
+        .onChange(of: dynamicTypeSize) { _, _ in equalizedCardHeight = 0 }
         .onAppear {
             if reduceMotion {
                 appeared = true
@@ -265,6 +280,25 @@ struct NearMeShelf: View {
         if filters.hasActiveFilter { return "No nearby places match this view." }
         if places.isEmpty { return "No field notes are published here yet." }
         return "You’re outside this city’s nearby range. Explore its map or switch cities."
+    }
+}
+
+private struct NearMeCardHeightPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
+private struct NearMeCardHeightReader: View {
+    var body: some View {
+        GeometryReader { proxy in
+            Color.clear.preference(
+                key: NearMeCardHeightPreferenceKey.self,
+                value: proxy.size.height
+            )
+        }
     }
 }
 
