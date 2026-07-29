@@ -58,7 +58,7 @@ struct StreetViewSection: View {
                             .frame(maxWidth: .infinity)
                             .frame(height: 220)
                             .clipShape(RoundedRectangle(cornerRadius: 16))
-                            .overlay(alignment: .bottomTrailing) {
+                            .overlay(alignment: .topTrailing) {
                                 // A clear "this opens Street View" affordance.
                                 HStack(spacing: 5) {
                                     Image(systemName: "figure.walk")
@@ -78,12 +78,33 @@ struct StreetViewSection: View {
                     }
                     .buttonStyle(.pressable)
                     .accessibilityLabel("Open in Street View")
-                    Text("Tap to look around in Street View.")
-                        .font(LoreType.caption)
-                        .foregroundStyle(LoreColor.ink600)
+                    ViewThatFits(in: .horizontal) {
+                        HStack(alignment: .firstTextBaseline, spacing: 12) {
+                            streetViewHint
+                            Spacer(minLength: 8)
+                            googleMapsAttribution
+                        }
+                        VStack(alignment: .leading, spacing: 4) {
+                            streetViewHint
+                            googleMapsAttribution
+                        }
+                    }
                 }
             }
         }
+    }
+
+    private var streetViewHint: some View {
+        Text("Tap to look around in Street View.")
+            .font(LoreType.caption)
+            .foregroundStyle(LoreColor.bone.opacity(0.72))
+    }
+
+    private var googleMapsAttribution: some View {
+        Text("Google Maps")
+            .font(.system(.caption))
+            .foregroundStyle(LoreColor.bone.opacity(0.82))
+            .accessibilityLabel("Street View imagery provided by Google Maps")
     }
 
     private var requestKey: String { "\(coordinate.latitude),\(coordinate.longitude)" }
