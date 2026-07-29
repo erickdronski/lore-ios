@@ -108,14 +108,13 @@ final class StoreKitService {
     var accountUUID: UUID?
 
     /// Called with a transaction's **JWS representation** so the app can post it
-    /// to the server for entitlement recording. Set by the app; no-op until it
-    /// is.
+    /// to the server for entitlement recording. Set by the app before `start()`.
     ///
     /// It must be the JWS, not `Transaction.jsonRepresentation`: the server
     /// re-verifies Apple's signature over this exact string and trusts nothing
     /// the client asserts. Handing it unsigned JSON would let any caller mint
     /// itself a paid entitlement.
-    var onVerifiedTransaction: ((String) async -> Bool)?
+    var onVerifiedTransaction: ((String) async -> VerifiedTransactionSyncOutcome)?
 
     /// The Lore+ products, App Store Connect identifiers (docs/16 §1). IDs are
     /// price-agnostic on purpose: storefront pricing and offers may change
@@ -151,9 +150,25 @@ final class StoreKitService {
         }
     }
 
-    /// The `entitlements` grant name these products confer. Matches the row
-    /// `EntitlementStore` reads from Lore's server row.
-    static let entitlementName = "lore_plus"
+    /// The `entitlements` grant name these products confer. Product ids are
+    /// `lore_plus_*`; the grant itself is the cross-platform `plus` row.
+    static let entitlementName = Entitlement.plusName
+
+    enum VerifiedTransactionSyncOutcome: Equatable {
+        /// Lore durably recorded a production Plus entitlement row.
+        case recorded
+        /// Lore verified/handled the transaction but intentionally did not grant
+        /// a production row, for example a TestFlight/Sandbox purchase.
+        case acceptedWithoutServerGrant
+        /// The app could not post or verify the transaction with Lore.
+        case failed
+
+        var canFinishTransaction: Bool {
+            self == .recorded || self == .acceptedWithoutServerGrant
+        }
+
+        var recordedServerEntitlement: Bool { self == .recorded }
+    }
 
     enum ProductLoadState: Equatable {
         case idle
@@ -365,7 +380,11 @@ final class StoreKitService {
         var serverRecorded = false
         if let sync = onVerifiedTransaction {
             for jws in verifiedJWS {
-                if await sync(jws) { serverRecorded = true }
+                let outcome = await sync(jws)
+                if outcome.recordedServerEntitlement { serverRecorded = true }
+                if outcome == .failed {
+                    lastError = Self.transactionSyncFailureMessage
+                }
             }
         }
 
@@ -463,11 +482,16 @@ final class StoreKitService {
                     return .failed(message: message)
                 }
                 let trialing = introductory(in: transaction)
-                // Record it server-side BEFORE finishing, so a crash between
-                // the two still leaves the transaction unfinished and therefore
-                // replayable on next launch. `verification.jwsRepresentation`
-                // is the Apple-signed form the server re-verifies.
-                _ = await onVerifiedTransaction?(verification.jwsRepresentation)
+                // Record/accept it server-side BEFORE finishing, so a crash or
+                // transport failure leaves the transaction unfinished and
+                // replayable. Sandbox/TestFlight may be accepted without a
+                // production entitlement row, but failed posts are not finished.
+                let syncOutcome = await syncVerifiedTransaction(verification.jwsRepresentation)
+                guard syncOutcome.canFinishTransaction else {
+                    let message = Self.transactionSyncFailureMessage
+                    lastError = message
+                    return .failed(message: message)
+                }
                 await transaction.finish()
                 await refreshEntitlements()
                 return .success(trialing: trialing)
@@ -599,8 +623,26 @@ final class StoreKitService {
             lastError = "A purchase update arrived but couldn't be verified. Restore purchases to retry."
             return
         }
-        // Finish any transaction we're told about so StoreKit stops replaying it.
+        guard ProductID.all.contains(transaction.productID) else {
+            await transaction.finish()
+            return
+        }
+        let syncOutcome = await syncVerifiedTransaction(result.jwsRepresentation)
+        guard syncOutcome.canFinishTransaction else {
+            lastError = Self.transactionSyncFailureMessage
+            return
+        }
+        // Finish only after Lore has handled the signed transaction, so StoreKit
+        // can replay it if the durable server sync is temporarily unavailable.
         await transaction.finish()
         await refreshEntitlements()
+    }
+
+    private static let transactionSyncFailureMessage =
+        "Apple recorded the purchase, but Lore couldn't link it to your account yet. Check your connection, then use Restore Purchases."
+
+    private func syncVerifiedTransaction(_ jws: String) async -> VerifiedTransactionSyncOutcome {
+        guard let sync = onVerifiedTransaction else { return .failed }
+        return await sync(jws)
     }
 }

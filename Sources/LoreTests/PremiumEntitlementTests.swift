@@ -102,6 +102,24 @@ final class PremiumEntitlementTests: XCTestCase {
         XCTAssertFalse(grant.isActive(asOf: expiry.addingTimeInterval(0.001)))
     }
 
+    func testOnlyPlusGrantNameCanOpenEntitlement() {
+        let plus = entitlement(.active)
+        let unrelated = Entitlement(
+            userID: "traveler",
+            entitlement: "atlas_seat",
+            status: .active,
+            environment: .production
+        )
+
+        XCTAssertEqual(StoreKitService.entitlementName, Entitlement.plusName)
+        XCTAssertTrue(plus.isActive)
+        XCTAssertFalse(unrelated.isActive)
+        XCTAssertFalse(EntitlementEnvironmentPolicy.production.grantsAccess(
+            unrelated,
+            asOf: Date()
+        ))
+    }
+
     func testEntitlementStoreAppliesEnvironmentPolicyToServerRows() {
         let now = Date(timeIntervalSince1970: 10_000)
         let sandboxGrant = entitlement(.active, environment: .sandbox)
@@ -309,6 +327,15 @@ final class PremiumEntitlementTests: XCTestCase {
             "traveler-42"
         )
         XCTAssertNil(EntitlementCachePolicy.userID(fromJWT: "not-a-jwt"))
+    }
+
+    func testVerifiedTransactionSyncOutcomeSeparatesServerRecordFromAcceptedSandbox() {
+        XCTAssertTrue(StoreKitService.VerifiedTransactionSyncOutcome.recorded.canFinishTransaction)
+        XCTAssertTrue(StoreKitService.VerifiedTransactionSyncOutcome.recorded.recordedServerEntitlement)
+        XCTAssertTrue(StoreKitService.VerifiedTransactionSyncOutcome.acceptedWithoutServerGrant.canFinishTransaction)
+        XCTAssertFalse(StoreKitService.VerifiedTransactionSyncOutcome.acceptedWithoutServerGrant.recordedServerEntitlement)
+        XCTAssertFalse(StoreKitService.VerifiedTransactionSyncOutcome.failed.canFinishTransaction)
+        XCTAssertFalse(StoreKitService.VerifiedTransactionSyncOutcome.failed.recordedServerEntitlement)
     }
 
     func testColdPaywallNeverInventsPriceOrTrialEligibility() {

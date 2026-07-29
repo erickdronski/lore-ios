@@ -3,13 +3,17 @@ import Foundation
 /// Row shape of the `entitlements` table, a user's paid access grants. Own
 /// rows only, via RLS. A `status` of `active` or `trialing` means the Lore+
 /// gate is open.
-/// `GET /rest/v1/entitlements` (with a user bearer token)
+/// `GET /rest/v1/entitlements?entitlement=eq.plus` (with a user bearer token)
 ///
 /// Live columns: `user_id`, `entitlement`, `status`, `expires_at`,
 /// `environment`.
 struct Entitlement: Codable, Identifiable, Hashable {
+    /// Canonical Lore+ grant name. Product ids keep the `lore_plus_*` prefix, but
+    /// the entitlement row itself is the cross-platform `plus` grant.
+    static let plusName = "plus"
+
     let userID: String
-    /// The grant name (`lore_plus`, …).
+    /// The grant name (`plus`, …).
     let entitlement: String
     /// `active` | `trialing` | `expired` | `refunded` | `grace` | …
     let status: Status
@@ -115,6 +119,7 @@ struct Entitlement: Codable, Identifiable, Hashable {
     /// traveler while the App Store retries payment — but an expired window
     /// never unlocks, even if the stored status still reads active/grace.
     func isActive(asOf now: Date = Date()) -> Bool {
+        guard entitlement == Self.plusName else { return false }
         let statusGrants = status == .active || status == .trialing || status == .gracePeriod
         guard statusGrants else { return false }
         if let expiresAt { return expiresAt > now }

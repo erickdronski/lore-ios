@@ -367,6 +367,8 @@ struct SettingsView: View {
         restoring = true
         restoreNote = nil
         let outcome = await store.restore()
+        let token = await auth.validAccessToken()
+        await entitlements.refresh(accessToken: token)
         restoring = false
         switch outcome {
         case .restored:
