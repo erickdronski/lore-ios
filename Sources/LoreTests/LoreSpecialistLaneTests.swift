@@ -7,17 +7,45 @@ final class LoreSpecialistLaneTests: XCTestCase {
         XCTAssertEqual(JournalDraftPolicy.normalized("  A quiet courtyard.\n"), "A quiet courtyard.")
     }
 
-    func testJournalDraftRequiresTextBeforePublicSharing() {
-        XCTAssertNotNil(JournalDraftPolicy.validationMessage(text: "  \n", wantsToShare: true))
-        XCTAssertNil(JournalDraftPolicy.validationMessage(text: "  \n", wantsToShare: false))
+    func testJournalDraftAllowsClearingAPrivateNote() {
+        XCTAssertNil(JournalDraftPolicy.validationMessage(text: "  \n"))
     }
 
     func testJournalDraftEnforcesBoundedNotes() {
         let accepted = String(repeating: "a", count: JournalDraftPolicy.maximumCharacters)
         let rejected = accepted + "b"
 
-        XCTAssertNil(JournalDraftPolicy.validationMessage(text: accepted, wantsToShare: false))
-        XCTAssertNotNil(JournalDraftPolicy.validationMessage(text: rejected, wantsToShare: false))
+        XCTAssertNil(JournalDraftPolicy.validationMessage(text: accepted))
+        XCTAssertNotNil(JournalDraftPolicy.validationMessage(text: rejected))
+    }
+
+    func testUserStatsIgnoresLegacyPublicLoreCount() throws {
+        let payload = """
+        {
+          "places": 2,
+          "cities": 1,
+          "countries": 1,
+          "continents": 1,
+          "continents_list": ["Europe"],
+          "dives_read": 3,
+          "notes": 1,
+          "photos": 2,
+          "public_lores": 99,
+          "scanner_visits": 1,
+          "badges": 1,
+          "badges_total": 12,
+          "insight_points": 8,
+          "current_streak": 2,
+          "longest_streak": 4,
+          "top_categories": [],
+          "first_visit": null
+        }
+        """
+
+        let stats = try JSONDecoder().decode(UserStats.self, from: Data(payload.utf8))
+
+        XCTAssertEqual(stats.places, 2)
+        XCTAssertEqual(stats.scannerVisits, 1)
     }
 
     func testMilestoneSelectorPrefersMeaningfulInProgressBadge() throws {

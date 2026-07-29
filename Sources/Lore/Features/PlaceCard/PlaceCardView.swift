@@ -124,9 +124,7 @@ struct PlaceCardView: View {
             visitedAt: "",
             note: nil,
             photos: nil,
-            visitID: nil,
-            isPublic: nil,
-            status: nil,
+            legacyIsPublic: nil,
             place: .init(name: place.name, emoji: place.displayEmoji, city: place.city, kind: place.kind)
         )
     }

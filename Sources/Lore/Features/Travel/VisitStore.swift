@@ -193,24 +193,24 @@ final class VisitStore {
         return url
     }
 
-    /// Opt this place's lore in or out of the public traveler layer, then
-    /// refresh so `is_public`/`status` reflect the server's truth.
+    /// Clear a stale public flag from an older client before saving the private
+    /// journal entry. There is intentionally no operation that sets it true.
     @discardableResult
-    func setShared(placeID: String, isPublic: Bool) async -> Bool {
+    func makePrivateIfNeeded(placeID: String) async -> Bool {
         guard let creds = credentials() else {
-            lastError = "Sign in to share traveler lore."
+            lastError = "Sign in to update your private journal."
             return false
         }
         do {
             lastError = nil
-            try await TravelReads.setVisitPublic(
-                placeID: placeID, isPublic: isPublic, accessToken: creds.accessToken
+            try await TravelReads.makeVisitPrivate(
+                placeID: placeID, accessToken: creds.accessToken
             )
             await settleAchievements(for: creds)
             await loadHistory(force: true)
             return true
         } catch {
-            lastError = "Couldn't change sharing for that place."
+            lastError = "Couldn't secure that journal entry."
             return false
         }
     }
