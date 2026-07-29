@@ -300,6 +300,9 @@ struct LoreAPI {
         /// Studio narration files referenced by this city's dives; the pack
         /// downloads them like hero images so audio survives offline.
         var audioURLs: [URL] = []
+        /// One snapshot governs every JSON pin in this download. When backend
+        /// enforcement is off or unavailable, this is the compatibility value.
+        var contentContract: ContentContract = .compatibility
     }
 
     /// Fetch + durably pin every anonymous read a city needs to work offline:
@@ -313,6 +316,8 @@ struct LoreAPI {
         onUnit: @escaping @MainActor () -> Void
     ) async throws -> CityPinResult {
         var result = CityPinResult()
+        let contentContract = await AtlasCache.shared.contentContract(session: session)
+        result.contentContract = contentContract
 
         // City-scoped + global endpoints, in the exact live-read shapes.
         let endpoints: [(table: String, query: [URLQueryItem])] = [
@@ -356,7 +361,11 @@ struct LoreAPI {
 
         for endpoint in endpoints {
             let request = try atlasRequest(endpoint.table, query: endpoint.query)
-            let data = try await AtlasCache.shared.pinData(for: request, session: session)
+            let data = try await AtlasCache.shared.pinData(
+                for: request,
+                session: session,
+                contract: contentContract
+            )
             result.pinnedURLs.append(request.url?.absoluteString ?? "")
             if endpoint.table == "place_explore" {
                 result.places = try decodeBody(data)
@@ -383,7 +392,11 @@ struct LoreAPI {
                         URLQueryItem(name: "place_id", value: "eq.\(place.id)"),
                         URLQueryItem(name: "limit", value: "1"),
                     ]) {
-                        if let data = try? await AtlasCache.shared.pinData(for: diveRequest, session: self.session) {
+                        if let data = try? await AtlasCache.shared.pinData(
+                            for: diveRequest,
+                            session: self.session,
+                            contract: contentContract
+                        ) {
                             urls.append(diveRequest.url?.absoluteString ?? "")
                             let dives: [Dive]? = try? self.decodeBody(data)
                             title = dives?.first?.media.wikipediaTitle
@@ -394,7 +407,11 @@ struct LoreAPI {
                         URLQueryItem(name: "place_id", value: "eq.\(place.id)"),
                         URLQueryItem(name: "order", value: "key.asc"),
                     ]) {
-                        if (try? await AtlasCache.shared.pinData(for: factsRequest, session: self.session)) != nil {
+                        if (try? await AtlasCache.shared.pinData(
+                            for: factsRequest,
+                            session: self.session,
+                            contract: contentContract
+                        )) != nil {
                             urls.append(factsRequest.url?.absoluteString ?? "")
                         }
                     }
