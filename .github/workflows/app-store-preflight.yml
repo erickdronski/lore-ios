@@ -22,6 +22,16 @@ on:
           - submit
           - swap-latest
           - auto-release
+      expected_version:
+        description: "Version to hold (guarded exact match)"
+        required: true
+        default: "1.1"
+        type: string
+      expected_build:
+        description: "Attached build to hold (guarded exact match)"
+        required: true
+        default: "7"
+        type: string
 
 concurrency:
   group: app-store-preflight
@@ -50,9 +60,10 @@ jobs:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_KEY_CONTENT: ${{ secrets.ASC_KEY_CONTENT }}
+          APP_REVIEW_HOLD: ${{ vars.APP_REVIEW_HOLD }}
         run: |
           case "${{ inputs.action }}" in
-            hold-review)  bundle exec fastlane hold_review ;;
+            hold-review)  bundle exec fastlane hold_review expected_version:"${{ inputs.expected_version }}" expected_build:"${{ inputs.expected_build }}" ;;
             submit)       bundle exec fastlane submit_for_review ;;
             swap-latest)  bundle exec fastlane swap_latest_build_and_resubmit ;;
             auto-release) bundle exec fastlane set_auto_release ;;
