@@ -4,13 +4,15 @@
 // and Google blocks a server call with it). Fired ONE frame per explicit user
 // tap, only after geospatial + on-device Vision came up empty.
 // Returns the top landmark (name + confidence + coords), and if it sits on a
-// known Lore place, that place's slug so the app can open the real story.
+// known Lore place, that place's stable id, slug, and city so the app can route
+// across city boundaries and open the real story.
 // Returns 204 when nothing is recognized — never a fabricated name.
 //
 // Deployed with verify_jwt=true. The function also resolves the caller from the
 // bearer token and applies per-user + global daily quotas before a paid call.
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { encodeBase64 } from "jsr:@std/encoding/base64";
+import { isActiveProductionPlus } from "../_shared/plusEntitlement.mjs";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -18,6 +20,17 @@ const CORS = {
 };
 const R = 6371000;
 const rad = (d: number) => (d * Math.PI) / 180;
+const distanceMeters = (
+  from: { lat: number; lng: number },
+  to: { lat: number; lng: number },
+) => {
+  const dLat = rad(to.lat - from.lat);
+  const dLng = rad(to.lng - from.lng);
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos(rad(from.lat)) * Math.cos(rad(to.lat)) *
+      Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+};
 const DAILY_CAP = 400;
 const USER_DAILY_CAP = 25;
 const MAX_IMAGE_BYTES = 3_000_000;
@@ -36,6 +49,27 @@ Deno.serve(async (req) => {
     return new Response("not authenticated", { status: 401, headers: CORS });
   }
 
+  const supa = createClient(
+    url,
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+  );
+
+  const { data: entitlement, error: entitlementError } = await supa
+    .from("entitlements")
+    .select("entitlement,status,expires_at,environment")
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (entitlementError) {
+    console.error("entitlement lookup failed", entitlementError.message);
+    return new Response("entitlement unavailable", { status: 503, headers: CORS });
+  }
+  if (!isActiveProductionPlus(entitlement)) {
+    return new Response(JSON.stringify({ error: "plus required" }), {
+      status: 403,
+      headers: { ...CORS, "Content-Type": "application/json" },
+    });
+  }
+
   const declaredLength = Number(req.headers.get("content-length"));
   if (Number.isFinite(declaredLength) && declaredLength > MAX_IMAGE_BYTES) {
     return new Response("bad image", { status: 413, headers: CORS });
@@ -46,11 +80,6 @@ Deno.serve(async (req) => {
   if (bytes.length < 1024 || bytes.length > MAX_IMAGE_BYTES) {
     return new Response("bad image", { status: 400, headers: CORS });
   }
-
-  const supa = createClient(
-    url,
-    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-  );
 
   const { data: quota, error: quotaError } = await supa.rpc(
     "consume_vision_quota",
@@ -94,21 +123,17 @@ Deno.serve(async (req) => {
     });
     const json = await resp.json();
     if (!resp.ok) {
-      const providerCode = typeof json?.error?.status === "string"
-        ? json.error.status
-        : "VISION_FAILED";
-      console.error("vision provider error", { status: resp.status, code: providerCode });
-      return new Response(JSON.stringify({
-        error: "vision provider request failed",
-        code: providerCode,
-      }), {
+      // e.g. "Cloud Vision API has not been used in project ... before or it is
+      // disabled" — the one owner step. Surface it (server log + body) so it's
+      // actionable, never silently swallowed.
+      console.error("vision error", JSON.stringify(json));
+      return new Response(JSON.stringify({ error: json?.error?.message ?? "vision failed" }), {
         status: 502, headers: { ...CORS, "Content-Type": "application/json" },
       });
     }
     annotations = json?.responses?.[0]?.landmarkAnnotations;
   } catch (e) {
-    console.error("vision request failed", e instanceof Error ? e.name : "unknown error");
-    return new Response(JSON.stringify({ error: "vision request failed" }), {
+    return new Response(JSON.stringify({ error: String(e) }), {
       status: 502, headers: { ...CORS, "Content-Type": "application/json" },
     });
   }
@@ -120,20 +145,53 @@ Deno.serve(async (req) => {
   const lat = typeof loc?.latitude === "number" ? loc.latitude : null;
   const lng = typeof loc?.longitude === "number" ? loc.longitude : null;
 
-  // If the landmark sits on a known Lore place, hand back its slug so the app
-  // opens the real dossier instead of a bare name (~220m box).
-  let slug: string | null = null;
+  // If the landmark sits on a known Lore place, choose the nearest row inside
+  // the bounding box instead of accepting PostgREST's arbitrary first row.
+  // Stable id + city let the client route to a place outside its loaded city.
+  let matchedPlace: {
+    id: string;
+    slug: string;
+    city: string;
+    lat: number;
+    lng: number;
+  } | null = null;
   if (lat !== null && lng !== null) {
     const dLat = 0.002, dLng = 0.002 / Math.max(0.2, Math.cos(rad(lat)));
-    const { data: near } = await supa.from("place_explore").select("slug")
+    const { data: near, error: nearError } = await supa.from("place_explore")
+      .select("id,slug,city,lat,lng")
       .gte("lat", lat - dLat).lte("lat", lat + dLat)
-      .gte("lng", lng - dLng).lte("lng", lng + dLng).limit(1);
-    if (near && near.length) slug = near[0].slug;
+      .gte("lng", lng - dLng).lte("lng", lng + dLng)
+      .limit(12);
+    if (nearError) {
+      console.error("landmark place lookup failed", nearError.message);
+    } else if (near?.length) {
+      matchedPlace = near
+        .filter((place) =>
+          typeof place.id === "string" &&
+          typeof place.slug === "string" &&
+          typeof place.city === "string" &&
+          typeof place.lat === "number" &&
+          typeof place.lng === "number"
+        )
+        .map((place) => ({
+          ...place,
+          distance: distanceMeters(
+            { lat, lng },
+            { lat: place.lat, lng: place.lng },
+          ),
+        }))
+        .filter((place) => place.distance <= 250)
+        .sort((a, b) => a.distance - b.distance)[0] ?? null;
+    }
   }
 
   return new Response(JSON.stringify({
     landmark: top.description,
     confidence: typeof top.score === "number" ? top.score : null,
-    lat, lng, slug,
+    lat,
+    lng,
+    slug: matchedPlace?.slug ?? null,
+    place_id: matchedPlace?.id ?? null,
+    place_city: matchedPlace?.city ?? null,
   }), { headers: { ...CORS, "Content-Type": "application/json" } });
 });
