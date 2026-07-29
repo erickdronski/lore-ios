@@ -11,6 +11,8 @@
 
 default_platform(:ios)
 
+require_relative "lib/lore_release_tooling"
+
 BUNDLE_ID = "com.erickdronski.lore"
 WIDGET_ID = "com.erickdronski.lore.LoreWidget"
 TEAM_ID = "J9DMDH4S58"
@@ -29,12 +31,36 @@ def asc_token!
   )
 end
 
-def app_review_hold_enabled!
-  value = ENV.fetch("APP_REVIEW_HOLD", "").downcase
-  UI.user_error!(
-    "APP_REVIEW_HOLD must be explicitly true or false in the app-store-production environment.",
-  ) unless %w[true false].include?(value)
-  value == "true"
+def ensure_app_store_release_mutation_allowed!
+  LoreReleaseTooling.ensure_release_mutation_allowed!
+rescue LoreReleaseTooling::Error => e
+  UI.user_error!(e.message)
+end
+
+def ensure_review_hold_action_allowed!
+  LoreReleaseTooling.ensure_review_hold_action_allowed!
+rescue LoreReleaseTooling::Error => e
+  UI.user_error!(e.message)
+end
+
+def verify_submission_screenshot_provenance!(options = {})
+  release_source_sha = options[:release_source_sha].to_s.strip
+  release_source_sha = ENV.fetch("RELEASE_SOURCE_SHA", "").strip if release_source_sha.empty?
+  source_sha_path = File.expand_path("promo_screenshots/SOURCE_SHA", __dir__)
+  repository = LoreReleaseTooling::GitRepository.new(File.expand_path("..", __dir__))
+  LoreReleaseTooling::ScreenshotProvenance.new(
+    source_sha_path: source_sha_path,
+    release_source_sha: release_source_sha,
+    repository: repository,
+  ).verify!
+rescue LoreReleaseTooling::Error => e
+  UI.user_error!(e.message)
+end
+
+def verify_preflight!(reporter)
+  reporter.verify!
+rescue LoreReleaseTooling::PreflightFailed => e
+  UI.user_error!(e.message)
 end
 
 platform :ios do
@@ -60,39 +86,14 @@ platform :ios do
   end
 
   desc "Upload the App Store marketing screenshots via the ASC API (no binary)"
-  lane :screenshots_upload do
+  lane :screenshots_upload do |options|
     # Pure App Store Connect API upload of the pre-rendered marketing frames in
     # fastlane/promo_screenshots/en-US (1320x2868, the 6.9" slot that also fills
     # 6.7"/6.5"). skip_binary_upload + skip_metadata mean this touches ONLY the
     # screenshots on the editable version — never the build or the text metadata
     # (description/keywords stay exactly as set). Runs on Linux; no Xcode needed.
-    source_sha_path = File.expand_path("promo_screenshots/SOURCE_SHA", __dir__)
-    UI.user_error!(
-      "Missing fastlane/promo_screenshots/SOURCE_SHA. Regenerate screenshots from the release commit before upload.",
-    ) unless File.exist?(source_sha_path)
-
-    # The guard exists to stop stale or off-branch screenshots reaching the
-    # store. Requiring SOURCE_SHA == HEAD could never be satisfied: writing the
-    # SHA into the file changes the tree, which changes HEAD. So assert the
-    # weaker-but-actually-checkable property — the capture commit is part of
-    # this history — which still rejects screenshots from a divergent branch or
-    # from a commit that was never merged.
-    screenshot_sha = File.read(source_sha_path).strip
-    current_sha = sh("git rev-parse HEAD").strip
-    unless screenshot_sha == current_sha
-      # Distinguish "genuinely off-branch" from "the commit is not in this
-      # clone". A shallow checkout (actions/checkout defaults to depth 1) has
-      # no parent commits, so the ancestry question is unanswerable rather than
-      # answered "no" — reporting that as a stale-screenshot error sends you
-      # hunting the wrong bug.
-      known = system("git cat-file -e #{screenshot_sha}^{commit} 2>/dev/null")
-      UI.user_error!(
-        "Cannot verify screenshots: commit #{screenshot_sha} is not in this clone. Check out with fetch-depth: 0.",
-      ) unless known
-      UI.user_error!(
-        "Screenshots were captured from #{screenshot_sha}, which is not an ancestor of the checkout #{current_sha}. Regenerate them from this branch.",
-      ) unless system("git merge-base --is-ancestor #{screenshot_sha} #{current_sha}")
-    end
+    ensure_app_store_release_mutation_allowed!
+    verify_submission_screenshot_provenance!(options)
 
     api_key = app_store_connect_api_key(
       key_id: ENV.fetch("ASC_KEY_ID"),
@@ -118,13 +119,27 @@ platform :ios do
     # Pure GET calls. Changes nothing. Every section is individually rescued so
     # one unsupported endpoint cannot blind the rest of the audit. Findings are
     # prefixed PF| so they can be grepped straight out of the CI log.
-    asc_token!
-    say = ->(status, label, detail) { UI.message("PF|#{status}|#{label}|#{detail}") }
+    reporter = LoreReleaseTooling::PreflightReporter.new do |status, label, detail|
+      UI.message("PF|#{status}|#{label}|#{detail}")
+    end
+    say = ->(status, label, detail) { reporter.record(status, label, detail) }
 
-    app = Spaceship::ConnectAPI::App.find(BUNDLE_ID)
+    begin
+      asc_token!
+    rescue => e
+      say.call("FAIL", "Authentication", "App Store Connect token setup failed: #{e.message}")
+      verify_preflight!(reporter)
+    end
+
+    app = begin
+            Spaceship::ConnectAPI::App.find(BUNDLE_ID)
+          rescue => e
+            say.call("FAIL", "App", "lookup failed: #{e.message}")
+            nil
+          end
     if app.nil?
-      say.call("FAIL", "App", "No app found for #{BUNDLE_ID}")
-      next
+      say.call("FAIL", "App", "No app found for #{BUNDLE_ID}") if reporter.failures.empty?
+      verify_preflight!(reporter)
     end
     say.call("INFO", "App", "#{app.name} (#{BUNDLE_ID}) id=#{app.id} locale=#{app.primary_locale}")
 
@@ -140,7 +155,7 @@ platform :ios do
         end
       end
     rescue => e
-      say.call("WARN", "Versions", "lookup failed: #{e.message}")
+      say.call("FAIL", "Versions", "lookup failed: #{e.message}")
     end
 
     platform = Spaceship::ConnectAPI::Platform::IOS
@@ -152,7 +167,7 @@ platform :ios do
       if version
         say.call("INFO", "Editable version", "#{version.version_string} state=#{version.app_store_state} release=#{version.release_type}")
       else
-        say.call("WARN", "Editable version", "None — nothing staged to submit")
+        say.call("FAIL", "Editable version", "None — nothing staged to submit")
         version = begin
                     app.get_latest_app_store_version(platform: platform)
                   rescue
@@ -161,7 +176,7 @@ platform :ios do
         say.call("INFO", "Auditing instead", "newest version #{version&.version_string} state=#{version&.app_store_state}") if version
       end
     rescue => e
-      say.call("WARN", "Editable version", "lookup failed: #{e.message}")
+      say.call("FAIL", "Editable version", "lookup failed: #{e.message}")
     end
 
     begin
@@ -172,7 +187,7 @@ platform :ios do
         say.call("FAIL", "Build attached", "No build attached to the editable version")
       end
     rescue => e
-      say.call("WARN", "Build attached", "lookup failed: #{e.message}")
+      say.call("FAIL", "Build attached", "lookup failed: #{e.message}")
     end
 
     begin
@@ -208,11 +223,11 @@ platform :ios do
             say.call(n.zero? ? "FAIL" : "PASS", "Screenshots #{set.screenshot_display_type}", "#{n} image(s)")
           end
         rescue => e
-          say.call("WARN", "Screenshots", "lookup failed: #{e.message}")
+          say.call("FAIL", "Screenshots", "lookup failed: #{e.message}")
         end
       end
     rescue => e
-      say.call("WARN", "Listing text", "lookup failed: #{e.message}")
+      say.call("FAIL", "Listing text", "lookup failed: #{e.message}")
     end
 
     # --- Privacy policy + age rating (live on AppInfo, not the version) ---
@@ -229,23 +244,33 @@ platform :ios do
                      "Privacy policy URL (#{il.locale})", il.privacy_policy_url.to_s)
           end
         rescue => e
-          say.call("WARN", "Privacy policy URL", "lookup failed: #{e.message}")
+          say.call("FAIL", "Privacy policy URL", "lookup failed: #{e.message}")
         end
         begin
           ard = info.fetch_age_rating_declaration
           say.call(ard.nil? ? "FAIL" : "PASS", "Age rating declaration", ard.nil? ? "missing" : "present")
         rescue => e
-          say.call("WARN", "Age rating", "lookup failed: #{e.message}")
+          say.call("FAIL", "Age rating", "lookup failed: #{e.message}")
         end
       end
     rescue => e
-      say.call("WARN", "AppInfo", "lookup failed: #{e.message}")
+      say.call("FAIL", "AppInfo", "lookup failed: #{e.message}")
     end
 
     # --- Subscriptions (Lore+): each needs a review screenshot to be submittable ---
     say.call(
-      "NOTE", "Subscriptions",
+      "WARN", "Subscriptions",
       "Pinned Fastlane does not expose subscription-group reads; confirm products and review screenshots in App Store Connect",
+    )
+
+    say.call(
+      "WARN", "Privacy labels",
+      "App privacy data categories are not exposed by this preflight; reconcile them manually with PrivacyInfo.xcprivacy and the privacy policy",
+    )
+
+    say.call(
+      "WARN", "EU trader status",
+      "Digital Services Act trader status is not exposed by this preflight; confirm it manually in App Store Connect",
     )
 
     # --- Already submitted? ---
@@ -274,18 +299,21 @@ platform :ios do
         say.call("WARN", "Existing submission", detail)
       end
     rescue => e
-      say.call("WARN", "Existing submission", "lookup failed: #{e.message}")
+      say.call("FAIL", "Existing submission", "lookup failed: #{e.message}")
     end
 
-    UI.important("PF|NOTE|Manual-only checks|EU trader status, Paid Applications Agreement and subscription REVIEW SCREENSHOTS are not reliably exposed by the ASC API — confirm in the App Store Connect UI.")
+    say.call(
+      "WARN", "Manual-only checks",
+      "Paid Applications Agreement, tax and banking, subscription availability, offers, and review screenshots require App Store Connect UI confirmation",
+    )
+
+    verify_preflight!(reporter)
   end
 
   desc "Cancel the active App Review submission without changing or resubmitting a build"
   lane :hold_review do |options|
+    ensure_review_hold_action_allowed!
     asc_token!
-    UI.user_error!(
-      "APP_REVIEW_HOLD must be true in the app-store-production environment before cancelling review.",
-    ) unless app_review_hold_enabled!
 
     expected_version = options[:expected_version].to_s
     expected_build = options[:expected_build].to_s
@@ -419,9 +447,10 @@ platform :ios do
   end
 
   desc "Submit the editable App Store version for review (guarded)"
-  lane :submit_for_review do
+  lane :submit_for_review do |options|
+    ensure_app_store_release_mutation_allowed!
+    verify_submission_screenshot_provenance!(options)
     asc_token!
-    UI.user_error!("App Review is held. Set APP_REVIEW_HOLD=false before submitting.") if app_review_hold_enabled!
     app = Spaceship::ConnectAPI::App.find(BUNDLE_ID)
     UI.user_error!("No app for #{BUNDLE_ID}") if app.nil?
     version = app.get_edit_app_store_version
@@ -460,9 +489,10 @@ platform :ios do
   end
 
   desc "Swap the newest processed build onto the editable version and (re)submit"
-  lane :swap_latest_build_and_resubmit do
+  lane :swap_latest_build_and_resubmit do |options|
+    ensure_app_store_release_mutation_allowed!
+    verify_submission_screenshot_provenance!(options)
     asc_token!
-    UI.user_error!("App Review is held. Set APP_REVIEW_HOLD=false before resubmitting.") if app_review_hold_enabled!
     platform = Spaceship::ConnectAPI::Platform::IOS
     app = Spaceship::ConnectAPI::App.find(BUNDLE_ID)
     UI.user_error!("No app for #{BUNDLE_ID}") if app.nil?
@@ -519,6 +549,7 @@ platform :ios do
 
   desc "Set the editable version to release automatically after approval"
   lane :set_auto_release do
+    ensure_app_store_release_mutation_allowed!
     asc_token!
     app = Spaceship::ConnectAPI::App.find(BUNDLE_ID)
     UI.user_error!("No app for #{BUNDLE_ID}") if app.nil?

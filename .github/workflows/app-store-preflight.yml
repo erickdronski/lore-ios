@@ -32,6 +32,11 @@ on:
         required: true
         default: "7"
         type: string
+      release_source_sha:
+        description: "Exact 40-character source SHA for submit/swap screenshot provenance (unused by preflight/hold)"
+        required: false
+        default: ""
+        type: string
 
 concurrency:
   group: app-store-preflight
@@ -48,6 +53,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Submit/swap must verify the exact screenshot release commit. The
+          # read-only preflight remains unchanged by the full-history checkout.
+          fetch-depth: 0
 
       - name: Ruby + Fastlane (cached)
         uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1
@@ -61,6 +70,7 @@ jobs:
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_KEY_CONTENT: ${{ secrets.ASC_KEY_CONTENT }}
           APP_REVIEW_HOLD: ${{ vars.APP_REVIEW_HOLD }}
+          RELEASE_SOURCE_SHA: ${{ inputs.release_source_sha }}
           ACTION: ${{ inputs.action }}
           EXPECTED_VERSION: ${{ inputs.expected_version }}
           EXPECTED_BUILD: ${{ inputs.expected_build }}
