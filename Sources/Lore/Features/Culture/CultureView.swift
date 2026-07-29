@@ -1,5 +1,33 @@
 import SwiftUI
 
+/// Sheet host for the full-bleed culture surface. CultureView intentionally
+/// hides navigation chrome, so its sheet dismissal must live above that view.
+struct CultureSheet: View {
+    let city: String
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            CultureView(city: city)
+                .overlay(alignment: .topTrailing) {
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(LoreColor.bone)
+                            .frame(width: 44, height: 44)
+                            .background(.ultraThinMaterial, in: Circle())
+                    }
+                    .buttonStyle(.pressable)
+                    .accessibilityLabel("Close city guide")
+                    .padding(.top, 8)
+                    .padding(.trailing, 12)
+                }
+        }
+    }
+}
+
 /// "Meet {City}", the culture surface. A warm, playful introduction to how a
 /// city *talks and thinks*, built entirely from the `city_culture` table:
 ///

@@ -163,16 +163,12 @@ struct ScannerScreen: View {
             }
         }
         .background(LoreColor.ink950)
-        .sheet(item: $model.selectedPlace) { place in
+        .loreDossierPresentation(item: $model.selectedPlace) { place in
             PlaceCardView(
                 place: place,
                 visitSource: .scanner,
                 onMeetCity: { model.selectedPlace = nil; onMeetCity($0) }
             )
-                .presentationDetents([.medium, .large])
-                .presentationBackground(.regularMaterial)
-                .presentationCornerRadius(24)
-                .loreDossierIPadSizing()
         }
         .sheet(item: $model.selectedStory) { story in
             StorySheet(story: story)
