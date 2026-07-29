@@ -99,6 +99,20 @@ struct LoreAPI {
         )
     }
 
+    /// Resolve one published place by its stable database id. Cloud landmark
+    /// identification uses this when the match belongs to another city than
+    /// the scanner's currently loaded roster.
+    func place(id: String) async throws -> Place? {
+        let rows: [Place] = try await get(
+            "place_explore",
+            query: [
+                URLQueryItem(name: "id", value: "eq.\(id)"),
+                URLQueryItem(name: "limit", value: "1"),
+            ]
+        )
+        return rows.first
+    }
+
     /// The cached deep-dive dossier for one place, if synthesized.
     /// `GET /rest/v1/dive?place_id=eq.{id}&limit=1`
     func dive(placeID: String) async throws -> Dive? {

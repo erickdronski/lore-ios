@@ -70,6 +70,13 @@ final class ScannerCameraService: NSObject, AVCaptureMetadataOutputObjectsDelega
     private let photoOutput = AVCapturePhotoOutput()
     /// Retains the in-flight capture delegate until the photo comes back.
     private var captureDelegate: PhotoCaptureDelegate?
+    private var captureRequestID: UUID?
+
+    /// Interface orientation is written by the preview's layout pass and read
+    /// on the video queue. Keep the tiny value behind a lock rather than
+    /// assuming the scanner is portrait-only (iPad supports every rotation).
+    private let orientationLock = NSLock()
+    private var interfaceOrientation: UIInterfaceOrientation = .portrait
 
     /// QR metadata output for the marker rung. Payloads accepted:
     /// Lore web place links plus `lore://p/<slug>` and `lore:<slug>`.
@@ -151,10 +158,30 @@ final class ScannerCameraService: NSObject, AVCaptureMetadataOutputObjectsDelega
 
     func stop() {
         sessionQueue.async { [weak self] in
-            guard let self else { return }
-            self.wantsRunning = false
-            guard self.session.isRunning else { return }
-            self.session.stopRunning()
+            self?.stopSession()
+        }
+    }
+
+    /// Stop the AVCapture owner and return only after the hardware is released.
+    /// ARKit must await this before starting its own camera session.
+    func stopAndWait() async {
+        await withCheckedContinuation { continuation in
+            sessionQueue.async { [weak self] in
+                self?.stopSession()
+                continuation.resume()
+            }
+        }
+    }
+
+    private func stopSession() {
+        wantsRunning = false
+        if let captureDelegate {
+            self.captureDelegate = nil
+            captureRequestID = nil
+            captureDelegate.cancel()
+        }
+        if session.isRunning {
+            session.stopRunning()
         }
     }
 
@@ -286,9 +313,10 @@ final class ScannerCameraService: NSObject, AVCaptureMetadataOutputObjectsDelega
         guard let onFrame,
               let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
         lastFrameAt = now
-        // Back camera in portrait delivers a landscape-native buffer; `.right`
-        // presents it upright to Vision without rotating pixels.
-        onFrame(pixelBuffer, .right)
+        orientationLock.lock()
+        let orientation = interfaceOrientation
+        orientationLock.unlock()
+        onFrame(pixelBuffer, Self.visionOrientation(for: orientation))
     }
 
     /// Parse a Lore marker payload into a place slug; nil for foreign QR codes
@@ -317,21 +345,80 @@ final class ScannerCameraService: NSObject, AVCaptureMetadataOutputObjectsDelega
     /// the caller builds the `UIImage`. Nil if the session isn't running or the
     /// capture fails; the caller degrades gracefully (no postcard, no crash).
     func capturePhotoData() async -> Data? {
-        await withCheckedContinuation { (cont: CheckedContinuation<Data?, Never>) in
-            sessionQueue.async { [weak self] in
-                guard let self, self.session.isRunning,
-                      self.session.outputs.contains(self.photoOutput) else {
-                    cont.resume(returning: nil)
-                    return
+        let requestID = UUID()
+        return await withTaskCancellationHandler {
+            guard !Task.isCancelled else { return nil }
+            return await withCheckedContinuation { (continuation: CheckedContinuation<Data?, Never>) in
+                sessionQueue.async { [weak self] in
+                    guard let self, self.session.isRunning,
+                          self.session.outputs.contains(self.photoOutput),
+                          self.captureDelegate == nil else {
+                        continuation.resume(returning: nil)
+                        return
+                    }
+                    let settings = AVCapturePhotoSettings()
+                    let delegate = PhotoCaptureDelegate { [weak self] data in
+                        continuation.resume(returning: data)
+                        self?.sessionQueue.async { [weak self] in
+                            guard let self, self.captureRequestID == requestID else { return }
+                            self.captureDelegate = nil
+                            self.captureRequestID = nil
+                        }
+                    }
+                    self.captureRequestID = requestID
+                    self.captureDelegate = delegate
+                    self.photoOutput.capturePhoto(with: settings, delegate: delegate)
                 }
-                let settings = AVCapturePhotoSettings()
-                let delegate = PhotoCaptureDelegate { [weak self] data in
-                    self?.captureDelegate = nil
-                    cont.resume(returning: data)
-                }
-                self.captureDelegate = delegate
-                self.photoOutput.capturePhoto(with: settings, delegate: delegate)
             }
+        } onCancel: { [weak self] in
+            self?.cancelCapture(requestID: requestID)
+        }
+    }
+
+    private func cancelCapture(requestID: UUID) {
+        sessionQueue.async { [weak self] in
+            guard let self, self.captureRequestID == requestID,
+                  let delegate = self.captureDelegate else { return }
+            self.captureDelegate = nil
+            self.captureRequestID = nil
+            delegate.cancel()
+        }
+    }
+
+    func updateInterfaceOrientation(_ orientation: UIInterfaceOrientation) {
+        guard orientation != .unknown else { return }
+        orientationLock.lock()
+        interfaceOrientation = orientation
+        orientationLock.unlock()
+
+        sessionQueue.async { [weak self] in
+            guard let self,
+                  let connection = self.photoOutput.connection(with: .video)
+            else { return }
+            let angle = Self.videoRotationAngle(for: orientation)
+            if connection.isVideoRotationAngleSupported(angle) {
+                connection.videoRotationAngle = angle
+            }
+        }
+    }
+
+    static func visionOrientation(for orientation: UIInterfaceOrientation) -> CGImagePropertyOrientation {
+        switch orientation {
+        case .portrait: .right
+        case .portraitUpsideDown: .left
+        case .landscapeLeft: .up
+        case .landscapeRight: .down
+        default: .right
+        }
+    }
+
+    static func videoRotationAngle(for orientation: UIInterfaceOrientation) -> CGFloat {
+        switch orientation {
+        case .portrait: 90
+        case .portraitUpsideDown: 270
+        case .landscapeLeft: 0
+        case .landscapeRight: 180
+        default: 90
         }
     }
 
@@ -349,7 +436,7 @@ final class ScannerCameraService: NSObject, AVCaptureMetadataOutputObjectsDelega
 
 /// `AVCaptureVideoPreviewLayer` bridged into SwiftUI.
 struct CameraPreviewView: UIViewRepresentable {
-    let session: AVCaptureSession
+    let camera: ScannerCameraService
 
     final class PreviewView: UIView {
         override class var layerClass: AnyClass {
@@ -359,12 +446,28 @@ struct CameraPreviewView: UIViewRepresentable {
         var previewLayer: AVCaptureVideoPreviewLayer {
             layer as! AVCaptureVideoPreviewLayer
         }
+
+        var onLayout: ((UIInterfaceOrientation) -> Void)?
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            let orientation = window?.windowScene?.interfaceOrientation ?? .portrait
+            let angle = ScannerCameraService.videoRotationAngle(for: orientation)
+            if let connection = previewLayer.connection,
+               connection.isVideoRotationAngleSupported(angle) {
+                connection.videoRotationAngle = angle
+            }
+            onLayout?(orientation)
+        }
     }
 
     func makeUIView(context: Context) -> PreviewView {
         let view = PreviewView()
-        view.previewLayer.session = session
+        view.previewLayer.session = camera.session
         view.previewLayer.videoGravity = .resizeAspectFill
+        view.onLayout = { [weak camera] orientation in
+            camera?.updateInterfaceOrientation(orientation)
+        }
         return view
     }
 
@@ -375,7 +478,8 @@ struct CameraPreviewView: UIViewRepresentable {
 /// an EXIF-oriented `UIImage`. Retained by `ScannerCameraService` for the life
 /// of the capture, then released.
 private final class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate {
-    private let completion: (Data?) -> Void
+    private let lock = NSLock()
+    private var completion: ((Data?) -> Void)?
 
     init(completion: @escaping (Data?) -> Void) {
         self.completion = completion
@@ -386,6 +490,18 @@ private final class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegat
         didFinishProcessingPhoto photo: AVCapturePhoto,
         error: Error?
     ) {
-        completion(error == nil ? photo.fileDataRepresentation() : nil)
+        resolve(error == nil ? photo.fileDataRepresentation() : nil)
+    }
+
+    func cancel() {
+        resolve(nil)
+    }
+
+    private func resolve(_ data: Data?) {
+        lock.lock()
+        let completion = completion
+        self.completion = nil
+        lock.unlock()
+        completion?(data)
     }
 }

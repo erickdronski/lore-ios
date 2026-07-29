@@ -172,9 +172,10 @@ final class GeoARSessionController: NSObject, VPSProvider {
     /// same pixel space the SwiftUI overlay positions cards in. Nonisolated
     /// on purpose: it only forwards onto the frame queue, so any layout pass
     /// can call it without hopping actors.
-    nonisolated func setViewport(_ size: CGSize) {
+    nonisolated func setViewport(_ size: CGSize, orientation: UIInterfaceOrientation) {
         frameQueue.async { [projector] in
             projector.viewportSize = size
+            projector.interfaceOrientation = orientation
         }
     }
 
@@ -273,6 +274,7 @@ private final class GeoAnchorProjector: @unchecked Sendable {
     /// AR view bounds in points; zero until the view first lays out, and
     /// projection is skipped until it does.
     var viewportSize: CGSize = .zero
+    var interfaceOrientation: UIInterfaceOrientation = .portrait
 
     private var placeIDsByAnchor: [UUID: String] = [:]
     private var lastSnapshotAt: TimeInterval = 0
@@ -316,11 +318,9 @@ private final class GeoAnchorProjector: @unchecked Sendable {
             // the lens means z < 0. This feeds `isInFront`.
             let inCameraSpace = worldToCamera * simd_float4(worldPosition, 1)
 
-            // iPhone-only and the scanner is a portrait surface, so the
-            // orientation is fixed (no rotation plumbing to get wrong).
             let screenPoint = camera.projectPoint(
                 worldPosition,
-                orientation: .portrait,
+                orientation: interfaceOrientation,
                 viewportSize: viewportSize
             )
 
