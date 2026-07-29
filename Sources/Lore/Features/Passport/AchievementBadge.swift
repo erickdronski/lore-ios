@@ -170,6 +170,12 @@ struct ProgressRing: View {
 
 // MARK: - Badge tile
 
+enum AchievementBadgeTrackingMode: Equatable {
+    case personal
+    case catalog
+    case syncUnavailable
+}
+
 /// One badge on the Passport wall. Four visual states:
 /// - **unlocked**: full-color medallion, tier ring, name + tier label.
 /// - **inProgress**: dimmed medallion inside a progress ring, "n / target".
@@ -185,6 +191,9 @@ struct AchievementBadge: View {
     var appeared: Bool = true
     /// Stagger delay for cascade entrances on the wall.
     var revealDelay: TimeInterval = 0
+    /// Keeps catalog browsing and sync failures from masquerading as personal
+    /// locked progress when no trustworthy user row is available.
+    var trackingMode: AchievementBadgeTrackingMode = .personal
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -392,9 +401,17 @@ struct AchievementBadge: View {
                     }
             }
         } else {
-            Text("Locked")
+            Text(unstartedLabel)
                 .font(LoreType.caption)
                 .foregroundStyle(LoreColor.ink600)
+        }
+    }
+
+    private var unstartedLabel: String {
+        switch trackingMode {
+        case .personal: return "Locked"
+        case .catalog: return "Discover"
+        case .syncUnavailable: return "Sync pending"
         }
     }
 
@@ -410,7 +427,11 @@ struct AchievementBadge: View {
         } else if isInProgress, let p = progress {
             parts.append("\(p.progress) of \(p.target)")
         } else {
-            parts.append("locked")
+            switch trackingMode {
+            case .personal: parts.append("locked")
+            case .catalog: parts.append("available to discover; sign in to track progress")
+            case .syncUnavailable: parts.append("personal progress unavailable until sync completes")
+            }
         }
         if let d = achievement.description { parts.append(d) }
         return parts.joined(separator: ", ")

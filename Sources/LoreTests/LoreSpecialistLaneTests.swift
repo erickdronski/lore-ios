@@ -121,6 +121,29 @@ final class LoreSpecialistLaneTests: XCTestCase {
         XCTAssertEqual(PassportMilestoneSelector.next(from: [section])?.id, "first")
     }
 
+    func testSignedOutPassportDoesNotExposePersonalProgress() {
+        XCTAssertFalse(PassportProgressState.signedOut.showsPersonalProgress)
+        XCTAssertEqual(PassportProgressState.signedOut.badgeTrackingMode, .catalog)
+        XCTAssertTrue(PassportProgressState.available.showsPersonalProgress)
+        XCTAssertEqual(PassportProgressState.available.badgeTrackingMode, .personal)
+        XCTAssertFalse(PassportProgressState.unavailable.showsPersonalProgress)
+        XCTAssertEqual(PassportProgressState.unavailable.badgeTrackingMode, .syncUnavailable)
+    }
+
+    func testPassportSectionsCollapseLargeCatalogsWithoutDroppingBadges() throws {
+        let badges = try (0..<8).map { index in
+            PassportBadge(
+                achievement: try achievement(slug: "badge-\(index)", sort: index),
+                progress: nil
+            )
+        }
+        let section = PassportSection(category: "knowledge", badges: badges)
+
+        XCTAssertEqual(section.visibleBadges(isExpanded: false).count, PassportSection.collapsedBadgeLimit)
+        XCTAssertEqual(section.visibleBadges(isExpanded: true).count, badges.count)
+        XCTAssertEqual(section.visibleBadges(isExpanded: true).map(\.id), badges.map(\.id))
+    }
+
     func testWikipediaSummaryURLTreatsTitleAsOnePathSegment() {
         let url = WikipediaService.summaryURL(for: "Jean/Luc Picard")
 

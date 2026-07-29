@@ -4,8 +4,8 @@ import SwiftUI
 ///
 /// Signed out, it carries the 5.1.1 posture in copy (reading never requires
 /// an account, docs/10 §5 row 1) and offers sign-in. Signed in, it shows the
-/// `user_profile` row: handle, trust tier (Scout → Curator ladder,
-/// docs/06-CROWDSOURCING.md), Insight points, and a live Lore+ membership row.
+/// `user_profile` row: handle, personal identity fields, Insight points, and a
+/// live Lore+ membership row.
 struct ProfileScreen: View {
     @Environment(AuthService.self) private var auth
     @Environment(EntitlementStore.self) private var entitlements
@@ -205,13 +205,14 @@ struct ProfileScreen: View {
                     }
                 }
                 Spacer()
-                VStack(alignment: .trailing, spacing: 10) {
-                    TrustBadge(tier: profile.trustTier)
-                    Button("Edit") { editingProfile = profile }
-                        .font(LoreType.caption.weight(.semibold))
+                Button { editingProfile = profile } label: {
+                    Image(systemName: "pencil")
+                        .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(LoreColor.brass700)
-                        .accessibilityLabel("Edit profile")
+                        .frame(width: 44, height: 44)
                 }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Edit profile")
             }
             .padding(.vertical, 4)
             .accessibilityElement(children: .contain)
@@ -344,33 +345,4 @@ struct ProfileScreen: View {
         }
     }
 
-}
-
-/// Trust-tier chip (brand/DESIGN.md §7 `TrustBadge`): Curator earns Brass —
-/// "Brass is reserved for money and mastery"; everyone else gets the Bone
-/// outline treatment.
-struct TrustBadge: View {
-    let tier: String
-
-    private var isCurator: Bool { tier.lowercased() == "curator" }
-
-    var body: some View {
-        Text(tier.uppercased())
-            .loreLabelStyle()
-            .foregroundStyle(isCurator ? LoreColor.brass700 : LoreColor.ink600)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(isCurator ? LoreColor.brass.opacity(0.16) : LoreColor.bone200)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .strokeBorder(
-                        isCurator ? LoreColor.brass : LoreColor.bone300,
-                        lineWidth: 1
-                    )
-            )
-            .accessibilityLabel("Trust level, \(tier)")
-}
 }
