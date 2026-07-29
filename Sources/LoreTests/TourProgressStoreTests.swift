@@ -19,8 +19,8 @@ final class TourProgressStoreTests: XCTestCase {
     }
 
     func testProgressIsScopedToTravelerAndClampedToRoute() {
-        TourProgressStore.save(
-            stopIndex: 8,
+        TourProgressStore.advance(
+            to: 8,
             for: "harbor-walk",
             userID: "traveler-a",
             defaults: defaults
@@ -47,8 +47,8 @@ final class TourProgressStoreTests: XCTestCase {
     }
 
     func testCompletionClearsResumePointAndRestartClearsCompletion() {
-        TourProgressStore.save(
-            stopIndex: 3,
+        TourProgressStore.advance(
+            to: 3,
             for: "market-walk",
             userID: nil,
             defaults: defaults
@@ -78,6 +78,46 @@ final class TourProgressStoreTests: XCTestCase {
                 for: "market-walk",
                 userID: nil,
                 stopCount: 5,
+                defaults: defaults
+            ),
+            .empty
+        )
+    }
+
+    func testProgressOnlyMovesForwardUntilAnExplicitRestart() {
+        TourProgressStore.advance(
+            to: 4,
+            for: "canal-walk",
+            userID: "traveler",
+            defaults: defaults
+        )
+        TourProgressStore.advance(
+            to: 2,
+            for: "canal-walk",
+            userID: "traveler",
+            defaults: defaults
+        )
+
+        XCTAssertEqual(
+            TourProgressStore.progress(
+                for: "canal-walk",
+                userID: "traveler",
+                stopCount: 8,
+                defaults: defaults
+            ).stopIndex,
+            4
+        )
+
+        TourProgressStore.restart(
+            tourSlug: "canal-walk",
+            userID: "traveler",
+            defaults: defaults
+        )
+        XCTAssertEqual(
+            TourProgressStore.progress(
+                for: "canal-walk",
+                userID: "traveler",
+                stopCount: 8,
                 defaults: defaults
             ),
             .empty

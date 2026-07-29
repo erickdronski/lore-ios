@@ -30,18 +30,20 @@ enum TourProgressStore {
         return Progress(stopIndex: min(stored, stopCount - 1), isCompleted: false)
     }
 
-    static func save(
-        stopIndex: Int,
+    /// Records only forward progress. Browsing backward or reopening an earlier
+    /// checkpoint cannot move the resume point; `restart` is the explicit reset.
+    static func advance(
+        to stopIndex: Int,
         for tourSlug: String,
         userID: String?,
         defaults: UserDefaults = .standard
     ) {
-        let key = "\(keyBase(tourSlug: tourSlug, userID: userID)).stop"
-        if stopIndex > 0 {
-            defaults.set(stopIndex, forKey: key)
-        } else {
-            defaults.removeObject(forKey: key)
-        }
+        guard stopIndex > 0 else { return }
+        let base = keyBase(tourSlug: tourSlug, userID: userID)
+        guard !defaults.bool(forKey: "\(base).completed") else { return }
+        let key = "\(base).stop"
+        let previous = defaults.object(forKey: key) as? Int ?? 0
+        defaults.set(max(previous, stopIndex), forKey: key)
     }
 
     static func complete(
