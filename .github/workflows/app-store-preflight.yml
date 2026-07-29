@@ -61,9 +61,12 @@ jobs:
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_KEY_CONTENT: ${{ secrets.ASC_KEY_CONTENT }}
           APP_REVIEW_HOLD: ${{ vars.APP_REVIEW_HOLD }}
+          ACTION: ${{ inputs.action }}
+          EXPECTED_VERSION: ${{ inputs.expected_version }}
+          EXPECTED_BUILD: ${{ inputs.expected_build }}
         run: |
-          case "${{ inputs.action }}" in
-            hold-review)  bundle exec fastlane hold_review expected_version:"${{ inputs.expected_version }}" expected_build:"${{ inputs.expected_build }}" ;;
+          case "$ACTION" in
+            hold-review)  bundle exec fastlane hold_review expected_version:"$EXPECTED_VERSION" expected_build:"$EXPECTED_BUILD" ;;
             submit)       bundle exec fastlane submit_for_review ;;
             swap-latest)  bundle exec fastlane swap_latest_build_and_resubmit ;;
             auto-release) bundle exec fastlane set_auto_release ;;
