@@ -33,8 +33,59 @@ final class ScannerLogicTests: XCTestCase {
     }
 
     func testDistanceLabel() {
+        XCTAssertEqual(BearingProjector.distanceLabel(meters: 0), "You're here")
+        XCTAssertEqual(BearingProjector.distanceLabel(meters: 5), "You're here")
         XCTAssertEqual(BearingProjector.distanceLabel(meters: 604), "600 m")
         XCTAssertEqual(BearingProjector.distanceLabel(meters: 1200), "1.2 km")
+    }
+
+    func testNearZeroDistanceCandidateIsCenteredInsteadOfDropped() throws {
+        let origin = CLLocation(latitude: 41.881_832, longitude: -87.623_177)
+        let here = Place(
+            id: "here",
+            slug: "here",
+            name: "Right Here",
+            kind: "building",
+            lat: origin.coordinate.latitude,
+            lng: origin.coordinate.longitude,
+            heightM: nil,
+            city: "chicago",
+            layer1: nil,
+            tags: [],
+            emoji: nil
+        )
+
+        let projected = try XCTUnwrap(BearingProjector.project(
+            places: [here],
+            from: origin,
+            heading: 217,
+            fovDegrees: 60
+        ).first)
+
+        XCTAssertTrue(projected.isAtLocation)
+        XCTAssertEqual(projected.distance, 0, accuracy: 0.001)
+        XCTAssertEqual(projected.bearing, 217, accuracy: 0.001)
+        XCTAssertEqual(projected.delta, 0, accuracy: 0.001)
+        XCTAssertEqual(projected.screenFraction, 0.5, accuracy: 0.001)
+        XCTAssertTrue(projected.isInView)
+        XCTAssertEqual(projected.distanceLabel, "You're here")
+    }
+
+    func testHeadingFreshnessRejectsStaleSamples() {
+        let now = Date(timeIntervalSince1970: 1_000)
+        let fresh = ScannerHeadingSample(
+            degrees: 120,
+            accuracy: 8,
+            timestamp: now.addingTimeInterval(-1)
+        )
+        let stale = ScannerHeadingSample(
+            degrees: 120,
+            accuracy: 8,
+            timestamp: now.addingTimeInterval(-LocationHeadingProvider.heldHeadingMaxAge)
+        )
+
+        XCTAssertTrue(LocationHeadingProvider.isHeadingSampleFresh(fresh, now: now))
+        XCTAssertFalse(LocationHeadingProvider.isHeadingSampleFresh(stale, now: now))
     }
 
     // MARK: - Camera permission rationale
@@ -216,6 +267,23 @@ final class SpecialistJourneyRegressionTests: XCTestCase {
         XCTAssertEqual(ScannerCameraService.visionOrientation(for: .landscapeRight), .down)
         XCTAssertEqual(ScannerCameraService.videoRotationAngle(for: .portrait), 90)
         XCTAssertEqual(ScannerCameraService.videoRotationAngle(for: .landscapeRight), 180)
+    }
+
+    func testHeadingOrientationMapsInterfaceToPhysicalDeviceRotation() {
+        XCTAssertEqual(LocationHeadingProvider.deviceHeadingOrientation(for: .portrait), .portrait)
+        XCTAssertEqual(
+            LocationHeadingProvider.deviceHeadingOrientation(for: .portraitUpsideDown),
+            .portraitUpsideDown
+        )
+        XCTAssertEqual(
+            LocationHeadingProvider.deviceHeadingOrientation(for: .landscapeLeft),
+            .landscapeRight
+        )
+        XCTAssertEqual(
+            LocationHeadingProvider.deviceHeadingOrientation(for: .landscapeRight),
+            .landscapeLeft
+        )
+        XCTAssertNil(LocationHeadingProvider.deviceHeadingOrientation(for: .unknown))
     }
 
     func testCloudLandmarkDisclosureConsentIsAccountScoped() throws {
