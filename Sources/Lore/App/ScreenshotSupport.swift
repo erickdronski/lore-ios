@@ -17,12 +17,10 @@ enum ScreenshotSupport {
         ProcessInfo.processInfo.arguments.contains("LORE_SCREENSHOTS")
     }
 
-    /// Optional "deep" surface the capturer wants staged on launch, read from
-    /// the `LORE_SHOW` launch environment. The Simulator can walk the tab bar on
-    /// its own, but the dossier and the culture sheet are presented state, not a
-    /// tab, so the capturer relaunches with a stage and `LoreApp` opens it
-    /// deterministically (no fragile map-pin taps). Values: `"dive"` (open a
-    /// known landmark's deep-dive) and `"culture"` (open Meet-the-City).
+    /// Optional surface the capturer wants staged on launch, read from the
+    /// `LORE_SHOW` launch environment. `LoreApp` opens it deterministically so
+    /// captures do not depend on tab or map-pin automation. Values include
+    /// `"passport"`, `"dive"`, `"culture"`, `"paywall"`, and `"card"`.
     static var stage: String? {
         let value = ProcessInfo.processInfo.environment["LORE_SHOW"]
         return (value?.isEmpty ?? true) ? nil : value

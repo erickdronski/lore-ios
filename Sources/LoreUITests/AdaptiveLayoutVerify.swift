@@ -10,7 +10,7 @@ final class AdaptiveLayoutVerify: XCTestCase {
 
     @MainActor
     func testNavigationMatchesTheDeviceCanvas() throws {
-        let app = launchApp()
+        let app = launchApp(stage: "passport")
 
         if UIDevice.current.userInterfaceIdiom == .pad {
             let mapSidebarButton = sidebarButton(app, "Map")
@@ -31,13 +31,22 @@ final class AdaptiveLayoutVerify: XCTestCase {
                 .matching(NSPredicate(format: "label BEGINSWITH %@", "Passport,"))
                 .firstMatch
             XCTAssertTrue(passport.exists)
-            passport.tap()
-            XCTAssertTrue(app.staticTexts["Your exploration, earned"].waitForExistence(timeout: 20))
+            XCTAssertTrue(app.staticTexts["Begin your field record"].waitForExistence(timeout: 20))
+            attachPassportScreenshot(named: "passport-signed-out-ipad")
         } else {
             XCTAssertTrue(app.tabBars.firstMatch.waitForExistence(timeout: 30))
             XCTAssertTrue(app.tabBars.buttons["Map"].exists)
             XCTAssertTrue(app.tabBars.buttons["Passport"].exists)
+            XCTAssertTrue(app.staticTexts["Begin your field record"].waitForExistence(timeout: 20))
+            attachPassportScreenshot(named: "passport-signed-out-iphone")
         }
+    }
+
+    private func attachPassportScreenshot(named name: String) {
+        let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        shot.lifetime = .keepAlways
+        shot.name = name
+        add(shot)
     }
 
     /// Exercises Lore as a traveler rather than treating launch as success:
@@ -54,7 +63,7 @@ final class AdaptiveLayoutVerify: XCTestCase {
         XCTAssertTrue(currentCityButton(app).exists)
 
         selectDestination(app, "Passport")
-        XCTAssertTrue(app.staticTexts["Your exploration, earned"].waitForExistence(timeout: 25))
+        XCTAssertTrue(app.staticTexts["Begin your field record"].waitForExistence(timeout: 25))
 
         let journal = app.buttons
             .matching(NSPredicate(format: "label CONTAINS %@", "Your Journal"))
@@ -196,7 +205,8 @@ final class AdaptiveLayoutVerify: XCTestCase {
 
     @MainActor
     private func launchApp(
-        contentSizeCategory: String = "UICTContentSizeCategoryLarge"
+        contentSizeCategory: String = "UICTContentSizeCategoryLarge",
+        stage: String? = nil
     ) -> XCUIApplication {
         let app = XCUIApplication()
         // The preferred category is a persistent app default. Set it on every
@@ -206,6 +216,7 @@ final class AdaptiveLayoutVerify: XCTestCase {
             "-UIPreferredContentSizeCategoryName",
             contentSizeCategory,
         ]
+        if let stage { app.launchEnvironment["LORE_SHOW"] = stage }
         app.launch()
         return app
     }
