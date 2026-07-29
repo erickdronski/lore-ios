@@ -369,6 +369,24 @@ final class SpecialistJourneyRegressionTests: XCTestCase {
         XCTAssertNil(ScannerAccessibilityAnnouncement.identification(.idle))
     }
 
+    func testStackConfirmationFeedbackIsCompactAndHonest() {
+        let nearby = ScannerConfirmationFeedback(
+            placeName: " City Hall ",
+            distanceLabel: "80 m",
+            isAtLocation: false
+        )
+        let here = ScannerConfirmationFeedback(
+            placeName: "  ",
+            distanceLabel: "You're here",
+            isAtLocation: true
+        )
+
+        XCTAssertEqual(nearby.statusLine, "Confirmed City Hall")
+        XCTAssertEqual(nearby.accessibilityAnnouncement, "City Hall selected from the stack. 80 m ahead.")
+        XCTAssertEqual(here.statusLine, "Confirmed Place")
+        XCTAssertEqual(here.accessibilityAnnouncement, "Place selected from the stack. You're here.")
+    }
+
     func testScannerOrientationMapsEveryIPadRotation() {
         XCTAssertEqual(ScannerCameraService.visionOrientation(for: .portrait), .right)
         XCTAssertEqual(ScannerCameraService.visionOrientation(for: .portraitUpsideDown), .left)

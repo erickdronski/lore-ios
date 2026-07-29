@@ -152,7 +152,7 @@ struct JournalView: View {
         .background(LoreColor.ink950.ignoresSafeArea())
         .searchable(text: $searchText, prompt: "Search places, cities, and notes")
         .task(id: auth.session?.user.id) { await loadCurrentIdentity() }
-        .refreshable { await visits.loadHistory(force: true) }
+        .refreshable { await loadCurrentIdentity() }
         .onAppear { appeared = true }
         .onChange(of: auth.session?.user.id) { _, _ in
             editing = nil
