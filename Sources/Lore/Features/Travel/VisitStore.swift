@@ -170,11 +170,8 @@ final class VisitStore {
         }
         do {
             lastError = nil
-            let path = try await TravelReads.uploadJournalPhoto(
+            try await TravelReads.storeJournalPhoto(
                 data: imageData, userID: creds.userID, placeID: placeID, accessToken: creds.accessToken
-            )
-            try await TravelReads.appendVisitPhoto(
-                placeID: placeID, path: path, accessToken: creds.accessToken
             )
             await settleAchievements(for: creds)
             await loadHistory(force: true)
@@ -186,14 +183,17 @@ final class VisitStore {
     }
 
     /// A short-lived signed URL to display a private journal photo path.
-    func signedPhotoURL(path: String) async -> URL? {
+    func signedPhotoURL(path: String, forceRefresh: Bool = false) async -> URL? {
         guard let creds = credentials() else { return nil }
-        if let cached = photoURLCache[path], cached.expiresAt > Date() {
+        if forceRefresh {
+            photoURLCache.removeValue(forKey: path)
+        } else if let cached = photoURLCache[path], cached.expiresAt > Date() {
             return cached.url
         }
         guard let url = try? await TravelReads.signedJournalPhotoURL(
             path: path, accessToken: creds.accessToken
         ) else { return nil }
+        guard credentials()?.userID == creds.userID else { return nil }
         photoURLCache[path] = CachedPhotoURL(
             url: url,
             expiresAt: Date().addingTimeInterval(50 * 60)

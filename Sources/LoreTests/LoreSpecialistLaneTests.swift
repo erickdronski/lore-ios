@@ -3,6 +3,27 @@ import XCTest
 @testable import Lore
 
 final class LoreSpecialistLaneTests: XCTestCase {
+    @MainActor
+    func testJournalImageProcessorDownscalesByPixelDimension() async throws {
+        let source = UIGraphicsImageRenderer(size: CGSize(width: 400, height: 200)).image { context in
+            UIColor.systemRed.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 400, height: 200))
+        }
+        let png = try XCTUnwrap(source.pngData())
+
+        let processed = await JournalImageProcessor.preparedJPEG(
+            png,
+            maxDimension: 100,
+            quality: 0.75
+        )
+        let jpeg = try XCTUnwrap(processed)
+        let result = try XCTUnwrap(UIImage(data: jpeg)?.cgImage)
+
+        XCTAssertEqual(result.width, 100)
+        XCTAssertEqual(result.height, 50)
+        XCTAssertLessThan(jpeg.count, png.count)
+    }
+
     func testJournalDraftNormalizesWhitespace() {
         XCTAssertEqual(JournalDraftPolicy.normalized("  A quiet courtyard.\n"), "A quiet courtyard.")
     }
