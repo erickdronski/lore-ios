@@ -419,6 +419,8 @@ struct TourDetailView: View {
             .background(active ? LoreColor.amber : LoreColor.brass700, in: Circle())
             .overlay(Circle().strokeBorder(LoreColor.bone, lineWidth: 2))
             .shadow(color: LoreColor.ink950.opacity(0.25), radius: active ? 4 : 1, y: 1)
+            .frame(width: 44, height: 44)
+            .contentShape(Rectangle())
     }
 
     /// Frame the overview map to fit every stop once the places resolve. An
