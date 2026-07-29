@@ -158,23 +158,30 @@ enum TravelReads {
         try ensureOK(response, data: data)
     }
 
-    /// Save the user's photo object-paths on a visited place.
-    /// `PATCH /rest/v1/visit?place_id=eq.{placeID}` `{ "photos": [...] }`
-    static func updateVisitPhotos(
+    /// Append one private photo path atomically. The RPC validates that the
+    /// path belongs to the caller and place before updating the owner-scoped
+    /// visit, so concurrent uploads cannot replace one another's paths.
+    /// `POST /rest/v1/rpc/append_visit_photo`
+    static func appendVisitPhoto(
         placeID: String,
-        photos: [String],
+        path: String,
         accessToken: String,
         session: URLSession = .shared
     ) async throws {
-        var components = URLComponents(url: Config.restURL.appending(path: "visit"), resolvingAgainstBaseURL: false)
-        components?.queryItems = [URLQueryItem(name: "place_id", value: "eq.\(placeID)")]
-        guard let url = components?.url else { throw TravelError.badURL }
+        let url = Config.restURL.appending(path: "rpc/append_visit_photo")
         var request = URLRequest(url: url)
-        request.httpMethod = "PATCH"
+        request.httpMethod = "POST"
         apply(&request, accessToken: accessToken)
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("return=minimal", forHTTPHeaderField: "Prefer")
-        request.httpBody = try? JSONSerialization.data(withJSONObject: ["photos": photos])
+        do {
+            request.httpBody = try JSONSerialization.data(withJSONObject: [
+                "p_place_id": placeID,
+                "p_path": path,
+            ])
+        } catch {
+            throw TravelError.encoding(error)
+        }
         let (data, response) = try await session.data(for: request)
         try ensureOK(response, data: data)
     }
