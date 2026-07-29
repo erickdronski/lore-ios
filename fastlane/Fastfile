@@ -29,6 +29,10 @@ def asc_token!
   )
 end
 
+def app_review_hold_enabled?
+  ENV.fetch("APP_REVIEW_HOLD", "").casecmp("true").zero?
+end
+
 platform :ios do
   desc "Run the release unit-test gate on an iPhone simulator"
   lane :tests do
@@ -135,6 +139,8 @@ platform :ios do
       say.call("WARN", "Versions", "lookup failed: #{e.message}")
     end
 
+    platform = Spaceship::ConnectAPI::Platform::IOS
+
     # --- Editable version + attached build (fall back to newest for the audit) ---
     version = nil
     begin
@@ -144,7 +150,7 @@ platform :ios do
       else
         say.call("WARN", "Editable version", "None — nothing staged to submit")
         version = begin
-                    app.get_app_store_versions&.first
+                    app.get_latest_app_store_version(platform: platform)
                   rescue
                     nil
                   end
@@ -166,8 +172,15 @@ platform :ios do
     end
 
     begin
-      app.get_builds.sort_by { |bd| -bd.version.to_i }.first(3).each do |bd|
-        say.call("INFO", "TestFlight build", "#{bd.version} processing=#{bd.processing_state} expired=#{bd.expired}")
+      # Build numbers can restart for a new marketing version, so sorting by
+      # the integer alone can make an older 1.0 build look newer than 1.1.
+      Spaceship::ConnectAPI::Build.all(
+        app_id: app.id, sort: "-uploadedDate", limit: 5,
+      ).first(5).each do |bd|
+        say.call(
+          "INFO", "TestFlight build",
+          "#{bd.app_version} (#{bd.version}) uploaded=#{bd.uploaded_date} processing=#{bd.processing_state} expired=#{bd.expired}",
+        )
       end
     rescue => e
       say.call("WARN", "TestFlight builds", "lookup failed: #{e.message}")
@@ -200,7 +213,11 @@ platform :ios do
 
     # --- Privacy policy + age rating (live on AppInfo, not the version) ---
     begin
-      app.get_app_infos.each do |info|
+      info = app.fetch_edit_app_info || app.fetch_live_app_info || app.fetch_latest_app_info
+      if info.nil?
+        say.call("FAIL", "AppInfo", "No AppInfo record returned")
+      else
+        say.call("INFO", "AppInfo", "state=#{info.state}")
         begin
           info.get_app_info_localizations.each do |il|
             next if il.privacy_policy_url.to_s.empty? && il.locale != app.primary_locale
@@ -211,7 +228,7 @@ platform :ios do
           say.call("WARN", "Privacy policy URL", "lookup failed: #{e.message}")
         end
         begin
-          ard = info.get_age_rating_declaration
+          ard = info.fetch_age_rating_declaration
           say.call(ard.nil? ? "FAIL" : "PASS", "Age rating declaration", ard.nil? ? "missing" : "present")
         rescue => e
           say.call("WARN", "Age rating", "lookup failed: #{e.message}")
@@ -222,40 +239,177 @@ platform :ios do
     end
 
     # --- Subscriptions (Lore+): each needs a review screenshot to be submittable ---
-    begin
-      groups = app.get_subscription_groups
-      if groups.nil? || groups.empty?
-        say.call("WARN", "Subscriptions", "No subscription groups returned")
-      end
-      groups&.each do |g|
-        subs = begin
-                 g.get_subscriptions
-               rescue
-                 nil
-               end
-        subs&.each do |s|
-          say.call("INFO", "Subscription", "#{s.name} product=#{s.product_id} state=#{s.state}")
-        end
-      end
-    rescue => e
-      say.call("WARN", "Subscriptions", "lookup failed (may need UI check): #{e.message}")
-    end
+    say.call(
+      "NOTE", "Subscriptions",
+      "Pinned Fastlane does not expose subscription-group reads; confirm products and review screenshots in App Store Connect",
+    )
 
     # --- Already submitted? ---
     begin
-      sub = version&.fetch_app_store_version_submission
-      say.call(sub.nil? ? "INFO" : "WARN", "Existing submission",
-               sub.nil? ? "none — version is not yet submitted" : "a submission already exists")
+      active_states = %w[
+        WAITING_FOR_REVIEW IN_REVIEW UNRESOLVED_ISSUES CANCELING COMPLETING
+      ]
+      sub = app.get_review_submissions(
+        filter: { platform: platform },
+        includes: "appStoreVersionForReview,items",
+      ).find { |candidate| active_states.include?(candidate.state) }
+      if sub.nil?
+        status = %w[WAITING_FOR_REVIEW IN_REVIEW].include?(version&.app_store_state) ? "WARN" : "INFO"
+        detail = status == "WARN" ? "version remains #{version.app_store_state} without an active reviewSubmission" : "none in progress"
+        say.call(status, "Existing submission", detail)
+      else
+        submitted_version = sub.app_store_version_for_review
+        submitted_build = begin
+                            submitted_version&.get_build
+                          rescue
+                            nil
+                          end
+        detail = "state=#{sub.state}"
+        detail += " version=#{submitted_version.version_string}" unless submitted_version.nil?
+        detail += " build=#{submitted_build.version}" unless submitted_build.nil?
+        say.call("WARN", "Existing submission", detail)
+      end
     rescue => e
-      say.call("INFO", "Existing submission", "none detected (#{e.class})")
+      say.call("WARN", "Existing submission", "lookup failed: #{e.message}")
     end
 
     UI.important("PF|NOTE|Manual-only checks|EU trader status, Paid Applications Agreement and subscription REVIEW SCREENSHOTS are not reliably exposed by the ASC API — confirm in the App Store Connect UI.")
   end
 
+  desc "Cancel the active App Review submission without changing or resubmitting a build"
+  lane :hold_review do |options|
+    asc_token!
+    UI.user_error!(
+      "APP_REVIEW_HOLD must be true in the app-store-production environment before cancelling review.",
+    ) unless app_review_hold_enabled?
+
+    expected_version = options[:expected_version].to_s
+    expected_build = options[:expected_build].to_s
+    UI.user_error!("expected_version is required") if expected_version.empty?
+    UI.user_error!("expected_build is required") if expected_build.empty?
+
+    platform = Spaceship::ConnectAPI::Platform::IOS
+    app = Spaceship::ConnectAPI::App.find(BUNDLE_ID)
+    UI.user_error!("No app for #{BUNDLE_ID}") if app.nil?
+
+    version = app.get_app_store_versions(filter: { platform: platform }).find do |candidate|
+      candidate.version_string == expected_version
+    end
+    UI.user_error!("No iOS App Store version #{expected_version}") if version.nil?
+
+    build = version.get_build
+    UI.user_error!("Version #{expected_version} has no attached build") if build.nil?
+    UI.user_error!(
+      "Refusing to cancel: expected #{expected_version} (#{expected_build}), " \
+      "but Apple currently has #{version.version_string} (#{build.version}).",
+    ) unless build.version.to_s == expected_build
+
+    active_states = %w[
+      WAITING_FOR_REVIEW IN_REVIEW UNRESOLVED_ISSUES CANCELING COMPLETING
+    ]
+    transition_states = %w[CANCELING COMPLETING]
+    submission = app.get_review_submissions(
+      filter: { platform: platform },
+      includes: "appStoreVersionForReview,items",
+    ).find { |candidate| active_states.include?(candidate.state) }
+    submission_id = submission&.id
+
+    unless submission.nil?
+      submitted_version = submission.app_store_version_for_review
+      UI.user_error!(
+        "Refusing to cancel submission #{submission.id}: it is not bound to expected version #{expected_version}.",
+      ) if submitted_version.nil? || submitted_version.id != version.id
+
+      if transition_states.include?(submission.state)
+        UI.important("Submission #{submission.id} is already #{submission.state}; waiting for Apple.")
+      else
+        UI.important(
+          "Cancelling App Review submission #{submission.id} " \
+          "state=#{submission.state} version=#{version.version_string} build=#{build.version}. " \
+          "No build will be selected or submitted.",
+        )
+        submission = submission.cancel_submission
+      end
+    end
+
+    if submission.nil? && %w[WAITING_FOR_REVIEW IN_REVIEW].include?(version.app_store_state)
+      legacy = begin
+                 version.fetch_app_store_version_submission
+               rescue
+                 nil
+               end
+      UI.user_error!(
+        "Version #{expected_version} is #{version.app_store_state}, but Apple returned no cancellable submission.",
+      ) if legacy.nil? || !legacy.can_reject
+
+      UI.important(
+        "Cancelling legacy App Review submission for #{version.version_string} (#{build.version}). " \
+        "No build will be selected or submitted.",
+      )
+      legacy.delete!
+    elsif submission.nil?
+      safe_states = %w[
+        PREPARE_FOR_SUBMISSION DEVELOPER_REJECTED METADATA_REJECTED REJECTED READY_FOR_REVIEW
+      ]
+      UI.user_error!(
+        "Version #{expected_version} is #{version.app_store_state}, not a confirmed held state.",
+      ) unless safe_states.include?(version.app_store_state)
+      UI.success("Lore #{expected_version} (#{expected_build}) is already held in #{version.app_store_state}.")
+      next
+    end
+
+    unless submission_id.nil?
+      completed = false
+      36.times do
+        current = begin
+                    Spaceship::ConnectAPI::ReviewSubmission.get(
+                      review_submission_id: submission_id,
+                      includes: "appStoreVersionForReview,items",
+                    )
+                  rescue
+                    nil
+                  end
+        if current.nil? || current.state == "COMPLETE"
+          completed = true
+          break
+        end
+        UI.message("Waiting for review cancellation: submission state=#{current.state}")
+        sleep(5)
+      end
+      UI.user_error!("Apple did not complete review cancellation within 3 minutes.") unless completed
+    end
+
+    final_version = nil
+    36.times do
+      final_version = Spaceship::ConnectAPI::AppStoreVersion.get(
+        app_store_version_id: version.id,
+        includes: Spaceship::ConnectAPI::AppStoreVersion::ESSENTIAL_INCLUDES,
+      )
+      break unless %w[WAITING_FOR_REVIEW IN_REVIEW].include?(final_version&.app_store_state)
+      UI.message("Waiting for version to leave review: state=#{final_version.app_store_state}")
+      sleep(5)
+    end
+
+    UI.user_error!("Apple no longer returned version #{expected_version} after cancellation.") if final_version.nil?
+    unsafe_states = %w[
+      WAITING_FOR_REVIEW IN_REVIEW PENDING_DEVELOPER_RELEASE READY_FOR_SALE
+    ]
+    UI.user_error!(
+      "Lore is not confirmed held; version #{expected_version} is #{final_version.app_store_state}.",
+    ) if unsafe_states.include?(final_version.app_store_state)
+
+    final_build = final_version.get_build
+    UI.user_error!("Attached build changed while holding review.") if final_build&.version.to_s != expected_build
+    UI.success(
+      "Lore #{expected_version} (#{expected_build}) is held in #{final_version.app_store_state}. " \
+      "The attached build was not changed or resubmitted.",
+    )
+  end
+
   desc "Submit the editable App Store version for review (guarded)"
   lane :submit_for_review do
     asc_token!
+    UI.user_error!("App Review is held. Set APP_REVIEW_HOLD=false before submitting.") if app_review_hold_enabled?
     app = Spaceship::ConnectAPI::App.find(BUNDLE_ID)
     UI.user_error!("No app for #{BUNDLE_ID}") if app.nil?
     version = app.get_edit_app_store_version
@@ -296,6 +450,7 @@ platform :ios do
   desc "Swap the newest processed build onto the editable version and (re)submit"
   lane :swap_latest_build_and_resubmit do
     asc_token!
+    UI.user_error!("App Review is held. Set APP_REVIEW_HOLD=false before resubmitting.") if app_review_hold_enabled?
     platform = Spaceship::ConnectAPI::Platform::IOS
     app = Spaceship::ConnectAPI::App.find(BUNDLE_ID)
     UI.user_error!("No app for #{BUNDLE_ID}") if app.nil?

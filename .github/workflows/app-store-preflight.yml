@@ -2,6 +2,7 @@ name: App Store · Preflight / Submit
 
 # Manual, API-only operations against App Store Connect:
 #   preflight   — READ-ONLY audit of the real submission state (changes nothing)
+#   hold-review — cancels the active review submission without changing a build
 #   submit      — submits the editable version for App Store review
 #   swap-latest — swaps the newest processed build onto the version and resubmits
 #                 (cancels the in-progress submission first if one exists)
@@ -11,15 +12,26 @@ on:
   workflow_dispatch:
     inputs:
       action:
-        description: "preflight (audit), submit, or swap-latest (new build + resubmit)"
+        description: "Audit, hold review, submit, swap the build, or change release mode"
         required: true
         default: preflight
         type: choice
         options:
           - preflight
+          - hold-review
           - submit
           - swap-latest
           - auto-release
+      expected_version:
+        description: "Version to hold (guarded exact match)"
+        required: true
+        default: "1.1"
+        type: string
+      expected_build:
+        description: "Attached build to hold (guarded exact match)"
+        required: true
+        default: "7"
+        type: string
 
 concurrency:
   group: app-store-preflight
@@ -48,8 +60,10 @@ jobs:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_KEY_CONTENT: ${{ secrets.ASC_KEY_CONTENT }}
+          APP_REVIEW_HOLD: ${{ vars.APP_REVIEW_HOLD }}
         run: |
           case "${{ inputs.action }}" in
+            hold-review)  bundle exec fastlane hold_review expected_version:"${{ inputs.expected_version }}" expected_build:"${{ inputs.expected_build }}" ;;
             submit)       bundle exec fastlane submit_for_review ;;
             swap-latest)  bundle exec fastlane swap_latest_build_and_resubmit ;;
             auto-release) bundle exec fastlane set_auto_release ;;
