@@ -146,6 +146,21 @@ final class ScannerLogicTests: XCTestCase {
 }
 
 final class SpecialistJourneyRegressionTests: XCTestCase {
+    func testDossierPresentationPolicyProtectsIPadOS17Layout() {
+        XCTAssertEqual(
+            LoreDossierPresentationPolicy.mode(isPad: false, supportsPageSizing: false),
+            .standardSheet
+        )
+        XCTAssertEqual(
+            LoreDossierPresentationPolicy.mode(isPad: true, supportsPageSizing: true),
+            .pageSheet
+        )
+        XCTAssertEqual(
+            LoreDossierPresentationPolicy.mode(isPad: true, supportsPageSizing: false),
+            .fullScreen
+        )
+    }
+
     @MainActor
     func testArrivalRequiresTwoAccurateConsecutiveFixes() {
         var gate = TourWalkGuide.ArrivalGate()

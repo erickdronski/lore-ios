@@ -96,7 +96,7 @@ struct ToursScreen: View {
                 TourDetailView(tour: tour)
             }
             .sheet(item: $generatedTour) { tour in
-                NavigationStack { TourDetailView(tour: tour) }
+                TourSheet(tour: tour)
             }
             .sheet(isPresented: $showCitySwitcher) {
                 CitySwitcherView(router: router)

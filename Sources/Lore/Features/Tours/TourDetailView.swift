@@ -2,6 +2,32 @@ import CoreLocation
 import MapKit
 import SwiftUI
 
+/// Sheet host for tour routes that are not pushed from the Tours stack. The
+/// explicit close control keeps the route recoverable when swipe dismissal is
+/// unavailable or undiscoverable.
+struct TourSheet: View {
+    let tour: Tour
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            TourDetailView(tour: tour)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button {
+                            dismiss()
+                        } label: {
+                            Image(systemName: "xmark")
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
+                        }
+                        .accessibilityLabel("Close tour")
+                    }
+                }
+        }
+    }
+}
+
 /// One tour as a stop stepper: progress rail, current stop's place card
 /// content + curator note, previous/next controls.
 struct TourDetailView: View {

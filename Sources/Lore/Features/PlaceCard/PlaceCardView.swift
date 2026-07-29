@@ -50,6 +50,7 @@ struct PlaceCardView: View {
     @State private var dive: Dive?
     @State private var loadedTheme: CityTheme?
 
+    @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private var activeTheme: CityTheme? { cityTheme ?? loadedTheme }
     private var accent: Color { activeTheme?.accentColor ?? LoreColor.brass700 }
@@ -305,6 +306,21 @@ struct PlaceCardView: View {
                     .allowsHitTesting(false)
             }
         }
+        .overlay(alignment: .topTrailing) {
+            Button {
+                dismiss()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(LoreColor.ink)
+                    .frame(width: 44, height: 44)
+                    .background(.ultraThinMaterial, in: Circle())
+            }
+            .buttonStyle(.pressable)
+            .accessibilityLabel("Close place details")
+            .padding(.top, 8)
+            .padding(.trailing, 12)
+        }
     }
 
     // MARK: Story teaser
@@ -405,7 +421,7 @@ struct PlaceCardView: View {
                     Image(systemName: "chevron.down")
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(LoreColor.bone)
-                        .frame(width: 40, height: 40)
+                        .frame(width: 44, height: 44)
                         .background(.ultraThinMaterial, in: Circle())
                 }
                 .buttonStyle(.pressable)
@@ -422,7 +438,7 @@ struct PlaceCardView: View {
                     Image(systemName: "square.and.arrow.up")
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(LoreColor.bone)
-                        .frame(width: 40, height: 40)
+                        .frame(width: 44, height: 44)
                         .background(.ultraThinMaterial, in: Circle())
                 }
                 .buttonStyle(.pressable)
@@ -486,7 +502,7 @@ struct PlaceCardView: View {
             Image(systemName: "square.and.arrow.up")
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(LoreColor.ink)
-                .frame(width: 36, height: 36)
+                .frame(width: 44, height: 44)
                 .background(activeTheme?.accentSoftColor.opacity(0.16) ?? LoreColor.bone200, in: Circle())
                 .overlay(Circle().strokeBorder(accent.opacity(0.26), lineWidth: 1))
         }

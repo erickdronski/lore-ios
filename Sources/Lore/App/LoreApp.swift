@@ -257,26 +257,23 @@ struct RootTabView: View {
                 .presentationDetents([.medium, .large])
         }
         // A place opened from a search hit (map pin taps are self-contained).
-        .sheet(item: $routedPlace) { routed in
+        .loreDossierPresentation(item: $routedPlace) { routed in
             // Detents are owned by PlaceCardView: it rests at `.medium` and
             // promotes to `.large` when the dossier opens (including the
             // screenshot pipeline's autoDive stage).
             PlaceCardView(place: routed.place, onMeetCity: { routedPlace = nil; meetCity = $0 }, autoDive: routed.autoDive)
-                .presentationBackground(.regularMaterial)
-                .presentationCornerRadius(24)
-                .loreDossierIPadSizing()
         }
         .sheet(item: $routedStory) { story in
             StorySheet(story: story)
                 .presentationDetents([.medium, .large])
         }
         .sheet(item: $routedTour) { tour in
-            NavigationStack { TourDetailView(tour: tour) }
+            TourSheet(tour: tour)
         }
         // Meet-the-City, the culture surface, raised from the map header, the
         // PlaceCard, or a culture search hit.
         .sheet(item: meetCityBinding) { route in
-            NavigationStack { CultureView(city: route.slug) }
+            CultureSheet(city: route.slug)
                 .presentationDetents([.large])
         }
         // The sign-in nudge (a signed-out visit toggle, per `VisitToggle`).

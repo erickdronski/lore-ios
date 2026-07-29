@@ -170,13 +170,10 @@ struct MapScreen: View {
                     theme: model.theme
                 )
             }
-            .sheet(item: selectedPlaceBinding) { place in
+            .loreDossierPresentation(item: selectedPlaceBinding) { place in
                 // Detents are owned by PlaceCardView so opening the dossier can
                 // promote the sheet to `.large` from every entry point.
                 PlaceCardView(place: place, onMeetCity: onMeetCity, cityTheme: model.theme)
-                    .presentationBackground(.regularMaterial)
-                    .presentationCornerRadius(24)
-                    .loreDossierIPadSizing()
             }
             // A ghost story opened from its wisp on the night map.
             .sheet(item: $nightStory) { story in
@@ -897,18 +894,57 @@ struct StatusChip: View {
     }
 }
 
-extension View {
-    /// On iPad a plain `.sheet` becomes a small fixed form sheet that ignores
-    /// `presentationDetents`, so the deep-dive dossier renders as a cramped
-    /// floating card with its gallery clipped (audit docs/30). Promote it to a
-    /// full page presentation on iPad; iPhone keeps its detent behavior
-    /// untouched, and pre-iOS 18 is a no-op.
-    @ViewBuilder
-    func loreDossierIPadSizing() -> some View {
-        if #available(iOS 18.0, *), UIDevice.current.userInterfaceIdiom == .pad {
-            self.presentationSizing(.page)
+enum LoreDossierPresentationMode: Equatable {
+    case standardSheet
+    case pageSheet
+    case fullScreen
+}
+
+enum LoreDossierPresentationPolicy {
+    static func mode(isPad: Bool, supportsPageSizing: Bool) -> LoreDossierPresentationMode {
+        guard isPad else { return .standardSheet }
+        return supportsPageSizing ? .pageSheet : .fullScreen
+    }
+
+    static var current: LoreDossierPresentationMode {
+        let isPad = UIDevice.current.userInterfaceIdiom == .pad
+        if #available(iOS 18.0, *) {
+            return mode(isPad: isPad, supportsPageSizing: true)
         } else {
-            self
+            return mode(isPad: isPad, supportsPageSizing: false)
+        }
+    }
+}
+
+extension View {
+    /// iPhone keeps the place card's medium/large detents. iPad uses a page sheet
+    /// where available and a full-screen presentation on iPadOS 17, whose fixed
+    /// form sheet otherwise clips the dossier and ignores those detents.
+    @ViewBuilder
+    func loreDossierPresentation<Item: Identifiable, Content: View>(
+        item: Binding<Item?>,
+        @ViewBuilder content: @escaping (Item) -> Content
+    ) -> some View {
+        switch LoreDossierPresentationPolicy.current {
+        case .standardSheet:
+            sheet(item: item) { value in
+                content(value)
+                    .presentationBackground(.regularMaterial)
+                    .presentationCornerRadius(24)
+            }
+        case .pageSheet:
+            if #available(iOS 18.0, *) {
+                sheet(item: item) { value in
+                    content(value)
+                        .presentationBackground(.regularMaterial)
+                        .presentationCornerRadius(24)
+                        .presentationSizing(.page)
+                }
+            } else {
+                fullScreenCover(item: item, content: content)
+            }
+        case .fullScreen:
+            fullScreenCover(item: item, content: content)
         }
     }
 }
