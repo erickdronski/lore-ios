@@ -164,9 +164,8 @@ final class VisitStore {
             let path = try await TravelReads.uploadJournalPhoto(
                 data: imageData, userID: creds.userID, placeID: placeID, accessToken: creds.accessToken
             )
-            let existing = visitHistory.first(where: { $0.placeID == placeID })?.photoPaths ?? []
-            try await TravelReads.updateVisitPhotos(
-                placeID: placeID, photos: existing + [path], accessToken: creds.accessToken
+            try await TravelReads.appendVisitPhoto(
+                placeID: placeID, path: path, accessToken: creds.accessToken
             )
             await settleAchievements(for: creds)
             await loadHistory(force: true)
