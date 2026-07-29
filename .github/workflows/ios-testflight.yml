@@ -68,6 +68,9 @@ jobs:
       - name: Generate the Xcode project
         run: xcodegen generate
 
+      - name: Verify Edge Function release contracts
+        run: node scripts/verify-edge-function-contracts.mjs
+
       - name: Ruby + Fastlane (cached)
         uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1
         with:
