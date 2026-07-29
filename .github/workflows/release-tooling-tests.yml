@@ -1,0 +1,40 @@
+name: Release Tooling Tests
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/app-store-preflight.yml"
+      - ".github/workflows/screenshots-upload.yml"
+      - ".github/workflows/release-tooling-tests.yml"
+      - "fastlane/Fastfile"
+      - "fastlane/lib/**"
+      - "fastlane/spec/**"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/app-store-preflight.yml"
+      - ".github/workflows/screenshots-upload.yml"
+      - ".github/workflows/release-tooling-tests.yml"
+      - "fastlane/Fastfile"
+      - "fastlane/lib/**"
+      - "fastlane/spec/**"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Ruby
+        uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1
+        with:
+          ruby-version: "3.2"
+
+      - name: Run offline release-tooling tests
+        run: ruby fastlane/spec/lore_release_tooling_test.rb

@@ -6,7 +6,12 @@ name: App Store · Upload Screenshots
 # API call — no Xcode, no Simulator, 1x runner cost.
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      release_source_sha:
+        description: "Exact 40-character source SHA used to capture every screenshot"
+        required: true
+        type: string
 
 concurrency:
   group: app-store-screenshots-upload
@@ -24,9 +29,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # Full history: the screenshots_upload guard checks that the capture
-          # commit in SOURCE_SHA is an ancestor of HEAD, which a depth-1
-          # shallow clone cannot answer (the parent commit simply is not there).
+          # Full history lets the guard prove that the explicit release source
+          # is in this branch after matching it exactly to SOURCE_SHA.
           fetch-depth: 0
 
       - name: Ruby + Fastlane (cached)
@@ -40,6 +44,8 @@ jobs:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_KEY_CONTENT: ${{ secrets.ASC_KEY_CONTENT }}
+          APP_REVIEW_HOLD: ${{ vars.APP_REVIEW_HOLD }}
+          RELEASE_SOURCE_SHA: ${{ inputs.release_source_sha }}
         run: bundle exec fastlane screenshots_upload
 
       - name: Save fastlane log on failure
