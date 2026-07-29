@@ -114,6 +114,15 @@ struct DeleteAccountView: View {
             Text("Accepted factual contributions may remain only in de-identified form, without your account ID or public attribution.")
                 .font(LoreType.caption)
                 .foregroundStyle(LoreColor.ink600)
+
+            Divider()
+
+            Label("Detached Apple purchase record retained", systemImage: "lock.shield.fill")
+                .font(LoreType.body.weight(.semibold))
+                .foregroundStyle(LoreColor.ink)
+            Text("Lore retains Apple's original transaction identifier and limited purchase lifecycle metadata without a Lore account link. This supports purchase restoration, duplicate-claim prevention, refunds or revocations, and legal and accounting duties.")
+                .font(LoreType.caption)
+                .foregroundStyle(LoreColor.ink600)
         }
         .padding(16)
         .background(LoreColor.bone, in: RoundedRectangle(cornerRadius: 18))

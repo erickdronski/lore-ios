@@ -78,6 +78,10 @@ struct PrivacyDataView: View {
                     .font(LoreType.body)
                     .foregroundStyle(LoreColor.ink)
 
+                Text("Lore detaches Apple purchases from your account but retains Apple's original transaction identifier and limited purchase lifecycle metadata without an account link for purchase restoration, duplicate-claim prevention, refunds or revocations, and legal and accounting duties.")
+                    .font(LoreType.caption)
+                    .foregroundStyle(LoreColor.ink600)
+
                 Text("Deleting Lore does not cancel an Apple subscription. Apple billing must be managed separately.")
                     .font(LoreType.caption)
                     .foregroundStyle(LoreColor.ink600)

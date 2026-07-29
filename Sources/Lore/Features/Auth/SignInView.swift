@@ -35,6 +35,11 @@ struct SignInView: View {
             && (mode == .signIn || (confirmedMinimumAge && AuthService.isValidNewPassword(password)))
             && !isWorking
     }
+    private var canStartSocialAuthentication: Bool {
+        AuthService.allowsAccountCreatingAuthentication(
+            confirmedMinimumAge: confirmedMinimumAge
+        ) && !isWorking
+    }
 
     var body: some View {
         NavigationStack {
@@ -71,22 +76,7 @@ struct SignInView: View {
                             .foregroundStyle(LoreColor.ink600)
                     }
 
-                    if mode == .signUp {
-                        Toggle("I am 13 or older", isOn: $confirmedMinimumAge)
-                            .font(LoreType.caption)
-                            .tint(LoreColor.brass700)
-
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("By creating an account, you agree to:")
-                            ViewThatFits(in: .horizontal) {
-                                HStack(spacing: 8) { policyLinks }
-                                VStack(alignment: .leading, spacing: 6) { policyLinks }
-                            }
-                        }
-                        .font(LoreType.micro)
-                        .foregroundStyle(LoreColor.ink600)
-                        .tint(LoreColor.brass700)
-                    }
+                    if mode == .signUp { accountCreationConsent }
 
                     if let lastError = auth.lastError {
                         statusMessage(lastError, symbol: "exclamationmark.triangle.fill", color: LoreColor.error)
@@ -119,6 +109,7 @@ struct SignInView: View {
                     // which satisfies Guideline 4.8 for the Google/Facebook
                     // options offered alongside it.
                     socialDivider
+                    if mode == .signIn { accountCreationConsent }
                     socialButtons
 
                     // Switch between sign in and account creation; reset link
@@ -181,6 +172,29 @@ struct SignInView: View {
         Link("Privacy Policy", destination: URL(string: "https://lore-web-liart.vercel.app/privacy")!)
     }
 
+    private var accountCreationConsent: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Toggle("I am 13 or older", isOn: $confirmedMinimumAge)
+                .font(LoreType.caption)
+                .tint(LoreColor.brass700)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(
+                    mode == .signUp
+                        ? "By creating an account, you agree to:"
+                        : "Social sign-in may create an account. By continuing, you agree to:"
+                )
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 8) { policyLinks }
+                    VStack(alignment: .leading, spacing: 6) { policyLinks }
+                }
+            }
+            .font(LoreType.micro)
+            .foregroundStyle(LoreColor.ink600)
+            .tint(LoreColor.brass700)
+        }
+    }
+
     private func statusMessage(_ message: String, symbol: String, color: Color) -> some View {
         Label(message, systemImage: symbol)
             .font(LoreType.caption)
@@ -225,7 +239,8 @@ struct SignInView: View {
                     let cred = try await apple.signIn()
                     await auth.signInWithApple(
                         idToken: cred.identityToken, rawNonce: cred.rawNonce,
-                        fullName: cred.fullName, email: cred.email
+                        fullName: cred.fullName, email: cred.email,
+                        confirmedMinimumAge: confirmedMinimumAge
                     )
                 } catch AppleSignInCoordinator.AppleSignInError.cancelled {
                     // User backed out of the Apple sheet — nothing to show.
@@ -250,7 +265,12 @@ struct SignInView: View {
             .background(Color.black, in: Capsule())
             .foregroundStyle(.white)
         }
-        .disabled(isWorking)
+        .disabled(!canStartSocialAuthentication)
+        .accessibilityHint(
+            confirmedMinimumAge
+                ? "Uses your Apple account to continue"
+                : "Confirm that you are 13 or older before continuing"
+        )
     }
 
     /// A Supabase OAuth provider button (web flow).
@@ -260,7 +280,10 @@ struct SignInView: View {
     ) -> some View {
         Button {
             run(.oauth(provider)) {
-                await auth.signInWithOAuth(provider: provider)
+                await auth.signInWithOAuth(
+                    provider: provider,
+                    confirmedMinimumAge: confirmedMinimumAge
+                )
             }
         } label: {
             Group {
@@ -280,7 +303,12 @@ struct SignInView: View {
                     }
                 }
         }
-        .disabled(isWorking)
+        .disabled(!canStartSocialAuthentication)
+        .accessibilityHint(
+            confirmedMinimumAge
+                ? "Opens the provider's secure sign-in flow"
+                : "Confirm that you are 13 or older before continuing"
+        )
     }
 
     private func submitCredentials() {
