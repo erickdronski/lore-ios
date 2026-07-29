@@ -32,7 +32,7 @@ struct PrivacyDataView: View {
                 dataRow("Account", detail: "Email, authentication ID, and optional profile details", icon: "person.crop.circle")
                 dataRow("Travel journal", detail: "Visits, notes, and photos you intentionally save", icon: "book.closed.fill")
                 dataRow("Personalization", detail: "Travel lens, interests, hidden categories, and badges", icon: "slider.horizontal.3")
-                dataRow("Lore+", detail: "Apple manages payment details; Lore reads purchase access", icon: "crown.fill")
+                dataRow("Lore+", detail: "Apple manages payment details; Lore verifies access and retains limited transaction metadata", icon: "crown.fill")
             } header: {
                 Text("Data tied to an account")
             } footer: {
