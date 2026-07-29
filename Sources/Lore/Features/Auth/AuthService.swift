@@ -149,6 +149,20 @@ final class AuthService {
         value.count >= 8 && value.count <= 128
     }
 
+    static func allowsAccountCreatingAuthentication(confirmedMinimumAge: Bool) -> Bool {
+        confirmedMinimumAge
+    }
+
+    private func requireAccountCreationConsent(_ confirmedMinimumAge: Bool) -> Bool {
+        guard Self.allowsAccountCreatingAuthentication(
+            confirmedMinimumAge: confirmedMinimumAge
+        ) else {
+            lastError = "Confirm that you are 13 or older before continuing with social sign-in."
+            return false
+        }
+        return true
+    }
+
     /// `POST /auth/v1/token?grant_type=password` with the anon `apikey`.
     func signIn(email: String, password: String) async {
         lastError = nil
@@ -553,10 +567,12 @@ final class AuthService {
         idToken: String,
         rawNonce: String,
         fullName: PersonNameComponents? = nil,
-        email: String? = nil
+        email: String? = nil,
+        confirmedMinimumAge: Bool
     ) async {
         lastError = nil
         lastNotice = nil
+        guard requireAccountCreationConsent(confirmedMinimumAge) else { return }
         guard !idToken.isEmpty, !rawNonce.isEmpty else {
             lastError = "Apple sign-in returned incomplete credentials. Please try again."
             return
@@ -609,7 +625,12 @@ final class AuthService {
     // MARK: - OAuth providers (Google, and later Facebook / Discord)
 
     /// Sign in with Google via Supabase GoTrue's OAuth web flow.
-    func signInWithGoogle() async { await signInWithOAuth(provider: "google") }
+    func signInWithGoogle(confirmedMinimumAge: Bool) async {
+        await signInWithOAuth(
+            provider: "google",
+            confirmedMinimumAge: confirmedMinimumAge
+        )
+    }
 
     /// Generic Supabase OAuth: open `/auth/v1/authorize?provider=…` in an
     /// `ASWebAuthenticationSession`, let Supabase run the provider handshake,
@@ -619,9 +640,10 @@ final class AuthService {
     /// **Server prerequisite:** the provider must be enabled in the Supabase
     /// dashboard (client id + secret) and `lore://auth-callback` added to the
     /// Auth → URL Configuration redirect allowlist.
-    func signInWithOAuth(provider: String) async {
+    func signInWithOAuth(provider: String, confirmedMinimumAge: Bool) async {
         lastError = nil
         lastNotice = nil
+        guard requireAccountCreationConsent(confirmedMinimumAge) else { return }
         let provider = provider.lowercased()
         guard Self.supportedOAuthProviders.contains(provider) else {
             lastError = "That sign-in provider isn't available in Lore."

@@ -206,6 +206,28 @@ final class OnboardingAuthenticationFlowTests: XCTestCase {
         XCTAssertFalse(AuthService.isValidNewPassword(String(repeating: "x", count: 129)))
     }
 
+    func testSocialAuthenticationRequiresMinimumAgeConfirmationBeforeProviderFlow() async {
+        let auth = AuthService()
+
+        XCTAssertFalse(
+            AuthService.allowsAccountCreatingAuthentication(confirmedMinimumAge: false)
+        )
+        XCTAssertTrue(
+            AuthService.allowsAccountCreatingAuthentication(confirmedMinimumAge: true)
+        )
+
+        await auth.signInWithOAuth(
+            provider: "google",
+            confirmedMinimumAge: false
+        )
+
+        XCTAssertEqual(
+            auth.lastError,
+            "Confirm that you are 13 or older before continuing with social sign-in."
+        )
+        XCTAssertFalse(auth.isBusy)
+    }
+
     func testOAuthCallbackAcceptsOnlyLoreHostAndCompleteBearerTokens() throws {
         let valid = URL(string: "lore://auth-callback#access_token=access&refresh_token=refresh&expires_in=3600&token_type=bearer")!
         let tokens = try AuthService.oauthTokens(from: valid)
