@@ -100,7 +100,7 @@ struct JournalView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
+            LazyVStack(alignment: .leading, spacing: 18) {
                 journalMasthead
                     .padding(.top, 8)
 
@@ -411,6 +411,7 @@ struct JournalView: View {
                         Text(note)
                             .font(.system(.body, design: .serif))
                             .foregroundStyle(LoreColor.ink.opacity(0.86))
+                            .lineLimit(5)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     .padding(12)
@@ -445,7 +446,7 @@ struct JournalView: View {
 
     private func photoStrip(_ entry: VisitLogEntry) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
+            LazyHStack(spacing: 8) {
                 ForEach(Array(entry.photoPaths.prefix(4).enumerated()), id: \.element) { index, path in
                     JournalPhotoThumb(path: path, size: index == 0 ? 104 : 88)
                         .rotationEffect(.degrees(reduceMotion ? 0 : (index.isMultiple(of: 2) ? -1.5 : 1.5)))
@@ -468,7 +469,10 @@ struct JournalView: View {
         var parts = [entry.displayName]
         if let city = entry.displayCity { parts.append(city) }
         if !entry.dateLabel.isEmpty { parts.append(entry.dateLabel) }
-        if let note = entry.note, !note.isEmpty { parts.append(note) }
+        if let note = entry.note, !note.isEmpty {
+            let summary = note.count > 160 ? "\(note.prefix(160))..." : note
+            parts.append(summary)
+        }
         parts.append("\(entry.photoPaths.count) photos")
         return parts.joined(separator: ", ")
     }
@@ -598,6 +602,7 @@ struct NoteEditorSheet: View {
                                 .strokeBorder(LoreColor.bone300, lineWidth: 1)
                         )
                         .accessibilityLabel("Field note")
+                        .disabled(saving)
 
                     HStack {
                         if !normalizedText.isEmpty {
@@ -605,6 +610,7 @@ struct NoteEditorSheet: View {
                                 showClearConfirmation = true
                             }
                             .font(LoreType.caption)
+                            .disabled(saving)
                         }
                         Spacer()
                         Text("\(text.count)/\(maximumCharacters)")
@@ -627,7 +633,7 @@ struct NoteEditorSheet: View {
                             }
                             .foregroundStyle(LoreColor.brass700)
                         }
-                        .disabled(uploading || photos.count >= maximumPhotos)
+                        .disabled(saving || uploading || photos.count >= maximumPhotos)
                     }
                     if photos.isEmpty {
                         HStack(spacing: 10) {
@@ -693,9 +699,11 @@ struct NoteEditorSheet: View {
                             dismiss()
                         }
                     }
+                    .disabled(saving || uploading)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
+                        saving = true
                         Task { await saveChanges() }
                     }
                     .disabled(saving || uploading || validationMessage != nil)
@@ -720,8 +728,8 @@ struct NoteEditorSheet: View {
             }
             .onChange(of: picked) { _, item in
                 guard let item else { return }
+                uploading = true
                 Task {
-                    uploading = true
                     sheetError = nil
                     if let data = try? await item.loadTransferable(type: Data.self),
                        let jpeg = Self.downscaledJPEG(data) {
@@ -747,7 +755,6 @@ struct NoteEditorSheet: View {
     @MainActor
     private func saveChanges() async {
         guard validationMessage == nil else { return }
-        saving = true
         sheetError = nil
         defer { saving = false }
 
