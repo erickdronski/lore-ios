@@ -385,6 +385,8 @@ struct MapScreen: View {
                     Circle().strokeBorder(LoreColor.ink.opacity(0.1), lineWidth: 1)
                 }
             }
+            .frame(minWidth: 44, minHeight: 44)
+            .contentShape(Rectangle())
             .scaleEffect(on && !reduceMotion ? 1.04 : 1)
         }
         .buttonStyle(.pressable)
@@ -766,6 +768,8 @@ struct MapHeader: View {
                 .frame(width: 42, height: 42)
                 .background(active ? LoreColor.amber : LoreColor.bone50.opacity(0.96), in: Circle())
                 .overlay(Circle().strokeBorder(accent.opacity(active ? 0.85 : 0.38), lineWidth: active ? 1.5 : 1))
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.pressable)
         .accessibilityLabel(Text(label))
@@ -841,6 +845,8 @@ struct PlacePinBadge: View {
                     .offset(x: 4, y: -4)
             }
         }
+        .frame(width: 44, height: 44)
+        .contentShape(Rectangle())
         // Landing: scale 0.6→1 on `spring.bounce` with a near→far stagger. The
         // selected pin then springs up to 1.18× so a tapped pin lifts out of the
         // field. Reduce Motion drops both transforms (a crossfade only).

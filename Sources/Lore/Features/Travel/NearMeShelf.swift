@@ -198,12 +198,16 @@ struct NearMeShelf: View {
                 }
                 .font(LoreType.button)
                 .foregroundStyle(LoreColor.amber)
+                .frame(minWidth: 44, minHeight: 44, alignment: .leading)
+                .contentShape(Rectangle())
             } else if provider.lastError != nil {
                 Button("Try location again") {
                     provider.start(requestPermission: true)
                 }
                 .font(LoreType.button)
                 .foregroundStyle(LoreColor.amber)
+                .frame(minWidth: 44, minHeight: 44, alignment: .leading)
+                .contentShape(Rectangle())
             }
         }
         .padding(14)
@@ -236,6 +240,8 @@ struct NearMeShelf: View {
                 Button("Clear filters") { filters.clear() }
                     .font(LoreType.button)
                     .foregroundStyle(LoreColor.amber)
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(Rectangle())
             }
         }
         .padding(.horizontal, 16)

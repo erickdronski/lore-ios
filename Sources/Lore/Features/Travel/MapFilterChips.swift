@@ -56,7 +56,8 @@ struct MapFilterChips: View {
             .overlay(chipBorder(on: on))
             .foregroundStyle(on ? LoreColor.ink : LoreColor.ink600)
             .opacity(on ? 1 : 0.7)
-            .contentShape(Capsule())
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.pressableSilent)
         .accessibilityLabel(Text(category.label))
@@ -79,7 +80,8 @@ struct MapFilterChips: View {
             .frame(height: 36)
             .background(Capsule().fill(LoreColor.ink))
             .foregroundStyle(LoreColor.bone)
-            .contentShape(Capsule())
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.pressableSilent)
         .accessibilityLabel(Text("Show all places"))
@@ -144,7 +146,8 @@ struct CollectionChips: View {
             .background(Capsule().fill(active ? LoreColor.amber : LoreColor.bone50))
             .overlay(Capsule().strokeBorder(active ? LoreColor.amber : LoreColor.bone300, lineWidth: active ? 1.5 : 1))
             .foregroundStyle(active ? LoreColor.ink : LoreColor.ink600)
-            .contentShape(Capsule())
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.pressableSilent)
         .accessibilityLabel(Text(collection.label))

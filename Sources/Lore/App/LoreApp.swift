@@ -399,6 +399,8 @@ struct RootTabView: View {
                         .foregroundStyle(LoreColor.ink600)
                         .frame(width: 34, height: 34)
                         .background(LoreColor.bone200, in: Circle())
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Hide sidebar")
@@ -478,6 +480,8 @@ struct RootTabView: View {
                 .background(.ultraThinMaterial, in: Capsule())
                 .overlay(Capsule().strokeBorder(LoreColor.brass700.opacity(0.3)))
                 .shadow(color: .black.opacity(0.18), radius: 8, x: 2, y: 3)
+                .frame(width: 44, height: 52)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .padding(.leading, 8)

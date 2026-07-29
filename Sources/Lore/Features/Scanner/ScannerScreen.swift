@@ -128,6 +128,8 @@ struct ScannerScreen: View {
                         .padding(.horizontal, 12)
                         .frame(height: 36)
                         .background(LoreColor.amber, in: Capsule())
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
                         .buttonStyle(.plain)
                         .padding(.top, 6)
                     }
@@ -407,6 +409,8 @@ struct ScannerScreen: View {
                 .padding(.horizontal, 16)
                 .frame(height: 40)
                 .background(LoreColor.amber, in: Capsule())
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.pressable)
 
@@ -444,6 +448,8 @@ struct ScannerScreen: View {
                             .padding(.horizontal, 16)
                             .frame(height: 38)
                             .background(LoreColor.amber, in: Capsule())
+                            .frame(minHeight: 44)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.pressable)
                 }

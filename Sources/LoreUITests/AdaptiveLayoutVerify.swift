@@ -19,10 +19,12 @@ final class AdaptiveLayoutVerify: XCTestCase {
 
             let hideSidebar = app.buttons["Hide sidebar"]
             XCTAssertTrue(hideSidebar.exists)
+            assertMinimumTapTarget(hideSidebar)
             hideSidebar.tap()
 
             let showSidebar = app.buttons["Show sidebar"]
             XCTAssertTrue(showSidebar.waitForExistence(timeout: 5))
+            assertMinimumTapTarget(showSidebar)
             XCTAssertFalse(mapSidebarButton.exists)
             showSidebar.tap()
             XCTAssertTrue(mapSidebarButton.waitForExistence(timeout: 5))
@@ -113,6 +115,46 @@ final class AdaptiveLayoutVerify: XCTestCase {
     }
 
     @MainActor
+    func testCompactTapTargetsMeetMinimumSize() throws {
+        let app = launchApp()
+
+        let cityButton = currentCityButton(app)
+        XCTAssertTrue(cityButton.waitForExistence(timeout: 35))
+        assertMinimumTapTarget(cityButton)
+
+        let mapActions = [
+            app.buttons["Show my location on the map"],
+            app.buttons["Search Lore"],
+            app.buttons["3D map"],
+            app.buttons["Satellite map"],
+        ]
+        for action in mapActions {
+            XCTAssertTrue(action.exists)
+            assertMinimumTapTarget(action)
+        }
+
+        let closeButton = app.buttons["Close"]
+        cityButton.tap()
+        if !closeButton.waitForExistence(timeout: 5) {
+            cityButton.tap()
+        }
+        XCTAssertTrue(closeButton.waitForExistence(timeout: 20))
+        for filter in ["All", "Planning", "US", "Europe", "Asia"] {
+            let button = app.buttons[filter]
+            XCTAssertTrue(button.exists)
+            assertMinimumTapTarget(button)
+        }
+
+        app.buttons["Europe"].tap()
+        let pinButton = app.buttons
+            .matching(NSPredicate(format: "label BEGINSWITH %@ AND label ENDSWITH %@", "Pin ", " for trip planning"))
+            .firstMatch
+        XCTAssertTrue(pinButton.waitForExistence(timeout: 20))
+        assertMinimumTapTarget(pinButton)
+        closeButton.tap()
+    }
+
+    @MainActor
     func testAccessibilityTextSizeKeepsPrimaryNavigationReachable() throws {
         let app = launchApp(
             contentSizeCategory: "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge"
@@ -148,20 +190,26 @@ final class AdaptiveLayoutVerify: XCTestCase {
 
         let app = launchApp()
         XCTAssertTrue(sidebarButton(app, "Map").waitForExistence(timeout: 30))
-        XCTAssertTrue(app.buttons["Hide sidebar"].isHittable)
+        let hideSidebar = app.buttons["Hide sidebar"]
+        XCTAssertTrue(hideSidebar.isHittable)
+        assertMinimumTapTarget(hideSidebar)
 
         let cityButton = currentCityButton(app)
         XCTAssertTrue(cityButton.waitForExistence(timeout: 20))
         cityButton.tap()
         XCTAssertTrue(app.buttons["Close"].waitForExistence(timeout: 20))
-        XCTAssertTrue(app.buttons["Planning"].isHittable)
-        XCTAssertTrue(app.buttons["Europe"].isHittable)
-        XCTAssertTrue(app.buttons["Asia"].isHittable)
+        for filter in ["Planning", "Europe", "Asia"] {
+            let button = app.buttons[filter]
+            XCTAssertTrue(button.isHittable)
+            assertMinimumTapTarget(button)
+        }
         app.buttons["Close"].tap()
 
-        app.buttons["Hide sidebar"].tap()
-        XCTAssertTrue(app.buttons["Show sidebar"].waitForExistence(timeout: 5))
-        app.buttons["Show sidebar"].tap()
+        hideSidebar.tap()
+        let showSidebar = app.buttons["Show sidebar"]
+        XCTAssertTrue(showSidebar.waitForExistence(timeout: 5))
+        assertMinimumTapTarget(showSidebar)
+        showSidebar.tap()
         XCTAssertTrue(sidebarButton(app, "Map").waitForExistence(timeout: 5))
     }
 
@@ -201,6 +249,7 @@ final class AdaptiveLayoutVerify: XCTestCase {
         ))
         XCTAssertTrue(recoveryActions.firstMatch.exists)
         XCTAssertTrue(recoveryActions.firstMatch.isHittable)
+        assertMinimumTapTarget(recoveryActions.firstMatch)
     }
 
     @MainActor
@@ -244,5 +293,26 @@ final class AdaptiveLayoutVerify: XCTestCase {
         app.buttons
             .matching(NSPredicate(format: "label BEGINSWITH %@", "Current city, "))
             .firstMatch
+    }
+
+    private func assertMinimumTapTarget(
+        _ element: XCUIElement,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertGreaterThanOrEqual(
+            element.frame.width,
+            44,
+            "\(element.label) should be at least 44 points wide",
+            file: file,
+            line: line
+        )
+        XCTAssertGreaterThanOrEqual(
+            element.frame.height,
+            44,
+            "\(element.label) should be at least 44 points tall",
+            file: file,
+            line: line
+        )
     }
 }

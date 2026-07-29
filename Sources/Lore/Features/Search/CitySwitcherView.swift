@@ -19,6 +19,10 @@ struct CitySwitcherView: View {
     @State private var model = CitySwitcherModel()
     @State private var planningSlugs: Set<String> = []
 
+    /// Compact sheet presentation scales these controls to about 96% on screen.
+    /// A 46-point layout target keeps the measured hit area above 44 points.
+    private let sheetTapTarget: CGFloat = 46
+
     /// Hook to the shared router: taps drive `router.switchCity(to:)` and the
     /// current selection is read from `router.selectedCity`.
     init(router: AppRouter) {
@@ -148,7 +152,7 @@ struct CitySwitcherView: View {
                                                     ? LoreColor.brass700
                                                     : LoreColor.ink600
                                             )
-                                            .frame(width: 42, height: 42)
+                                            .frame(width: sheetTapTarget, height: sheetTapTarget)
                                             .contentShape(Rectangle())
                                     }
                                     .buttonStyle(.plain)
@@ -221,6 +225,8 @@ struct CitySwitcherView: View {
                                         Capsule().strokeBorder(LoreColor.ink.opacity(0.12))
                                     }
                                 }
+                                .frame(minHeight: sheetTapTarget)
+                                .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                         .accessibilityAddTraits(model.selectedFilter == filter ? .isSelected : [])
