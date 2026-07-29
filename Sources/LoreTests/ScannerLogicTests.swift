@@ -124,6 +124,24 @@ final class ScannerLogicTests: XCTestCase {
         )
     }
 
+    func testStaleCameraAuthorizationCompletionCannotRestartAfterStop() {
+        let gate = ScannerCameraService.RunIntentGate()
+        let pendingAuthorization = gate.beginStart()
+
+        gate.stop()
+
+        XCTAssertFalse(gate.accepts(pendingAuthorization))
+        XCTAssertFalse(gate.hasActiveStartIntent)
+    }
+
+    func testCurrentCameraAuthorizationCompletionCanStart() {
+        let gate = ScannerCameraService.RunIntentGate()
+        let pendingAuthorization = gate.beginStart()
+
+        XCTAssertTrue(gate.accepts(pendingAuthorization))
+        XCTAssertTrue(gate.hasActiveStartIntent)
+    }
+
     // MARK: - ScannerRanking scoring
 
     func testGazeScoreCenterEdgeAndNaNGuard() {
