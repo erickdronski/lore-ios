@@ -166,14 +166,41 @@ final class SpecialistJourneyRegressionTests: XCTestCase {
 
     func testLandmarkResultNormalizesConfidenceAndAmbiguity() throws {
         let uncertain = try XCTUnwrap(LandmarkID(name: "  Clock Tower  ", confidence: 0.61, slug: "  "))
-        let certain = try XCTUnwrap(LandmarkID(name: "Clock Tower", confidence: 1.4, slug: "clock-tower"))
+        let certain = try XCTUnwrap(LandmarkID(
+            name: "Clock Tower",
+            confidence: 1.4,
+            slug: "clock-tower",
+            placeID: " place-1 ",
+            placeCity: " London "
+        ))
 
         XCTAssertEqual(uncertain.name, "Clock Tower")
         XCTAssertNil(uncertain.slug)
         XCTAssertTrue(uncertain.isAmbiguous)
         XCTAssertEqual(certain.confidence, 1)
         XCTAssertFalse(certain.isAmbiguous)
+        XCTAssertEqual(certain.placeID, "place-1")
+        XCTAssertEqual(certain.placeCity, "London")
         XCTAssertNil(LandmarkID(name: " \n ", confidence: 0.9, slug: nil))
+    }
+
+    func testLandmarkResponseDecodesCrossCityIdentity() throws {
+        let data = Data("""
+        {"landmark":"Clock Tower","confidence":0.94,"slug":"clock-tower","place_id":"place-1","place_city":"London"}
+        """.utf8)
+        let response = try JSONDecoder().decode(LandmarkResponse.self, from: data)
+
+        XCTAssertEqual(response.placeID, "place-1")
+        XCTAssertEqual(response.placeCity, "London")
+    }
+
+    func testScannerOrientationMapsEveryIPadRotation() {
+        XCTAssertEqual(ScannerCameraService.visionOrientation(for: .portrait), .right)
+        XCTAssertEqual(ScannerCameraService.visionOrientation(for: .portraitUpsideDown), .left)
+        XCTAssertEqual(ScannerCameraService.visionOrientation(for: .landscapeLeft), .up)
+        XCTAssertEqual(ScannerCameraService.visionOrientation(for: .landscapeRight), .down)
+        XCTAssertEqual(ScannerCameraService.videoRotationAngle(for: .portrait), 90)
+        XCTAssertEqual(ScannerCameraService.videoRotationAngle(for: .landscapeRight), 180)
     }
 
     func testPushDestinationRejectsExternalAndMalformedLinks() {

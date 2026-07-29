@@ -103,9 +103,8 @@ final class StoreKitService {
     /// cryptographically valid but unattributable, and the only proof of
     /// payment lives on one device.
     ///
-    /// Nil for a signed-out purchase: StoreKit still grants access on-device
-    /// (`hasActiveEntitlement`), and `syncPurchaseToServer` re-attributes it the
-    /// next time the buyer signs in and restores.
+    /// Purchases fail closed while this is nil. New transactions must be
+    /// attributable to a Lore account before StoreKit opens.
     var accountUUID: UUID?
 
     /// Called with a transaction's **JWS representation** so the app can post it
@@ -410,6 +409,9 @@ final class StoreKitService {
     /// by that swap.
     func purchase(productID: String) async -> PurchaseOutcome {
         guard !isPurchaseInProgress, !isRestoreInProgress else { return .inProgress }
+        guard accountUUID != nil else {
+            return .failed(message: "Sign in to Lore before purchasing so Apple can link access to your account.")
+        }
         guard AppStore.canMakePayments else {
             return .failed(message: "Purchases are disabled on this device. Check Screen Time or Apple Account settings.")
         }
@@ -436,8 +438,10 @@ final class StoreKitService {
             // Bind the transaction to the Lore account so Apple echoes the id
             // back in the signed transaction and in every server notification.
             // This is what makes the purchase attributable server-side.
-            var options: Set<Product.PurchaseOption> = []
-            if let accountUUID { options.insert(.appAccountToken(accountUUID)) }
+            guard let accountUUID else {
+                return .failed(message: "Sign in to Lore before purchasing so Apple can link access to your account.")
+            }
+            let options: Set<Product.PurchaseOption> = [.appAccountToken(accountUUID)]
             let result = try await product.purchase(options: options)
             switch result {
             case .success(let verification):

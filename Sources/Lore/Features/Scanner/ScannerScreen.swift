@@ -84,7 +84,7 @@ struct ScannerScreen: View {
                     GeoARView(controller: model.geoAR)
                         .ignoresSafeArea()
                 } else {
-                    CameraPreviewView(session: model.camera.session)
+                    CameraPreviewView(camera: model.camera)
                         .ignoresSafeArea()
                 }
 
@@ -157,6 +157,8 @@ struct ScannerScreen: View {
                     cameraRationaleOverlay
                 } else if model.permissionDenied {
                     permissionOverlay
+                } else if model.needsPreciseLocation {
+                    preciseLocationOverlay
                 } else if let message = model.cameraUnavailableMessage {
                     cameraUnavailableOverlay(message: message)
                 }
@@ -180,7 +182,7 @@ struct ScannerScreen: View {
             ARCaptureSheet(shot: shot)
         }
         .sheet(isPresented: $showPaywall) {
-            PaywallView(entitlements: entitlements, store: store, auth: auth, context: .audio)
+            PaywallView(entitlements: entitlements, store: store, auth: auth, context: .scanner)
         }
         .sheet(isPresented: $showSignIn) {
             SignInView()
@@ -430,9 +432,9 @@ struct ScannerScreen: View {
                     : "Google Cloud Vision")
                     .font(LoreType.micro)
                     .foregroundStyle(LoreColor.bone.opacity(0.7))
-                if let slug = id.slug {
+                if id.slug != nil || id.placeID != nil {
                     Button {
-                        model.openIdentified(slug: slug)
+                        Task { await model.openIdentified(id) }
                     } label: {
                         Text("Open its story")
                             .font(LoreType.button)
@@ -502,6 +504,11 @@ struct ScannerScreen: View {
             return
         }
         let outcome = await model.identifyLandmark(accessToken: accessToken)
+        if outcome == .plusRequired {
+            await entitlements.refresh(accessToken: accessToken)
+            if !entitlements.isPlus { showPaywall = true }
+            return
+        }
         guard outcome == .unauthorized else { return }
 
         guard let refreshedToken = await auth.validAccessToken(forceRefresh: true) else {
@@ -509,7 +516,12 @@ struct ScannerScreen: View {
             return
         }
         let retry = await model.identifyLandmark(accessToken: refreshedToken)
-        if retry == .unauthorized, !auth.isSignedIn { showSignIn = true }
+        if retry == .plusRequired {
+            await entitlements.refresh(accessToken: refreshedToken)
+            if !entitlements.isPlus { showPaywall = true }
+        } else if retry == .unauthorized, !auth.isSignedIn {
+            showSignIn = true
+        }
     }
 
     // MARK: §3.1, meanwhile-nearby story markers
@@ -558,13 +570,13 @@ struct ScannerScreen: View {
             // The shutter sits dead-center of the bar (coarse mode only; the
             // precise-mode ARSession owns the frame). Centered via a ZStack so
             // the flanking controls can never shift it off-center.
-            if !model.preciseMode {
+            if !model.preciseMode && !model.isTransitioningToPreciseMode {
                 shutterButton
             }
             HStack {
                 CompassRing(headingDegrees: model.pose.headingDegrees)
                 Spacer()
-                if model.canLockOn || model.preciseMode {
+                if model.canLockOn || model.preciseMode || model.isTransitioningToPreciseMode {
                     lockOnToggle
                 } else {
                     // Balance the compass so the row reads symmetric.
@@ -610,14 +622,18 @@ struct ScannerScreen: View {
             Haptics.play(.chipTap)
             if model.preciseMode {
                 model.exitPreciseMode()
-            } else {
-                model.enterPreciseMode()
+            } else if !model.isTransitioningToPreciseMode {
+                Task { await model.enterPreciseMode() }
             }
         } label: {
             HStack(spacing: 4) {
-                Image(systemName: model.preciseMode ? "scope" : "dot.viewfinder")
-                    .font(.system(size: 13, weight: .semibold))
-                Text(model.preciseMode ? "Precise on" : "Lock on")
+                if model.isTransitioningToPreciseMode {
+                    ProgressView().tint(LoreColor.bone).controlSize(.small)
+                } else {
+                    Image(systemName: model.preciseMode ? "scope" : "dot.viewfinder")
+                        .font(.system(size: 13, weight: .semibold))
+                }
+                Text(model.isTransitioningToPreciseMode ? "Starting" : (model.preciseMode ? "Precise on" : "Lock on"))
                     .font(LoreType.button)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
@@ -637,8 +653,11 @@ struct ScannerScreen: View {
             )
         }
         .buttonStyle(.plain)
+        .disabled(model.isTransitioningToPreciseMode)
         .accessibilityLabel(Text(
-            model.preciseMode
+            model.isTransitioningToPreciseMode
+                ? "Starting precise AR"
+                : model.preciseMode
                 ? "Precise AR on, tap to return to coarse mode"
                 : "Lock on, start precise AR"
         ))
@@ -776,6 +795,51 @@ struct ScannerScreen: View {
             }
             .padding(28)
         }
+        .transition(.opacity)
+    }
+
+    /// Approximate Location is a distinct, recoverable state. It cannot support
+    /// block-level scanner claims, so request precise access before rendering
+    /// any place overlay instead of telling the traveler to step outside.
+    private var preciseLocationOverlay: some View {
+        ZStack {
+            LoreColor.ink950.opacity(0.94).ignoresSafeArea()
+            VStack(spacing: 16) {
+                Image(systemName: "location.circle.fill")
+                    .font(.system(size: 42, weight: .light))
+                    .foregroundStyle(LoreColor.amber)
+                Text("Turn on Precise Location")
+                    .font(LoreType.displayM)
+                    .foregroundStyle(LoreColor.bone)
+                    .multilineTextAlignment(.center)
+                Text("The live scanner needs block-level location to place nearby stories honestly. Map and Tours still work with Approximate Location.")
+                    .font(LoreType.body)
+                    .foregroundStyle(LoreColor.bone.opacity(0.78))
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("Use Precise Location") {
+                    model.requestPreciseLocation()
+                }
+                .font(LoreType.button)
+                .foregroundStyle(LoreColor.ink)
+                .padding(.horizontal, 22)
+                .frame(height: 46)
+                .background(BrassSheenSurface(shape: Capsule(), sweepOnAppear: false))
+                .buttonStyle(.plain)
+                Button("Open Settings") {
+                    if let url = URL(string: UIApplication.openSettingsURLString) {
+                        UIApplication.shared.open(url)
+                    }
+                }
+                .font(LoreType.button)
+                .foregroundStyle(LoreColor.brass300)
+                .frame(minHeight: 44)
+                .buttonStyle(.plain)
+            }
+            .padding(28)
+            .frame(maxWidth: 430)
+        }
+        .accessibilityElement(children: .contain)
         .transition(.opacity)
     }
 
@@ -980,8 +1044,16 @@ struct LandmarkID: Equatable {
     /// The Lore place slug if this landmark sits on one we know (so we can open
     /// its real story), else nil.
     let slug: String?
+    let placeID: String?
+    let placeCity: String?
 
-    init?(name: String, confidence: Double?, slug: String?) {
+    init?(
+        name: String,
+        confidence: Double?,
+        slug: String?,
+        placeID: String? = nil,
+        placeCity: String? = nil
+    ) {
         let cleanedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanedName.isEmpty else { return nil }
         self.name = cleanedName
@@ -992,6 +1064,10 @@ struct LandmarkID: Equatable {
         }
         let cleanedSlug = slug?.trimmingCharacters(in: .whitespacesAndNewlines)
         self.slug = cleanedSlug?.isEmpty == false ? cleanedSlug : nil
+        let cleanedPlaceID = placeID?.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.placeID = cleanedPlaceID?.isEmpty == false ? cleanedPlaceID : nil
+        let cleanedCity = placeCity?.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.placeCity = cleanedCity?.isEmpty == false ? cleanedCity : nil
     }
 
     /// Cloud labels below this threshold are possibilities, not identities.
@@ -1003,6 +1079,7 @@ enum IdentifyFailure: Equatable {
     case network
     case service
     case invalidResponse
+    case membership
 
     var message: String {
         switch self {
@@ -1010,6 +1087,7 @@ enum IdentifyFailure: Equatable {
         case .network: return "Landmark ID needs a connection. Check your signal and retry."
         case .service: return "Google landmark matching is temporarily unavailable. Try again in a moment."
         case .invalidResponse: return "The match came back incomplete, so Lore didn't guess. Try another angle."
+        case .membership: return "Lore+ couldn't be verified for cloud identification. Sign in and restore purchases, then try again."
         }
     }
 }
@@ -1027,6 +1105,7 @@ enum IdentifyState: Equatable {
 enum LandmarkRequestOutcome: Equatable {
     case completed
     case unauthorized
+    case plusRequired
 }
 
 /// The `landmark-id` edge function's JSON shape.
@@ -1034,6 +1113,14 @@ struct LandmarkResponse: Decodable {
     let landmark: String
     let confidence: Double?
     let slug: String?
+    let placeID: String?
+    let placeCity: String?
+
+    enum CodingKeys: String, CodingKey {
+        case landmark, confidence, slug
+        case placeID = "place_id"
+        case placeCity = "place_city"
+    }
 }
 
 /// The one always-alive scanner state. Every reproject resolves to exactly one
@@ -1044,6 +1131,11 @@ enum ScanState: Equatable {
     case acquiringSensors
     /// Warming up has dragged on (often indoors) — nudge to step outside.
     case searchingOutside
+    /// The traveler granted only Approximate Location, which cannot support
+    /// honest block-level overlays.
+    case preciseLocationRequired
+    /// A current location exists but no valid compass heading arrived.
+    case headingUnavailable
     /// Known places resolved around the user (a lock, chips, or rail hints).
     case foundNearby(Int)
     /// Sensors are ready but Lore knows nothing here; the honest on-device
@@ -1069,6 +1161,8 @@ final class ScannerModel {
     /// True while the precise pipeline owns the viewfinder. Coarse mode is
     /// the default and the fallback; this only flips on an explicit upgrade.
     private(set) var preciseMode = false
+    private(set) var isTransitioningToPreciseMode = false
+    private var preciseTransitionID: UUID?
     private(set) var preciseFallbackNotice: String?
     private var preciseNoticeTask: Task<Void, Never>?
 
@@ -1116,6 +1210,9 @@ final class ScannerModel {
     private(set) var locationDenied = false
     private(set) var cameraUnavailableMessage: String?
     var permissionDenied: Bool { cameraDenied || locationDenied }
+    var needsPreciseLocation: Bool {
+        pose.isAuthorized && !pose.hasPreciseLocation
+    }
 
     private var loadError = false
     var hasContentLoadError: Bool { loadError }
@@ -1137,6 +1234,7 @@ final class ScannerModel {
     var statusLine: String {
         if loadError { return "Couldn't load \(CityPackStore.label(loadedCity ?? "city")) stories" }
         if let preciseFallbackNotice { return preciseFallbackNotice }
+        if isTransitioningToPreciseMode { return "Starting precise mode…" }
         if preciseMode {
             // The precise ladder rung narrated honestly: localizing keeps
             // the searching language, locked earns the claim (docs/05 §5).
@@ -1153,6 +1251,10 @@ final class ScannerModel {
             return pose.statusLine + scouting.statusSuffix
         case .searchingOutside:
             return L10n.t("scan.stepOutside")
+        case .preciseLocationRequired:
+            return "Precise Location is off"
+        case .headingUnavailable:
+            return "Compass unavailable · try away from magnetic interference"
         case .foundNearby(let n):
             return String(format: L10n.t("scan.foundNearby"), n)
         case .nothingRecognized:
@@ -1171,6 +1273,7 @@ final class ScannerModel {
     /// have a fix to rank candidates from. Coarse remains the default.
     var canLockOn: Bool {
         !preciseMode
+            && !isTransitioningToPreciseMode
             && scouting.availability == .available
             && GeoARSessionController.isSupported
             && pose.freshLocation() != nil
@@ -1278,6 +1381,8 @@ final class ScannerModel {
     }
 
     func stopSensors() {
+        preciseTransitionID = nil
+        isTransitioningToPreciseMode = false
         camera.stop()
         camera.onFrame = nil
         vision.reset()
@@ -1327,13 +1432,18 @@ final class ScannerModel {
         camera.start(requestPermissionIfNeeded: true)
     }
 
+    func requestPreciseLocation() {
+        pose.requestPreciseLocation()
+    }
+
     // MARK: Precise mode (docs/05 §5 ladder, rung 1)
 
     /// Upgrade to the precise pipeline: hand the camera to the ARSession and
     /// anchor the top-ranked candidates as ARGeoAnchors. Coarse remains the
     /// fallback at every step; any hard failure lands in exitPreciseMode().
-    func enterPreciseMode() {
-        guard !preciseMode, let location = pose.freshLocation() else { return }
+    func enterPreciseMode() async {
+        guard !preciseMode, !isTransitioningToPreciseMode,
+              let location = pose.freshLocation() else { return }
 
         // Rank the whole nearby field, not just the current FOV, so anchors
         // cover what the user will sweep to. Ranked first, nearest breaking
@@ -1357,11 +1467,17 @@ final class ScannerModel {
         )
         guard !ranked.isEmpty else { return }
 
-        preciseMode = true
+        let transitionID = UUID()
+        preciseTransitionID = transitionID
+        isTransitioningToPreciseMode = true
         preciseFallbackNotice = nil
         narration.dismissOffer()
         // One camera owner at a time: the AVCapture preview yields to ARKit.
-        camera.stop()
+        await camera.stopAndWait()
+        guard preciseTransitionID == transitionID else { return }
+        preciseTransitionID = nil
+        isTransitioningToPreciseMode = false
+        preciseMode = true
         // Clear the coarse frame so nothing stale flashes on the way back.
         lockedRanked = nil
         inViewClusters = []
@@ -1451,6 +1567,10 @@ final class ScannerModel {
                 identifyState = .unavailable(.service)
                 return .unauthorized
             }
+            if http.statusCode == 403 {
+                identifyState = .unavailable(.membership)
+                return .plusRequired
+            }
             if http.statusCode == 429 {
                 identifyState = .quotaReached
                 return .completed
@@ -1463,7 +1583,9 @@ final class ScannerModel {
             guard let match = LandmarkID(
                 name: decoded.landmark,
                 confidence: decoded.confidence,
-                slug: decoded.slug
+                slug: decoded.slug,
+                placeID: decoded.placeID,
+                placeCity: decoded.placeCity
             ) else {
                 identifyState = .unavailable(.invalidResponse)
                 return .completed
@@ -1487,11 +1609,21 @@ final class ScannerModel {
         identifyState = .idle
     }
 
-    /// Open the story for an identified landmark when Lore knows the place (the
-    /// slug resolved to a loaded place); else a no-op — the cloud name stands on
-    /// its own.
-    func openIdentified(slug: String) {
-        if let place = places.first(where: { $0.slug == slug }) {
+    /// Open the story for an identified landmark. Stable id supports matches in
+    /// another city; slug remains the local/offline fallback.
+    func openIdentified(_ identified: LandmarkID) async {
+        if let placeID = identified.placeID,
+           let place = places.first(where: { $0.id == placeID }) {
+            select(place)
+            return
+        }
+        if let slug = identified.slug,
+           let place = places.first(where: { $0.slug == slug }) {
+            select(place)
+            return
+        }
+        if let placeID = identified.placeID,
+           let place = try? await LoreAPI.shared.place(id: placeID) {
             select(place)
         }
     }
@@ -1570,16 +1702,37 @@ final class ScannerModel {
             return
         }
 
-        guard let location = pose.freshLocation(), pose.headingDegrees >= 0 else {
+        if needsPreciseLocation {
             lockedRanked = nil
             inViewClusters = []
             inViewStories = []
             directionalCandidates = []
-            // Never silent: acknowledge we're acquiring, and escalate the copy
-            // to a "step outside" nudge if the wait drags on (usually indoors).
+            acquiringSince = nil
+            setScanState(.preciseLocationRequired)
+            return
+        }
+
+        guard let location = pose.freshLocation() else {
+            lockedRanked = nil
+            inViewClusters = []
+            inViewStories = []
+            directionalCandidates = []
+            // A missing fix may genuinely improve outdoors. Approximate access
+            // is handled above and never receives this copy.
             if acquiringSince == nil { acquiringSince = Date() }
             let waited = Date().timeIntervalSince(acquiringSince ?? Date())
             setScanState(waited > 8 ? .searchingOutside : .acquiringSensors)
+            return
+        }
+
+        guard pose.headingDegrees >= 0 else {
+            lockedRanked = nil
+            inViewClusters = []
+            inViewStories = []
+            directionalCandidates = []
+            if acquiringSince == nil { acquiringSince = Date() }
+            let waited = Date().timeIntervalSince(acquiringSince ?? Date())
+            setScanState(waited > 8 ? .headingUnavailable : .acquiringSensors)
             return
         }
         // A fix arrived: stop the acquisition clock.

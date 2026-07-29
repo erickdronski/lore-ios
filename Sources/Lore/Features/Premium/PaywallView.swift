@@ -36,6 +36,7 @@ struct PaywallView: View {
     /// Content cross-fades in (reveal.bloom feel, no bounce/shimmer per §6).
     @State private var appeared = false
     @State private var showManageSubscriptions = false
+    @State private var showSignIn = false
 
     var body: some View {
         ZStack {
@@ -73,6 +74,9 @@ struct PaywallView: View {
         }
         .presentationDragIndicator(.visible)
         .manageSubscriptionsSheet(isPresented: $showManageSubscriptions)
+        .sheet(isPresented: $showSignIn) {
+            SignInView()
+        }
         .onAppear {
             appeared = true
             model.store = store
@@ -337,9 +341,11 @@ struct PaywallView: View {
                                     // Only promise the trial when the user is
                                     // actually eligible for the intro offer;
                                     // otherwise sell the plan straight (docs/16 §1).
-                                    Text(model.ctaTitle)
+                                    Text(auth.isSignedIn ? model.ctaTitle : "Sign in to continue")
                                         .font(LoreType.button)
-                                    Text(model.ctaSubtitle)
+                                    Text(auth.isSignedIn
+                                        ? model.ctaSubtitle
+                                        : "Keep your Lore+ access linked across devices")
                                         .font(LoreType.caption)
                                         .opacity(0.85)
                                 }
@@ -350,9 +356,11 @@ struct PaywallView: View {
                     .frame(height: 56)
                 }
                 .buttonStyle(.plain)
-                .disabled(!model.canPurchaseSelectedPlan)
-                .opacity(model.canPurchaseSelectedPlan ? 1 : 0.62)
-                .accessibilityLabel(model.purchaseAccessibilityLabel)
+                .disabled(auth.isSignedIn && !model.canPurchaseSelectedPlan)
+                .opacity(!auth.isSignedIn || model.canPurchaseSelectedPlan ? 1 : 0.62)
+                .accessibilityLabel(auth.isSignedIn
+                    ? model.purchaseAccessibilityLabel
+                    : "Sign in to continue to Lore plus")
                 .accessibilityHint("Apple shows a confirmation sheet before any purchase is completed")
 
                 Button("Restore purchases") {
@@ -502,15 +510,19 @@ struct PaywallView: View {
     // MARK: Actions
 
     private func purchase() async {
+        guard let userID = auth.session?.user.id,
+              let accountUUID = UUID(uuidString: userID) else {
+            showSignIn = true
+            return
+        }
+        store.accountUUID = accountUUID
         let outcome = await model.purchase()
         switch outcome {
         case .success(let trialing):
             // Optimistically flip to Lore+ so the gate reopens now. StoreKit's
             // `currentEntitlements` (re-read by `refresh`) is the real on-device
             // truth; the RevenueCat webhook writes the server row at P3.
-            if let userID = auth.session?.user.id {
-                entitlements.applyLocalPurchase(userID: userID, trialing: trialing)
-            }
+            entitlements.applyLocalPurchase(userID: userID, trialing: trialing)
             let token = await auth.validAccessToken()
             await entitlements.refresh(accessToken: token)
             Haptics.play(.badgeEarned)  // the unlock is a reward moment
@@ -551,6 +563,7 @@ enum PaywallContext {
     case fourthDive
     case tours
     case audio
+    case scanner
 
     var subhead: String {
         switch self {
@@ -562,6 +575,8 @@ enum PaywallContext {
             return "Curated walking tours, plus unlimited dives and audio narration."
         case .audio:
             return "Let the docent read to you, plus unlimited dives and curated walking tours."
+        case .scanner:
+            return "Identify a landmark from one photo when on-device scanning needs help."
         }
     }
 }

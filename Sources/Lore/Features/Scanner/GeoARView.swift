@@ -12,15 +12,14 @@ import SwiftUI
 struct GeoARView: UIViewRepresentable {
     let controller: GeoARSessionController
 
-    /// `ARSCNView` that reports its layout so screen-space projection always
-    /// uses the live viewport. Rotation is off the table (iPhone portrait
-    /// only), but safe-area and layout passes still resize the view.
+    /// `ARSCNView` that reports its live viewport and interface orientation so
+    /// screen-space projection remains aligned on iPhone and iPad.
     final class GeoARSCNView: ARSCNView {
-        var onLayout: ((CGSize) -> Void)?
+        var onLayout: ((CGSize, UIInterfaceOrientation) -> Void)?
 
         override func layoutSubviews() {
             super.layoutSubviews()
-            onLayout?(bounds.size)
+            onLayout?(bounds.size, window?.windowScene?.interfaceOrientation ?? .portrait)
         }
     }
 
@@ -33,8 +32,8 @@ struct GeoARView: UIViewRepresentable {
         // scene stats. SwiftUI owns every pixel above the feed.
         view.automaticallyUpdatesLighting = false
         view.showsStatistics = false
-        view.onLayout = { [weak controller] size in
-            controller?.setViewport(size)
+        view.onLayout = { [weak controller] size, orientation in
+            controller?.setViewport(size, orientation: orientation)
         }
         return view
     }

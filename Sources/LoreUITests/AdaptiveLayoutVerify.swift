@@ -156,6 +156,44 @@ final class AdaptiveLayoutVerify: XCTestCase {
         XCTAssertTrue(sidebarButton(app, "Map").waitForExistence(timeout: 5))
     }
 
+    /// The Simulator cannot prove live camera or AR alignment, but it can prove
+    /// every recoverable scanner entry state remains readable and actionable
+    /// on the iPad landscape canvas where orientation regressions occurred.
+    @MainActor
+    func testIPadLandscapeScannerFallbackRemainsActionable() throws {
+        guard UIDevice.current.userInterfaceIdiom == .pad else {
+            throw XCTSkip("iPad landscape scanner coverage")
+        }
+
+        XCUIDevice.shared.orientation = .landscapeLeft
+        defer { XCUIDevice.shared.orientation = .portrait }
+
+        let app = launchApp()
+        selectDestination(app, "Scanner")
+
+        let stateTitles = app.staticTexts.matching(NSPredicate(
+            format: "label IN %@",
+            [
+                "Reveal the stories around you",
+                "The scanner needs camera access",
+                "The scanner needs your location",
+                "Turn on Precise Location",
+                "Live scanner unavailable",
+            ]
+        ))
+        XCTAssertTrue(
+            stateTitles.firstMatch.waitForExistence(timeout: 30),
+            "Scanner should expose a truthful permission or hardware state"
+        )
+
+        let recoveryActions = app.buttons.matching(NSPredicate(
+            format: "label IN %@",
+            ["Continue", "Open Settings", "Use Precise Location", "Try camera again"]
+        ))
+        XCTAssertTrue(recoveryActions.firstMatch.exists)
+        XCTAssertTrue(recoveryActions.firstMatch.isHittable)
+    }
+
     @MainActor
     private func launchApp(
         contentSizeCategory: String = "UICTContentSizeCategoryLarge"

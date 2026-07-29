@@ -32,6 +32,7 @@ final class LocationHeadingProvider: NSObject, CLLocationManagerDelegate {
     /// data arrives (or on devices without motion sensors).
     private(set) var cameraPitchDeg: Double?
     private(set) var authorizationStatus: CLAuthorizationStatus = .notDetermined
+    private(set) var accuracyAuthorization: CLAccuracyAuthorization = .fullAccuracy
     /// Called when location permission is denied/restricted, so the scanner can
     /// show a Settings path instead of silently never finding a fix.
     var onPermissionDenied: (() -> Void)?
@@ -39,6 +40,10 @@ final class LocationHeadingProvider: NSObject, CLLocationManagerDelegate {
     var isAuthorized: Bool {
         authorizationStatus == .authorizedWhenInUse
             || authorizationStatus == .authorizedAlways
+    }
+
+    var hasPreciseLocation: Bool {
+        accuracyAuthorization == .fullAccuracy
     }
 
     /// A recent, accurate-enough location for scanner decisions. A fix that was
@@ -79,6 +84,7 @@ final class LocationHeadingProvider: NSObject, CLLocationManagerDelegate {
 
     func start() {
         authorizationStatus = manager.authorizationStatus
+        accuracyAuthorization = manager.accuracyAuthorization
         switch authorizationStatus {
         case .notDetermined:
             manager.requestWhenInUseAuthorization()
@@ -100,6 +106,23 @@ final class LocationHeadingProvider: NSObject, CLLocationManagerDelegate {
         location = nil
         headingDegrees = -1
         headingAccuracy = -1
+    }
+
+    /// Ask iOS for temporary precise access using the scanner-specific purpose
+    /// string. If the traveler declines, the UI keeps the Settings fallback.
+    func requestPreciseLocation() {
+        guard isAuthorized, accuracyAuthorization == .reducedAccuracy else { return }
+        manager.requestTemporaryFullAccuracyAuthorization(
+            withPurposeKey: "ScannerPrecision"
+        ) { [weak self] _ in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.accuracyAuthorization = self.manager.accuracyAuthorization
+                if self.hasPreciseLocation {
+                    self.manager.startUpdatingLocation()
+                }
+            }
+        }
     }
 
     /// Gravity → camera pitch, low-passed. CMDeviceMotion.gravity is in G
@@ -124,6 +147,7 @@ final class LocationHeadingProvider: NSObject, CLLocationManagerDelegate {
 
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         authorizationStatus = manager.authorizationStatus
+        accuracyAuthorization = manager.accuracyAuthorization
         switch authorizationStatus {
         case .authorizedWhenInUse, .authorizedAlways:
             manager.startUpdatingLocation()
