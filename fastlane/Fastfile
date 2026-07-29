@@ -170,7 +170,7 @@ platform :ios do
       # the integer alone can make an older 1.0 build look newer than 1.1.
       Spaceship::ConnectAPI::Build.all(
         app_id: app.id, sort: "-uploadedDate", limit: 5,
-      ).each do |bd|
+      ).first(5).each do |bd|
         say.call(
           "INFO", "TestFlight build",
           "#{bd.app_version} (#{bd.version}) uploaded=#{bd.uploaded_date} processing=#{bd.processing_state} expired=#{bd.expired}",
