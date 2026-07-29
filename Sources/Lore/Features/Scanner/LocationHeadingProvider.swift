@@ -2,6 +2,13 @@ import CoreLocation
 import CoreMotion
 import Foundation
 import Observation
+import UIKit
+
+struct ScannerHeadingSample: Equatable, Sendable {
+    let degrees: Double
+    let accuracy: Double
+    let timestamp: Date
+}
 
 /// GPS + compass + gravity source for the coarse scanner (docs/05 §5, rung 2).
 ///
@@ -19,14 +26,16 @@ final class LocationHeadingProvider: NSObject, CLLocationManagerDelegate {
     /// known-good stationary fix long enough to survive brief urban-canyon gaps.
     private static let deliveredFixMaxAge: TimeInterval = 15
     private static let heldFixMaxAge: TimeInterval = 60
+    static let heldHeadingMaxAge: TimeInterval = 10
     private let manager = CLLocationManager()
     private let motion = CMMotionManager()
 
     private(set) var location: CLLocation?
-    /// Degrees clockwise from true north; -1 while unknown.
-    private(set) var headingDegrees: Double = -1
-    /// Compass accuracy in degrees; negative = invalid.
-    private(set) var headingAccuracy: Double = -1
+    private(set) var headingSample: ScannerHeadingSample?
+    /// Degrees clockwise from true north; -1 while unknown or stale.
+    var headingDegrees: Double { freshHeading()?.degrees ?? -1 }
+    /// Compass accuracy in degrees; negative while unknown or stale.
+    var headingAccuracy: Double { freshHeading()?.accuracy ?? -1 }
     /// Elevation of the back camera's optical axis above the horizon, degrees:
     /// 0 = level, +90 = straight up, -90 = at the ground. `nil` until motion
     /// data arrives (or on devices without motion sensors).
@@ -59,14 +68,37 @@ final class LocationHeadingProvider: NSObject, CLLocationManagerDelegate {
         return location
     }
 
-    var hasFix: Bool { freshLocation() != nil && headingDegrees >= 0 }
+    /// A current compass sample for scanner decisions. Heading is more
+    /// time-sensitive than position because a traveler can rotate in place.
+    func freshHeading(now: Date = Date()) -> ScannerHeadingSample? {
+        guard let headingSample,
+              Self.isHeadingSampleFresh(headingSample, now: now)
+        else { return nil }
+        return headingSample
+    }
+
+    static func isHeadingSampleFresh(
+        _ sample: ScannerHeadingSample,
+        now: Date,
+        maxAge: TimeInterval = heldHeadingMaxAge
+    ) -> Bool {
+        let age = now.timeIntervalSince(sample.timestamp)
+        return sample.degrees.isFinite
+            && sample.degrees >= 0
+            && sample.accuracy.isFinite
+            && sample.accuracy >= 0
+            && age >= -1
+            && age < maxAge
+    }
+
+    var hasFix: Bool { freshLocation() != nil && freshHeading() != nil }
 
     /// Human-readable status for the StatusChip (localized chrome).
     var statusLine: String {
         if !isAuthorized { return L10n.t("scan.permissionNeeded") }
         guard let location = freshLocation() else { return L10n.t("scan.findingBlock") }
         let radius = max(1, Int(location.horizontalAccuracy.rounded()))
-        if headingDegrees < 0 { return "±\(radius) m · \(L10n.t("scan.findingNorth"))" }
+        if freshHeading() == nil { return "±\(radius) m · \(L10n.t("scan.findingNorth"))" }
         return "\(L10n.t("scan.coarseMode")) · ±\(radius) m"
     }
 
@@ -75,11 +107,38 @@ final class LocationHeadingProvider: NSObject, CLLocationManagerDelegate {
         manager.delegate = self
         manager.desiredAccuracy = kCLLocationAccuracyNearestTenMeters
         manager.distanceFilter = 3
-        manager.headingFilter = 3 // degrees between callbacks, enough for coarse labels
+        // Freshness is part of the pose contract, so receive periodic samples
+        // even while the traveler holds the camera steady.
+        manager.headingFilter = kCLHeadingFilterNone
         // The scanner is an active foreground camera experience. Automatic
         // pausing can otherwise expire a stationary user's last good fix and
         // falsely tell them to step outside after a few seconds.
         manager.pausesLocationUpdatesAutomatically = false
+    }
+
+    /// Core Location expects physical device orientation, while UIKit reports
+    /// interface orientation. Landscape values are intentionally mirrored.
+    static func deviceHeadingOrientation(
+        for interfaceOrientation: UIInterfaceOrientation
+    ) -> CLDeviceOrientation? {
+        switch interfaceOrientation {
+        case .portrait: return .portrait
+        case .portraitUpsideDown: return .portraitUpsideDown
+        case .landscapeLeft: return .landscapeRight
+        case .landscapeRight: return .landscapeLeft
+        case .unknown: return nil
+        @unknown default: return nil
+        }
+    }
+
+    func updateHeadingOrientation(_ interfaceOrientation: UIInterfaceOrientation) {
+        guard let orientation = Self.deviceHeadingOrientation(for: interfaceOrientation),
+              manager.headingOrientation != orientation
+        else { return }
+        manager.headingOrientation = orientation
+        // The previous sample was calculated against the old top edge. Wait
+        // for Core Location to deliver one in the new orientation.
+        headingSample = nil
     }
 
     func start() {
@@ -104,8 +163,7 @@ final class LocationHeadingProvider: NSObject, CLLocationManagerDelegate {
         motion.stopDeviceMotionUpdates()
         cameraPitchDeg = nil
         location = nil
-        headingDegrees = -1
-        headingAccuracy = -1
+        headingSample = nil
     }
 
     /// Ask iOS for temporary precise access using the scanner-specific purpose
@@ -197,12 +255,15 @@ final class LocationHeadingProvider: NSObject, CLLocationManagerDelegate {
         let value = newHeading.trueHeading >= 0
             ? newHeading.trueHeading
             : newHeading.magneticHeading
-        guard value.isFinite, value >= 0,
-              newHeading.headingAccuracy.isFinite,
-              newHeading.headingAccuracy >= 0
+        let sample = ScannerHeadingSample(
+            degrees: value,
+            accuracy: newHeading.headingAccuracy,
+            timestamp: newHeading.timestamp
+        )
+        guard Self.isHeadingSampleFresh(sample, now: Date()),
+              sample.timestamp > (headingSample?.timestamp ?? .distantPast)
         else { return }
-        headingDegrees = value
-        headingAccuracy = newHeading.headingAccuracy
+        headingSample = sample
     }
 
     func locationManager(

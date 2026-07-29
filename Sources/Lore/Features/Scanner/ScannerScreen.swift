@@ -75,6 +75,12 @@ struct ScannerScreen: View {
     var body: some View {
         GeometryReader { proxy in
             ZStack {
+                ScannerHeadingOrientationReader { orientation in
+                    model.pose.updateHeadingOrientation(orientation)
+                }
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+
                 // The camera layer: AVCapture preview in coarse mode, the
                 // shared ARSession's feed in precise mode. One owner at a
                 // time; the model handles the handoff (docs/05 §5 ladder).
@@ -917,6 +923,13 @@ struct ScannerScreen: View {
 struct LockedPin: View {
     let ranked: ScannerRanking.Ranked
 
+    private var accessibilityText: String {
+        if ranked.projected.isAtLocation {
+            return "\(ranked.place.name), locked, you're here"
+        }
+        return "\(ranked.place.name), locked, \(ranked.projected.distanceLabel) ahead"
+    }
+
     var body: some View {
         VStack(spacing: 6) {
             ZStack {
@@ -937,9 +950,7 @@ struct LockedPin: View {
                 .background(LoreColor.scrimSky, in: Capsule())
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(Text(
-            "\(ranked.place.name), locked, \(ranked.projected.distanceLabel) ahead"
-        ))
+        .accessibilityLabel(Text(accessibilityText))
         .accessibilityAddTraits(.isButton)
     }
 }
@@ -957,6 +968,13 @@ struct GeoLockedPin: View {
 
     private var distanceLabel: String {
         BearingProjector.distanceLabel(meters: distanceM)
+    }
+
+    private var accessibilityText: String {
+        if distanceM <= BearingProjector.atLocationThresholdMeters {
+            return "\(place.name), pinned, you're here"
+        }
+        return "\(place.name), pinned, \(distanceLabel) ahead"
     }
 
     var body: some View {
@@ -984,9 +1002,7 @@ struct GeoLockedPin: View {
             .background(LoreColor.scrimSky, in: Capsule())
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(Text(
-            "\(place.name), pinned, \(distanceLabel) ahead"
-        ))
+        .accessibilityLabel(Text(accessibilityText))
         .accessibilityAddTraits(.isButton)
     }
 }
@@ -1002,6 +1018,12 @@ struct BearingChip: View {
 
     private var projected: ProjectedPlace { ranked.projected }
     private var isForYou: Bool { !ranked.matchedInterests.isEmpty }
+    private var accessibilityText: String {
+        if projected.isAtLocation {
+            return "\(projected.place.name), you're here"
+        }
+        return "\(projected.place.name), \(projected.distanceLabel) away"
+    }
 
     var body: some View {
         HStack(spacing: 6) {
@@ -1025,12 +1047,63 @@ struct BearingChip: View {
             )
         )
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(Text("\(projected.place.name), \(projected.distanceLabel) away"))
+        .accessibilityLabel(Text(accessibilityText))
         .accessibilityAddTraits(.isButton)
     }
 
     private var caption: String {
         showArrow ? "\(projected.arrow) \(projected.distanceLabel)" : projected.distanceLabel
+    }
+}
+
+private struct ScannerHeadingOrientationReader: UIViewRepresentable {
+    let onChange: (UIInterfaceOrientation) -> Void
+
+    func makeUIView(context: Context) -> ScannerHeadingOrientationView {
+        ScannerHeadingOrientationView(onChange: onChange)
+    }
+
+    func updateUIView(_ view: ScannerHeadingOrientationView, context: Context) {
+        view.onChange = onChange
+        view.publishCurrentOrientation()
+    }
+}
+
+private final class ScannerHeadingOrientationView: UIView {
+    var onChange: (UIInterfaceOrientation) -> Void
+    private var lastOrientation: UIInterfaceOrientation?
+
+    init(onChange: @escaping (UIInterfaceOrientation) -> Void) {
+        self.onChange = onChange
+        super.init(frame: .zero)
+        isOpaque = false
+        isUserInteractionEnabled = false
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        publishCurrentOrientation()
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        publishCurrentOrientation()
+    }
+
+    func publishCurrentOrientation() {
+        guard let orientation = window?.windowScene?.interfaceOrientation,
+              orientation != .unknown,
+              orientation != lastOrientation
+        else { return }
+        lastOrientation = orientation
+        DispatchQueue.main.async { [weak self] in
+            self?.onChange(orientation)
+        }
     }
 }
 
@@ -1319,6 +1392,7 @@ final class ScannerModel {
             && scouting.availability == .available
             && GeoARSessionController.isSupported
             && pose.freshLocation() != nil
+            && pose.freshHeading() != nil
             && !places.isEmpty
     }
 
@@ -1485,7 +1559,9 @@ final class ScannerModel {
     /// fallback at every step; any hard failure lands in exitPreciseMode().
     func enterPreciseMode() async {
         guard !preciseMode, !isTransitioningToPreciseMode,
-              let location = pose.freshLocation() else { return }
+              let location = pose.freshLocation(),
+              let heading = pose.freshHeading()
+        else { return }
 
         // Rank the whole nearby field, not just the current FOV, so anchors
         // cover what the user will sweep to. Ranked first, nearest breaking
@@ -1493,12 +1569,12 @@ final class ScannerModel {
         let projected = BearingProjector.project(
             places: places,
             from: location,
-            heading: max(pose.headingDegrees, 0),
+            heading: heading.degrees,
             fovDegrees: camera.horizontalFOVDegrees
         )
         let quality = ScannerRanking.PoseQuality(
             horizontalAccuracyM: location.horizontalAccuracy > 0 ? location.horizontalAccuracy : 30,
-            headingAccuracyDeg: pose.headingAccuracy,
+            headingAccuracyDeg: heading.accuracy,
             hasVPS: false
         )
         let ranked = ScannerRanking.rank(
@@ -1767,7 +1843,7 @@ final class ScannerModel {
             return
         }
 
-        guard pose.headingDegrees >= 0 else {
+        guard let heading = pose.freshHeading() else {
             lockedRanked = nil
             inViewClusters = []
             inViewStories = []
@@ -1790,7 +1866,7 @@ final class ScannerModel {
         let projected = BearingProjector.project(
             places: places,
             from: location,
-            heading: pose.headingDegrees,
+            heading: heading.degrees,
             fovDegrees: camera.horizontalFOVDegrees
         )
 
@@ -1800,7 +1876,7 @@ final class ScannerModel {
         // Camera pitch (scanner-lab port) blocks ground/sky overclaims.
         var quality = ScannerRanking.PoseQuality(
             horizontalAccuracyM: location.horizontalAccuracy > 0 ? location.horizontalAccuracy : 30,
-            headingAccuracyDeg: pose.headingAccuracy,
+            headingAccuracyDeg: heading.accuracy,
             hasVPS: false
         )
         quality.cameraPitchDeg = pose.cameraPitchDeg
@@ -1849,7 +1925,7 @@ final class ScannerModel {
         let projectedStories = ScannerRanking.nearbyStories(
             stories,
             from: location,
-            heading: pose.headingDegrees,
+            heading: heading.degrees,
             fovDegrees: camera.horizontalFOVDegrees,
             hauntedOnly: hauntedOnly
         )

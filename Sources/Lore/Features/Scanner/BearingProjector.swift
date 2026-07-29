@@ -5,6 +5,10 @@ import Foundation
 /// CoreLocation value types, fully unit-testable (the same doctrine as the
 /// P1 `Resolver`: docs/03 §2).
 enum BearingProjector {
+    /// Below this distance, GPS/coordinate noise dominates the bearing. The
+    /// honest representation is arrival, not a directional arrow.
+    static let atLocationThresholdMeters = 5.0
+
     /// Forward azimuth from `origin` to `target`, degrees clockwise from
     /// true north in `[0, 360)`. Great-circle initial bearing.
     static func bearing(
@@ -40,6 +44,9 @@ enum BearingProjector {
 
     /// "600 m" / "1.2 km" formatting for chip distance captions.
     static func distanceLabel(meters: Double) -> String {
+        if meters <= atLocationThresholdMeters {
+            return "You're here"
+        }
         if meters < 950 {
             return "\(Int((meters / 10).rounded() * 10)) m"
         }
@@ -77,6 +84,7 @@ struct ProjectedPlace: Identifiable {
     let isInView: Bool
 
     var id: String { place.id }
+    var isAtLocation: Bool { distance <= BearingProjector.atLocationThresholdMeters }
     var distanceLabel: String { BearingProjector.distanceLabel(meters: distance) }
     var arrow: String { BearingProjector.arrowGlyph(delta: delta) }
 }
@@ -93,7 +101,17 @@ extension BearingProjector {
     ) -> [ProjectedPlace] {
         places.compactMap { place -> ProjectedPlace? in
             let distance = location.distance(from: place.location)
-            guard distance <= maxDistance, distance > 5 else { return nil }
+            guard distance.isFinite, distance >= 0, distance <= maxDistance else { return nil }
+            if distance <= atLocationThresholdMeters {
+                return ProjectedPlace(
+                    place: place,
+                    bearing: heading,
+                    delta: 0,
+                    distance: distance,
+                    screenFraction: 0.5,
+                    isInView: true
+                )
+            }
             let bearing = bearing(
                 from: location.coordinate,
                 to: place.coordinate
