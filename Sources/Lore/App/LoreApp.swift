@@ -82,21 +82,22 @@ struct LoreApp: App {
                 // are @MainActor app-lifetime singletons (docs/16 §1).
                 .task {
                     entitlements.storeKit = store
-                    // Record verified purchases server-side. StoreKit already
-                    // opens the gate on-device; this is what makes the purchase
-                    // durable, visible on the web, and reconcilable. Failures
-                    // are deliberately silent: access is never blocked on it,
-                    // and the next refresh re-posts.
+                    // Record verified purchases server-side before StoreKit
+                    // transactions are finished. TestFlight/Sandbox receipts may
+                    // be accepted without a production row, while transport/auth
+                    // failures leave the transaction replayable for restore.
                     store.onVerifiedTransaction = { [weak auth] signedJWS in
-                        guard let auth else { return false }
-                        guard let token = await auth.validAccessToken() else { return false }
-                        // A false result covers expected non-production writes
-                        // such as TestFlight Sandbox. Transport failures retry
-                        // naturally on the next entitlement refresh.
-                        return (try? await LoreAPI.shared.syncApplePurchase(
-                            signedTransaction: signedJWS,
-                            accessToken: token
-                        )) ?? false
+                        guard let auth else { return .failed }
+                        guard let token = await auth.validAccessToken() else { return .failed }
+                        do {
+                            let recorded = try await LoreAPI.shared.syncApplePurchase(
+                                signedTransaction: signedJWS,
+                                accessToken: token
+                            )
+                            return recorded ? .recorded : .acceptedWithoutServerGrant
+                        } catch {
+                            return .failed
+                        }
                     }
                     store.start()
                 }

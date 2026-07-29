@@ -258,7 +258,7 @@ final class EntitlementStore {
     func applyLocalPurchase(userID: String, trialing: Bool) {
         entitlement = Entitlement(
             userID: userID,
-            entitlement: "lore_plus",
+            entitlement: Entitlement.plusName,
             status: trialing ? .trialing : .active
         )
     }

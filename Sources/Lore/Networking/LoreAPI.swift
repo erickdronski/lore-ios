@@ -470,13 +470,16 @@ struct LoreAPI {
         )
     }
 
-    /// The user's Lore+ entitlement, if any. Returns the first row whose status
-    /// currently confers access, else the first row, else `nil`.
-    /// `GET /rest/v1/entitlements`
+    /// The user's Lore+ entitlement, if any. Returns the first Plus row whose
+    /// status currently confers access, else the first Plus row, else `nil`.
+    /// `GET /rest/v1/entitlements?entitlement=eq.plus`
     func entitlement(accessToken: String) async throws -> Entitlement? {
         let rows: [Entitlement] = try await get(
             "entitlements",
-            query: [],
+            query: [
+                URLQueryItem(name: "entitlement", value: "eq.\(Entitlement.plusName)"),
+                URLQueryItem(name: "limit", value: "1"),
+            ],
             accessToken: accessToken
         )
         return rows.first(where: \.isActive) ?? rows.first
