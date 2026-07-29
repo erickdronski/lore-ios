@@ -10,21 +10,16 @@ import Observation
 /// have VPS-class coverage here?", a free, on-device-initiated probe that
 /// feeds the degraded-modes ladder before the user starts precise mode.
 ///
-/// A future ARCore Geospatial backend can add Streetscape occlusion and broader
-/// coverage behind the existing `VPSProvider` seam. It is not required for the
-/// current Apple ARGeoTracking implementation to function or ship. Add
-/// `ARCore/Geospatial` (SPM/CocoaPods,
-/// pin ≥ 1.45 per docs/05 §2.1), create the `GARSession` alongside ARKit,
-/// feed each `ARFrame` via `session.update(_:)`, and gate exact-pin UI on
-/// `horizontalAccuracy < 5 m && orientationYawAccuracy < 5°`. This service
-/// then becomes the tier selector: Full VPS → coarse → map-only.
+/// This service keeps the current release on Apple's ARGeoTracking path. Other
+/// providers would have to pass the same privacy, key-management, and review
+/// gates before becoming part of the shipping scanner.
 @Observable
 @MainActor
 final class GeoScoutingService {
     enum Availability {
         case unknown
         case checking
-        /// Apple geo tracking (and very likely Google VPS) covers this spot.
+        /// Apple geo tracking covers this spot.
         case available
         /// No coverage, the scanner stays in coarse mode here.
         case unavailable

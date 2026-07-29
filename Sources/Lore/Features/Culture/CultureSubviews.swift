@@ -9,8 +9,8 @@ import UIKit
 ///
 /// This is the emotional top of the "Meet {City}" surface: one arresting line
 /// in the world's words, its author in the app's words beneath. Under Reduce
-/// Motion the auto-rotation still advances (information isn't removed), the
-/// transition just becomes the standard 160 ms crossfade via `LoreMotion`.
+/// Motion or VoiceOver, auto-rotation pauses so the card never moves out from
+/// under someone reading it.
 struct CultureQuoteCard: View {
     let quotes: [CityCulture]
     @State private var index = 0
@@ -51,7 +51,12 @@ struct CultureQuoteCard: View {
             quoteControls
         }
         .onReceive(rotation) { _ in
-            guard autoAdvance, scenePhase == .active, !voiceOverEnabled, quotes.count > 1 else { return }
+            guard autoAdvance,
+                  scenePhase == .active,
+                  !reduceMotion,
+                  !voiceOverEnabled,
+                  quotes.count > 1
+            else { return }
             advance()
         }
     }

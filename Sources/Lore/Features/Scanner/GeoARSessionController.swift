@@ -57,11 +57,8 @@ enum VPSFailure: Equatable {
 
 /// The seam every VPS backend hides behind. Today the only implementation is
 /// `GeoARSessionController` below (Apple ARGeoTracking, zero external SDKs,
-/// zero API keys). The ARCore Geospatial implementation (`GARSession`, VPS
-/// pose ~1 m / 1-2° plus Streetscape Geometry, docs/05 §2.1) lands at P1.5
-/// behind this exact protocol once the founder creates the ARCore API key;
-/// until then no package dependency is added. The scanner talks only to this
-/// protocol, so the Google swap is a construction-site change, not a UI one.
+/// zero API keys). The scanner talks only to this protocol, so precision
+/// providers stay behind one reviewable boundary.
 @MainActor
 protocol VPSProvider: AnyObject {
     /// The ladder state the UI renders (reticle treatment plus status line).
