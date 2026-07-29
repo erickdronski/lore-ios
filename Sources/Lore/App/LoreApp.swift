@@ -88,15 +88,15 @@ struct LoreApp: App {
                     // are deliberately silent: access is never blocked on it,
                     // and the next refresh re-posts.
                     store.onVerifiedTransaction = { [weak auth] signedJWS in
-                        guard let auth else { return }
-                        guard let token = await auth.validAccessToken() else { return }
+                        guard let auth else { return false }
+                        guard let token = await auth.validAccessToken() else { return false }
                         // A false result covers expected non-production writes
                         // such as TestFlight Sandbox. Transport failures retry
                         // naturally on the next entitlement refresh.
-                        _ = try? await LoreAPI.shared.syncApplePurchase(
+                        return (try? await LoreAPI.shared.syncApplePurchase(
                             signedTransaction: signedJWS,
                             accessToken: token
-                        )
+                        )) ?? false
                     }
                     store.start()
                 }

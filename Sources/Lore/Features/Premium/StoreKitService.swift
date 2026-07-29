@@ -115,7 +115,7 @@ final class StoreKitService {
     /// re-verifies Apple's signature over this exact string and trusts nothing
     /// the client asserts. Handing it unsigned JSON would let any caller mint
     /// itself a paid entitlement.
-    var onVerifiedTransaction: ((String) async -> Void)?
+    var onVerifiedTransaction: ((String) async -> Bool)?
 
     /// The Lore+ products, App Store Connect identifiers (docs/16 §1). IDs are
     /// price-agnostic on purpose: storefront pricing and offers may change
@@ -318,42 +318,54 @@ final class StoreKitService {
     /// Recompute access from verified StoreKit transactions. Unverified rows
     /// fail closed and are remembered so restore can explain the integrity
     /// failure instead of incorrectly reporting an empty purchase history.
-    func refreshEntitlements() async {
+    @discardableResult
+    func refreshEntitlements() async -> Bool {
         var current: [StoreEntitlementSnapshot] = []
         var history: [StoreEntitlementSnapshot] = []
         var verificationIssue = false
         var verifiedJWS: [String] = []
+        var seenJWS = Set<String>()
+
+        func queueForServer(_ jws: String) {
+            if seenJWS.insert(jws).inserted { verifiedJWS.append(jws) }
+        }
 
         for await result in Transaction.currentEntitlements {
             switch result {
             case .verified(let transaction):
-                guard transaction.appAccountToken == accountUUID else { continue }
-                current.append(snapshot(for: transaction))
-                verifiedJWS.append(result.jwsRepresentation)
+                guard ProductID.all.contains(transaction.productID) else { continue }
+                queueForServer(result.jwsRepresentation)
+                if transaction.appAccountToken == accountUUID {
+                    current.append(snapshot(for: transaction))
+                }
             case .unverified:
                 verificationIssue = true
             }
         }
 
-        // Re-assert every currently-owned entitlement server-side. This is the
-        // repair path: a restore, a renewal picked up by `Transaction.updates`,
-        // or a first launch after the server row was never written all converge
-        // here. The endpoint is idempotent, so re-posting is harmless.
-        if let sync = onVerifiedTransaction {
-            for jws in verifiedJWS { await sync(jws) }
-        }
-
         for await result in Transaction.all {
             switch result {
             case .verified(let transaction):
-                guard transaction.appAccountToken == accountUUID,
-                      ProductID.passDuration(transaction.productID) != nil
-                else { continue }
-                history.append(snapshot(for: transaction))
+                guard ProductID.passDuration(transaction.productID) != nil else { continue }
+                queueForServer(result.jwsRepresentation)
+                if transaction.appAccountToken == accountUUID {
+                    history.append(snapshot(for: transaction))
+                }
             case .unverified(let transaction, _):
                 if ProductID.all.contains(transaction.productID) {
                     verificationIssue = true
                 }
+            }
+        }
+
+        // Re-assert verified ownership server-side after collecting current
+        // products and Trip Pass history. A token mismatch never grants local
+        // access, but the server may safely reclaim an orphaned binding after
+        // account deletion by matching Apple's original transaction id.
+        var serverRecorded = false
+        if let sync = onVerifiedTransaction {
+            for jws in verifiedJWS {
+                if await sync(jws) { serverRecorded = true }
             }
         }
 
@@ -371,6 +383,7 @@ final class StoreKitService {
         if verificationIssue {
             lastError = "Apple returned a purchase Lore couldn't verify. Restore purchases to try again."
         }
+        return serverRecorded
     }
 
     private func snapshot(for transaction: Transaction) -> StoreEntitlementSnapshot {
@@ -454,7 +467,7 @@ final class StoreKitService {
                 // the two still leaves the transaction unfinished and therefore
                 // replayable on next launch. `verification.jwsRepresentation`
                 // is the Apple-signed form the server re-verifies.
-                await onVerifiedTransaction?(verification.jwsRepresentation)
+                _ = await onVerifiedTransaction?(verification.jwsRepresentation)
                 await transaction.finish()
                 await refreshEntitlements()
                 return .success(trialing: trialing)
@@ -504,24 +517,24 @@ final class StoreKitService {
         do {
             try await AppStore.sync()
         } catch StoreKitError.userCancelled {
-            await refreshEntitlements()
-            return hasActiveEntitlement ? .restored : .userCancelled
+            let serverRecorded = await refreshEntitlements()
+            return hasActiveEntitlement || serverRecorded ? .restored : .userCancelled
         } catch {
             // The existing receipt may still prove access even if the explicit
             // sync prompt failed, so preserve that verified entitlement.
-            await refreshEntitlements()
-            if hasActiveEntitlement { return .restored }
+            let serverRecorded = await refreshEntitlements()
+            if hasActiveEntitlement || serverRecorded { return .restored }
             let message = "Couldn't connect to the App Store. Check your connection and try again."
             lastError = message
             return .failed(message: message)
         }
-        await refreshEntitlements()
+        let serverRecorded = await refreshEntitlements()
         if hasVerificationIssue, !hasActiveEntitlement {
             let message = "A purchase was found but couldn't be verified. Confirm your Apple Account, then try Restore Purchases again."
             lastError = message
             return .failed(message: message)
         }
-        return hasActiveEntitlement ? .restored : .nothingToRestore
+        return hasActiveEntitlement || serverRecorded ? .restored : .nothingToRestore
     }
 
     // MARK: - Intro-offer eligibility
