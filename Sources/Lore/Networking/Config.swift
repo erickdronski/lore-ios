@@ -5,11 +5,12 @@ import Foundation
 /// The anon key below is **publishable by design**, it is the Supabase
 /// "anon/publishable" role key that ships inside every client build (web and
 /// iOS alike). It grants nothing beyond what Row Level Security allows the
-/// `anon` role: SELECT on published read surfaces (`place_explore`, `dive`,
-/// `tour`, `tour_stop`, non-rejected `fact` rows) and a user's own rows once
-/// authenticated. All writes go through Edge Functions with the service-role
-/// key server-side; there are no client INSERT policies on `contribution`,
-/// `verification`, or `anchor` at all (lore/docs/03-ARCHITECTURE.md §5).
+/// `anon` role. Public editorial reads rely on server-side publication policies;
+/// the additive `content_contract` controls when previously cached generations
+/// must be rejected. Authenticated reads remain limited by user-scoped RLS. All
+/// privileged writes keep the service-role key server-side; there are no client
+/// INSERT policies on `contribution`, `verification`, or `anchor` at all
+/// (lore/docs/03-ARCHITECTURE.md §5).
 /// Hardcoding it is the same posture as `lore-web`, do not treat it as a
 /// secret, and never put the service-role key anywhere near this file.
 enum Config {

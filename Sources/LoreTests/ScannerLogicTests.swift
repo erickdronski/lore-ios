@@ -263,6 +263,65 @@ final class SpecialistJourneyRegressionTests: XCTestCase {
         XCTAssertEqual(pack.mediaCount, 2)
         XCTAssertEqual(pack.missingMediaCount, 0)
         XCTAssertTrue(pack.isComplete)
+        XCTAssertTrue(pack.isCompatible(with: .compatibility, now: Date(timeIntervalSince1970: 10_000)))
+        XCTAssertFalse(pack.isCompatible(with: contentContract(), now: Date(timeIntervalSince1970: 10_000)))
+    }
+
+    @MainActor
+    func testOfflinePackRequiresCurrentContractGenerationAndAge() {
+        let now = Date(timeIntervalSince1970: 100_000)
+        let contract = contentContract()
+        let current = CityPackStore.CityPack(
+            downloadedAt: now.addingTimeInterval(-60 * 60),
+            placeCount: 30,
+            imageBytes: 9_000,
+            imageKeys: ["hero"],
+            pinnedURLs: ["https://example.com/places"],
+            contractVersion: contract.contractVersion,
+            reviewEpoch: contract.reviewEpoch
+        )
+        let wrongVersion = CityPackStore.CityPack(
+            downloadedAt: current.downloadedAt,
+            placeCount: current.placeCount,
+            imageBytes: current.imageBytes,
+            imageKeys: current.imageKeys,
+            pinnedURLs: current.pinnedURLs,
+            contractVersion: "0",
+            reviewEpoch: contract.reviewEpoch
+        )
+        let wrongEpoch = CityPackStore.CityPack(
+            downloadedAt: current.downloadedAt,
+            placeCount: current.placeCount,
+            imageBytes: current.imageBytes,
+            imageKeys: current.imageKeys,
+            pinnedURLs: current.pinnedURLs,
+            contractVersion: contract.contractVersion,
+            reviewEpoch: "review-previous"
+        )
+        let expired = CityPackStore.CityPack(
+            downloadedAt: now.addingTimeInterval(-25 * 60 * 60),
+            placeCount: current.placeCount,
+            imageBytes: current.imageBytes,
+            imageKeys: current.imageKeys,
+            pinnedURLs: current.pinnedURLs,
+            contractVersion: contract.contractVersion,
+            reviewEpoch: contract.reviewEpoch
+        )
+        let future = CityPackStore.CityPack(
+            downloadedAt: now.addingTimeInterval(60),
+            placeCount: current.placeCount,
+            imageBytes: current.imageBytes,
+            imageKeys: current.imageKeys,
+            pinnedURLs: current.pinnedURLs,
+            contractVersion: contract.contractVersion,
+            reviewEpoch: contract.reviewEpoch
+        )
+
+        XCTAssertTrue(current.isCompatible(with: contract, now: now))
+        XCTAssertFalse(wrongVersion.isCompatible(with: contract, now: now))
+        XCTAssertFalse(wrongEpoch.isCompatible(with: contract, now: now))
+        XCTAssertFalse(expired.isCompatible(with: contract, now: now))
+        XCTAssertFalse(future.isCompatible(with: contract, now: now))
     }
 
     @MainActor
@@ -293,5 +352,31 @@ final class SpecialistJourneyRegressionTests: XCTestCase {
         XCTAssertEqual(pack.missingMediaCount, 1)
         XCTAssertEqual(pack.imageBytes, 4500)
         XCTAssertFalse(pack.isComplete)
+    }
+
+    @MainActor
+    func testPackedMediaKeysChangeWithReviewEpoch() throws {
+        let remote = try XCTUnwrap(URL(string: "https://example.com/lore-media.jpg"))
+        let first = contentContract()
+        PackImageStore.activate(first)
+        let firstKey = PackImageStore.key(for: remote)
+        let second = ContentContract(
+            contractVersion: ContentContract.supportedVersion,
+            reviewEpoch: "review-next",
+            enforcementEnabled: true,
+            offlineMaxAgeHours: 24
+        )
+        PackImageStore.activate(second)
+
+        XCTAssertNotEqual(PackImageStore.key(for: remote), firstKey)
+    }
+
+    private func contentContract() -> ContentContract {
+        ContentContract(
+            contractVersion: ContentContract.supportedVersion,
+            reviewEpoch: "review-current",
+            enforcementEnabled: true,
+            offlineMaxAgeHours: 24
+        )
     }
 }

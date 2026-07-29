@@ -18,8 +18,31 @@ enum PackImageStore {
     }()
 
     static func key(for remote: URL) -> String {
-        SHA256.hash(data: Data(remote.absoluteString.utf8))
+        let marker = directory.appending(path: ".content-contract")
+        let namespace = try? String(contentsOf: marker, encoding: .utf8)
+        let identity = namespace.map { "\($0)\n\(remote.absoluteString)" }
+            ?? remote.absoluteString
+        return SHA256.hash(data: Data(identity.utf8))
             .map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// Switch generations before cleanup so interrupted deletion cannot make
+    /// old URL-only media reachable under an enforced review epoch.
+    static func activate(_ contract: ContentContract) {
+        guard contract.enforcementEnabled else { return }
+        let marker = directory.appending(path: ".content-contract")
+        let namespace = contract.cacheNamespace
+        guard (try? String(contentsOf: marker, encoding: .utf8)) != namespace else {
+            return
+        }
+        try? Data(namespace.utf8).write(to: marker, options: .atomic)
+        guard let files = try? FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil
+        ) else { return }
+        for file in files where file.lastPathComponent != marker.lastPathComponent {
+            try? FileManager.default.removeItem(at: file)
+        }
     }
 
     /// The local file URL when the image was packed, else nil.
@@ -66,6 +89,8 @@ final class CityPackStore {
         var pinnedURLs: [String]
         var mediaCount: Int
         var missingMediaCount: Int
+        var contractVersion: String?
+        var reviewEpoch: String?
 
         var isComplete: Bool { missingMediaCount == 0 }
 
@@ -76,7 +101,9 @@ final class CityPackStore {
             imageKeys: [String],
             pinnedURLs: [String],
             mediaCount: Int = 0,
-            missingMediaCount: Int = 0
+            missingMediaCount: Int = 0,
+            contractVersion: String? = nil,
+            reviewEpoch: String? = nil
         ) {
             self.downloadedAt = downloadedAt
             self.placeCount = placeCount
@@ -85,11 +112,14 @@ final class CityPackStore {
             self.pinnedURLs = pinnedURLs
             self.mediaCount = mediaCount
             self.missingMediaCount = missingMediaCount
+            self.contractVersion = contractVersion
+            self.reviewEpoch = reviewEpoch
         }
 
         private enum CodingKeys: String, CodingKey {
             case downloadedAt, placeCount, imageBytes, imageKeys, pinnedURLs
             case mediaCount, missingMediaCount
+            case contractVersion, reviewEpoch
         }
 
         init(from decoder: Decoder) throws {
@@ -101,6 +131,19 @@ final class CityPackStore {
             pinnedURLs = try values.decode([String].self, forKey: .pinnedURLs)
             mediaCount = try values.decodeIfPresent(Int.self, forKey: .mediaCount) ?? imageKeys.count
             missingMediaCount = try values.decodeIfPresent(Int.self, forKey: .missingMediaCount) ?? 0
+            contractVersion = try values.decodeIfPresent(String.self, forKey: .contractVersion)
+            reviewEpoch = try values.decodeIfPresent(String.self, forKey: .reviewEpoch)
+        }
+
+        func isCompatible(with contract: ContentContract, now: Date = Date()) -> Bool {
+            guard contract.enforcementEnabled else { return true }
+            guard contract.isValidForEnforcement,
+                  contractVersion == contract.contractVersion,
+                  reviewEpoch == contract.reviewEpoch,
+                  let maximumAge = contract.maximumOfflineAge
+            else { return false }
+            let age = now.timeIntervalSince(downloadedAt)
+            return age >= -ContentContract.clockSkewTolerance && age <= maximumAge
         }
 
         mutating func reconcileStoredMedia(validKeys: Set<String>, bytes: Int64) {
@@ -128,6 +171,7 @@ final class CityPackStore {
     private(set) var packs: [String: CityPack] = [:]
     private(set) var downloading: [String: Double] = [:]
     private(set) var errorsByCity: [String: String] = [:]
+    private var activeContentContract: ContentContract = .compatibility
 
     private let manifestFile: URL = {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -137,6 +181,8 @@ final class CityPackStore {
     }()
 
     init() {
+        activeContentContract = ContentContractStore.persistedSnapshot() ?? .compatibility
+        PackImageStore.activate(activeContentContract)
         if let data = try? Data(contentsOf: manifestFile),
            let decoded = try? JSONDecoder().decode([String: CityPack].self, from: data) {
             packs = decoded.mapValues { stored in
@@ -147,11 +193,22 @@ final class CityPackStore {
                 return pack
             }
         }
+        Task { [weak self] in
+            guard let self else { return }
+            let contract = await ContentContractStore.shared.current(
+                session: .shared,
+                forceRefresh: true
+            )
+            await self.apply(contract: contract)
+        }
     }
 
     func state(for city: String) -> PackState {
+        refreshPersistedContractIfNeeded()
         if let progress = downloading[city] { return .downloading(progress) }
-        if let pack = packs[city] { return .downloaded(pack) }
+        if let pack = packs[city], pack.isCompatible(with: activeContentContract) {
+            return .downloaded(pack)
+        }
         return .none
     }
 
@@ -175,6 +232,13 @@ final class CityPackStore {
                 jsonDone += 1
                 self?.downloading[city] = min(0.6, (jsonDone / max(jsonTotal, jsonDone)) * 0.6)
             }
+            guard !pin.contentContract.enforcementEnabled
+                    || pin.contentContract.isValidForEnforcement
+            else { throw LoreAPI.APIError.invalidResponse }
+            await apply(
+                contract: pin.contentContract,
+                preservingPinnedURLs: Set(pin.pinnedURLs)
+            )
             jsonTotal = Double(7 + pin.places.count)
 
             // Phase 2: resolve + pack hero images (skips titles with no
@@ -215,7 +279,13 @@ final class CityPackStore {
                 imageKeys: imageKeys.sorted(),
                 pinnedURLs: pin.pinnedURLs,
                 mediaCount: orderedMedia.count,
-                missingMediaCount: missingMediaCount
+                missingMediaCount: missingMediaCount,
+                contractVersion: pin.contentContract.enforcementEnabled
+                    ? pin.contentContract.contractVersion
+                    : nil,
+                reviewEpoch: pin.contentContract.enforcementEnabled
+                    ? pin.contentContract.reviewEpoch
+                    : nil
             )
             let previous = packs[city]
             var updated = packs
@@ -245,7 +315,11 @@ final class CityPackStore {
             try saveManifest(updated)
             packs = updated
             PackImageStore.remove(keys: pack.imageKeys.filter { !otherKeys.contains($0) })
-            await AtlasCache.shared.unpin(urlStrings: pack.pinnedURLs.filter { !otherURLs.contains($0) })
+            await AtlasCache.shared.unpin(
+                urlStrings: pack.pinnedURLs.filter { !otherURLs.contains($0) },
+                contractVersion: pack.contractVersion,
+                reviewEpoch: pack.reviewEpoch
+            )
             errorsByCity[city] = nil
         } catch {
             errorsByCity[city] = "Couldn't update offline storage. Try removing the pack again."
@@ -274,6 +348,53 @@ final class CityPackStore {
         return (key, Int64(data.count))
     }
 
+    private func refreshPersistedContractIfNeeded() {
+        guard let persisted = ContentContractStore.persistedSnapshot(),
+              persisted != activeContentContract
+        else { return }
+        activeContentContract = persisted
+        Task { [weak self] in
+            await self?.apply(contract: persisted)
+        }
+    }
+
+    private func apply(
+        contract: ContentContract,
+        preservingPinnedURLs: Set<String> = []
+    ) async {
+        activeContentContract = contract
+        guard contract.enforcementEnabled else { return }
+        PackImageStore.activate(contract)
+
+        let invalid = packs.filter { !$0.value.isCompatible(with: contract) }
+        guard !invalid.isEmpty else { return }
+
+        let invalidCities = Set(invalid.keys)
+        let retained = packs.filter { !invalidCities.contains($0.key) }
+        do {
+            try saveManifest(retained)
+            packs = retained
+        } catch {
+            // AtlasCache still rejects incompatible bytes. Leave the manifest
+            // intact so a later launch can retry durable cleanup.
+            return
+        }
+
+        let retainedImageKeys = Set(retained.values.flatMap(\.imageKeys))
+        for pack in invalid.values {
+            PackImageStore.remove(keys: pack.imageKeys.filter { !retainedImageKeys.contains($0) })
+            let protectedURLs = pack.contractVersion == contract.contractVersion
+                    && pack.reviewEpoch == contract.reviewEpoch
+                ? preservingPinnedURLs
+                : []
+            await AtlasCache.shared.unpin(
+                urlStrings: pack.pinnedURLs.filter { !protectedURLs.contains($0) },
+                contractVersion: pack.contractVersion,
+                reviewEpoch: pack.reviewEpoch
+            )
+        }
+    }
+
     private func removeSupersededFiles(previous: CityPack?, replacement: CityPack, city: String) async {
         guard let previous else { return }
         let sharedKeys = Set(packs.filter { $0.key != city }.values.flatMap(\.imageKeys))
@@ -284,9 +405,13 @@ final class CityPackStore {
 
         let sharedURLs = Set(packs.filter { $0.key != city }.values.flatMap(\.pinnedURLs))
         let replacementURLs = Set(replacement.pinnedURLs)
-        await AtlasCache.shared.unpin(urlStrings: previous.pinnedURLs.filter {
-            !replacementURLs.contains($0) && !sharedURLs.contains($0)
-        })
+        await AtlasCache.shared.unpin(
+            urlStrings: previous.pinnedURLs.filter {
+                !replacementURLs.contains($0) && !sharedURLs.contains($0)
+            },
+            contractVersion: previous.contractVersion,
+            reviewEpoch: previous.reviewEpoch
+        )
     }
 }
 
