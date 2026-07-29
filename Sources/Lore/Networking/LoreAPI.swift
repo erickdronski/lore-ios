@@ -234,31 +234,6 @@ struct LoreAPI {
         )
     }
 
-    // MARK: - Public traveler lore (community layer)
-
-    /// The shared traveler lore on one place, newest first, via the moderated
-    /// `lore_public` view (opt-in rows, visible/approved only; signed-in
-    /// callers get their blocks applied server-side). DELIBERATELY bypasses
-    /// AtlasCache even for anonymous reads: moderation (report -> hide) must
-    /// take effect on next open, never after a six-hour cache window.
-    /// `GET /rest/v1/lore_public?place_id=eq.{id}&order=shared_at.desc`
-    func publicLore(
-        placeID: String,
-        accessToken: String? = nil,
-        limit: Int = 20
-    ) async throws -> [PublicLore] {
-        let request = try atlasRequest(
-            "lore_public",
-            query: [
-                URLQueryItem(name: "place_id", value: "eq.\(placeID)"),
-                URLQueryItem(name: "order", value: "shared_at.desc"),
-                URLQueryItem(name: "limit", value: String(limit)),
-            ],
-            accessToken: accessToken
-        )
-        return try await send(request)
-    }
-
     // MARK: - Deals & discounts
 
     /// Live offers matched to one place, via `place_deal_feed` (real, curated

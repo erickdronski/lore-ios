@@ -13,7 +13,6 @@ struct UserStats: Decodable, Hashable {
     let divesRead: Int
     let notes: Int
     let photos: Int
-    let publicLores: Int
     let scannerVisits: Int
     let badges: Int
     let badgesTotal: Int
@@ -56,7 +55,6 @@ struct UserStats: Decodable, Hashable {
         case places, cities, countries, continents, notes, photos, badges
         case continentsList = "continents_list"
         case divesRead = "dives_read"
-        case publicLores = "public_lores"
         case scannerVisits = "scanner_visits"
         case badgesTotal = "badges_total"
         case insightPoints = "insight_points"
@@ -70,7 +68,7 @@ struct UserStats: Decodable, Hashable {
     /// honest zero state rather than nothing.
     static let zero = UserStats(
         places: 0, cities: 0, countries: 0, continents: 0, continentsList: [],
-        divesRead: 0, notes: 0, photos: 0, publicLores: 0, scannerVisits: 0,
+        divesRead: 0, notes: 0, photos: 0, scannerVisits: 0,
         badges: 0, badgesTotal: 0, insightPoints: 0, currentStreak: 0,
         longestStreak: 0, topCategories: [], firstVisit: nil
     )

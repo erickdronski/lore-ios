@@ -10,12 +10,9 @@ struct VisitLogEntry: Decodable, Identifiable {
     let visitedAt: String
     let note: String?
     let photos: [String]?
-    /// The visit row's own id (reports reference it; nil on local stubs).
-    let visitID: String?
-    /// Whether the author shared this lore publicly (opt-in, default private).
-    let isPublic: Bool?
-    /// Server-owned moderation status: visible | auto_hidden | removed | approved.
-    let status: String?
+    /// A pre-launch public flag retained only so the app can clear it. New
+    /// clients never set this value to true.
+    let legacyIsPublic: Bool?
     let place: EmbeddedPlace?
 
     struct EmbeddedPlace: Decodable {
@@ -27,18 +24,13 @@ struct VisitLogEntry: Decodable, Identifiable {
 
     var id: String { placeID }
     var photoPaths: [String] { photos ?? [] }
-    var isShared: Bool { isPublic ?? false }
-    /// Author-facing: their shared lore was hidden by moderation.
-    var isHiddenByModeration: Bool {
-        status == "auto_hidden" || status == "removed"
-    }
+    var hasLegacyPublicFlag: Bool { legacyIsPublic ?? false }
 
     enum CodingKeys: String, CodingKey {
         case placeID = "place_id"
         case visitedAt = "visited_at"
-        case visitID = "id"
-        case isPublic = "is_public"
-        case note, photos, place, status
+        case legacyIsPublic = "is_public"
+        case note, photos, place
     }
 
     var displayName: String { place?.name ?? "A place" }
@@ -556,7 +548,7 @@ struct NoteEditorSheet: View {
     @State private var saving = false
     @State private var sheetError: String?
     @State private var persistedText: String
-    @State private var persistedShared: Bool
+    @State private var legacyShareWasPublic: Bool
     @State private var showDiscardConfirmation = false
     @State private var showClearConfirmation = false
     @State private var editingUserID: String?
@@ -569,7 +561,7 @@ struct NoteEditorSheet: View {
         self.onSave = onSave
         _text = State(initialValue: entry.note ?? "")
         _persistedText = State(initialValue: JournalDraftPolicy.normalized(entry.note ?? ""))
-        _persistedShared = State(initialValue: entry.isShared)
+        _legacyShareWasPublic = State(initialValue: entry.hasLegacyPublicFlag)
     }
 
     /// Live photos for this place from the store, so an upload shows immediately.
@@ -582,7 +574,7 @@ struct NoteEditorSheet: View {
         normalizedText != persistedText
     }
     private var validationMessage: String? {
-        JournalDraftPolicy.validationMessage(text: text, wantsToShare: false)
+        JournalDraftPolicy.validationMessage(text: text)
     }
 
     var body: some View {
@@ -760,13 +752,13 @@ struct NoteEditorSheet: View {
         defer { saving = false }
 
         let desiredText = normalizedText
-        // Privacy first: stop publishing before clearing or privatizing a note.
-        if persistedShared {
-            guard await visits.setShared(placeID: entry.placeID, isPublic: false) else {
+        // Privacy first: clear any stale flag left by a pre-launch client.
+        if legacyShareWasPublic {
+            guard await visits.makePrivateIfNeeded(placeID: entry.placeID) else {
                 sheetError = visits.lastError ?? "Couldn't make that note private."
                 return
             }
-            persistedShared = false
+            legacyShareWasPublic = false
         }
 
         if desiredText != persistedText {
@@ -859,12 +851,9 @@ enum JournalDraftPolicy {
         text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    static func validationMessage(text: String, wantsToShare: Bool) -> String? {
+    static func validationMessage(text: String) -> String? {
         if text.count > maximumCharacters {
             return "Shorten this field note to \(maximumCharacters) characters before saving."
-        }
-        if wantsToShare && normalized(text).isEmpty {
-            return "Write a note before sharing it with other travelers."
         }
         return nil
     }

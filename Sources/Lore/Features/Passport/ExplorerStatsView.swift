@@ -206,13 +206,20 @@ struct ExplorerStatsView: View {
             ("square.and.pencil", stats.notes, "Your lore"),
             ("photo", stats.photos, "Photos"),
             ("camera.viewfinder", stats.scannerVisits, "Scans"),
-            ("quote.bubble", stats.publicLores, "Shared"),
             ("flame.fill", stats.currentStreak, "Day streak"),
         ]
-        return LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 3), spacing: 10) {
-            ForEach(tiles, id: \.2) { tile in
-                smallStat(system: tile.0, value: tile.1, caption: tile.2,
-                          hot: tile.2 == "Day streak" && tile.1 > 0)
+        return VStack(spacing: 10) {
+            HStack(spacing: 10) {
+                ForEach(Array(tiles.prefix(3)), id: \.2) { tile in
+                    smallStat(system: tile.0, value: tile.1, caption: tile.2,
+                              hot: false)
+                }
+            }
+            HStack(spacing: 10) {
+                ForEach(Array(tiles.suffix(2)), id: \.2) { tile in
+                    smallStat(system: tile.0, value: tile.1, caption: tile.2,
+                              hot: tile.2 == "Day streak" && tile.1 > 0)
+                }
             }
         }
     }
