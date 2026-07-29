@@ -5,6 +5,9 @@ import SwiftUI
 /// Renders from chunk-cached data only, identical online and offline.
 struct PlaceCardView: View {
     let place: Place
+    /// Preserve how the traveler reached the place when they log a visit.
+    /// Map/search routes use the default; the live scanner passes `.scanner`.
+    var visitSource: Visit.Source = .map
     /// Open "Meet {City}" (the culture surface) for this place's city. Injected
     /// so the card never imports the tab structure; a no-op default keeps
     /// previews / standalone hosts working.
@@ -225,7 +228,7 @@ struct PlaceCardView: View {
                         Spacer(minLength: 0)
                         VisitToggle(
                             place: place,
-                            source: .map,
+                            source: visitSource,
                             onNeedsSignIn: { showSignIn = true },
                             // Mark visited → the lore editor opens, ready to
                             // write. The fluid "you were here, tell us" moment.

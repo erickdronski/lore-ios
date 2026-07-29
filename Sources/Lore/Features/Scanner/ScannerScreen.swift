@@ -57,8 +57,6 @@ struct ScannerScreen: View {
     @State private var isVisible = false
     @State private var showCameraRationale = false
     @State private var showCloudIdentificationDisclosure = false
-    @AppStorage("lore.cloudLandmarkDisclosureAccepted.v1")
-    private var acceptedCloudIdentificationDisclosure = false
 
     /// Raised so a scanner-opened place card can hand off to the city's culture
     /// surface (wired by the tab shell); the no-op default keeps previews working.
@@ -166,7 +164,11 @@ struct ScannerScreen: View {
         }
         .background(LoreColor.ink950)
         .sheet(item: $model.selectedPlace) { place in
-            PlaceCardView(place: place, onMeetCity: { model.selectedPlace = nil; onMeetCity($0) })
+            PlaceCardView(
+                place: place,
+                visitSource: .scanner,
+                onMeetCity: { model.selectedPlace = nil; onMeetCity($0) }
+            )
                 .presentationDetents([.medium, .large])
                 .presentationBackground(.regularMaterial)
                 .presentationCornerRadius(24)
@@ -189,8 +191,12 @@ struct ScannerScreen: View {
         }
         .alert("Send one photo to Google?", isPresented: $showCloudIdentificationDisclosure) {
             Button("Send photo") {
+                guard let userID = auth.session?.user.id else {
+                    showSignIn = true
+                    return
+                }
+                CloudLandmarkDisclosureConsent.accept(userID: userID)
                 Task {
-                    acceptedCloudIdentificationDisclosure = true
                     await identifyLandmarkWithFreshSession()
                 }
             }
@@ -489,12 +495,14 @@ struct ScannerScreen: View {
             showPaywall = true
             return
         }
-        Task {
-            if acceptedCloudIdentificationDisclosure {
-                await identifyLandmarkWithFreshSession()
-            } else {
-                showCloudIdentificationDisclosure = true
-            }
+        guard let userID = auth.session?.user.id else {
+            showSignIn = true
+            return
+        }
+        if CloudLandmarkDisclosureConsent.hasAccepted(userID: userID) {
+            Task { await identifyLandmarkWithFreshSession() }
+        } else {
+            showCloudIdentificationDisclosure = true
         }
     }
 
@@ -1120,6 +1128,38 @@ struct LandmarkResponse: Decodable {
         case landmark, confidence, slug
         case placeID = "place_id"
         case placeCity = "place_city"
+    }
+}
+
+/// The opt-in is account-scoped, not device-scoped. A shared iPad or a sign-out
+/// followed by another Lore account must show Google's one-photo disclosure to
+/// the new person before any frame can leave the device.
+enum CloudLandmarkDisclosureConsent {
+    private static let keyPrefix = "lore.cloudLandmarkDisclosureAccepted.v2"
+
+    static func hasAccepted(
+        userID: String?,
+        defaults: UserDefaults = .standard
+    ) -> Bool {
+        guard let key = key(userID: userID) else { return false }
+        return defaults.bool(forKey: key)
+    }
+
+    static func accept(
+        userID: String?,
+        defaults: UserDefaults = .standard
+    ) {
+        guard let key = key(userID: userID) else { return }
+        defaults.set(true, forKey: key)
+    }
+
+    private static func key(userID: String?) -> String? {
+        guard let normalized = userID?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased(),
+            !normalized.isEmpty
+        else { return nil }
+        return "\(keyPrefix).\(normalized)"
     }
 }
 
