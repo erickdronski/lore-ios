@@ -13,7 +13,12 @@ struct TourDetailView: View {
     @Environment(StoreKitService.self) private var store
     @Environment(AuthService.self) private var auth
     @State private var model = TourDetailModel()
+    /// The stop currently being inspected. Browsing the map or itinerary moves
+    /// this index without claiming that the traveler reached a checkpoint.
     @State private var stopIndex = 0
+    /// Highest checkpoint reached through an explicit Next action or a verified
+    /// GPS arrival. This is the only in-progress value persisted for resume.
+    @State private var furthestReachedStopIndex = 0
     /// Drives the active-tour Live Activity + Dynamic Island (docs/16 §8).
     @State private var liveActivity = TourLiveActivityController()
     /// Present the paywall when a free user opens a premium curated walk.
@@ -40,7 +45,7 @@ struct TourDetailView: View {
     /// city's places resolve (an explicit region, never `.automatic`, which
     /// mis-frames a sparse set of pins).
     @State private var mapCamera: MapCameraPosition = .automatic
-    /// Restore once, then persist every manual or guided stop change.
+    /// Restore once before accepting deliberate progress updates.
     @State private var didRestoreProgress = false
     /// Full-screen completion beat at the final stop.
     @State private var showCompletion = false
@@ -70,6 +75,7 @@ struct TourDetailView: View {
                 } else {
                     if wasCompleted { completedTourBanner }
                     progressRail
+                    if hasTourPlaceIssue { tourPlaceLoadIssue }
                     // See the whole walk first: every stop laid out in order, the
                     // current one highlighted. A tour that starts with a map reads
                     // as a real guided walk, not just a list of write-ups.
@@ -102,8 +108,8 @@ struct TourDetailView: View {
         .navigationTitle(tour.title)
         .navigationBarTitleDisplayMode(.inline)
         .task {
-            await model.load(city: tour.city)
             restoreProgress()
+            await model.load(city: tour.city)
             await loadNarrative()
             focusRouteMap()
             retargetGuide()
@@ -111,7 +117,6 @@ struct TourDetailView: View {
         // Push each stop change into the Live Activity so the Lock Screen /
         // Dynamic Island track the walk (docs/16 §8). No-op when not running.
         .onChange(of: stopIndex) { _, _ in
-            persistProgress()
             syncLiveActivity()
             retargetGuide()
             Task { await loadNarrative() }
@@ -315,6 +320,11 @@ struct TourDetailView: View {
         }
     }
 
+    private var hasTourPlaceIssue: Bool {
+        model.loadFailed
+            || (model.loadSucceeded && orderedStopPlaces.count != tour.stops.count)
+    }
+
     /// An overview map of the entire walk: every stop as a numbered pin, the
     /// current stop swollen + amber, and a dotted line threading them in order.
     /// Tapping a pin springs the stepper to that stop. The dotted segments show
@@ -324,7 +334,7 @@ struct TourDetailView: View {
     @ViewBuilder
     private var routeMap: some View {
         let stops = orderedStopPlaces
-        if stops.count >= 2 {
+        if stops.count == tour.stops.count, stops.count >= 2 {
             VStack(spacing: 0) {
                 HStack {
                     Label("ROUTE OVERVIEW", systemImage: "point.3.connected.trianglepath.dotted")
@@ -403,6 +413,46 @@ struct TourDetailView: View {
             longitudeDelta: max(0.006, (maxLng - minLng) * 1.5)
         )
         mapCamera = .region(MKCoordinateRegion(center: center, span: span))
+    }
+
+    private var tourPlaceLoadIssue: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label(
+                "Tour details unavailable",
+                systemImage: model.loadFailed ? "wifi.exclamationmark" : "exclamationmark.triangle.fill"
+            )
+                .font(LoreType.body.weight(.semibold))
+                .foregroundStyle(LoreColor.error)
+            Text(
+                model.loadFailed
+                    ? "Lore couldn't load this route's place details. Your saved tour progress is safe."
+                    : "One or more checkpoints are missing place details, so Lore won't draw an incomplete route. Your saved progress is safe."
+            )
+                .font(LoreType.caption)
+                .foregroundStyle(LoreColor.ink600)
+                .fixedSize(horizontal: false, vertical: true)
+            Button {
+                Task { await retryTourPlaces() }
+            } label: {
+                Label("Retry", systemImage: "arrow.clockwise")
+                    .font(LoreType.button)
+                    .frame(minHeight: 44)
+            }
+            .buttonStyle(.bordered)
+            .tint(LoreColor.ink)
+            .disabled(model.isLoading)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(LoreColor.error.opacity(0.07), in: RoundedRectangle(cornerRadius: 14))
+        .accessibilityElement(children: .contain)
+    }
+
+    private func retryTourPlaces() async {
+        await model.load(city: tour.city, retry: true)
+        guard !hasTourPlaceIssue else { return }
+        focusRouteMap()
+        retargetGuide()
     }
 
     /// A REAL live distance to the NEXT stop, and only that (docs/16 §8 TODO,
@@ -623,17 +673,28 @@ struct TourDetailView: View {
                         } label: {
                             RouteCheckpoint(
                                 number: index + 1,
-                                isVisited: index < stopIndex,
+                                isVisited: index != stopIndex
+                                    && (wasCompleted || index <= furthestReachedStopIndex),
                                 isCurrent: index == stopIndex
                             )
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel(Text("Stop \(index + 1) of \(tour.stops.count)"))
-                        .accessibilityValue(Text(index == stopIndex ? "Current stop" : (index < stopIndex ? "Visited" : "Upcoming")))
+                        .accessibilityValue(
+                            Text(
+                                index == stopIndex
+                                    ? "Currently viewing"
+                                    : ((wasCompleted || index <= furthestReachedStopIndex) ? "Reached" : "Upcoming")
+                            )
+                        )
 
                         if index < tour.stops.count - 1 {
                             Capsule()
-                                .fill(index < stopIndex ? LoreColor.amber : LoreColor.bone300)
+                                .fill(
+                                    wasCompleted || index < furthestReachedStopIndex
+                                        ? LoreColor.amber
+                                        : LoreColor.bone300
+                                )
                                 .frame(width: 28, height: 3)
                                 .padding(.horizontal, 3)
                         }
@@ -655,7 +716,7 @@ struct TourDetailView: View {
     private var progressFraction: Double {
         if wasCompleted { return 1 }
         guard !tour.stops.isEmpty else { return 0 }
-        return Double(stopIndex + 1) / Double(tour.stops.count)
+        return Double(furthestReachedStopIndex + 1) / Double(tour.stops.count)
     }
 
     private var completedTourBanner: some View {
@@ -695,6 +756,7 @@ struct TourDetailView: View {
         Button("Walk again") {
             TourProgressStore.restart(tourSlug: tour.slug, userID: auth.session?.user.id)
             wasCompleted = false
+            furthestReachedStopIndex = 0
             stopIndex = 0
         }
         .font(LoreType.caption)
@@ -751,8 +813,13 @@ struct TourDetailView: View {
                     }
                 } else if model.isLoading {
                     SkeletonRow()
+                } else if model.loadFailed {
+                    Text("Place details unavailable. Use Retry above to reload this route.")
+                        .font(LoreType.body)
+                        .foregroundStyle(LoreColor.error)
+                        .fixedSize(horizontal: false, vertical: true)
                 } else if currentStop != nil {
-                    Text("Stop \(stopIndex + 1)")
+                    Text("Place details are missing for this checkpoint.")
                         .font(LoreType.body)
                         .foregroundStyle(LoreColor.ink600)
                 }
@@ -1021,6 +1088,7 @@ struct TourDetailView: View {
     private func handleArrival(at index: Int) {
         Haptics.play(.scannerLock)
         arrivedStops.insert(index)
+        recordProgress(at: index)
         pendingAutoPlay = true
         if stopIndex != index {
             // onChange(stopIndex) syncs the Live Activity, retargets the guide,
@@ -1081,7 +1149,11 @@ struct TourDetailView: View {
                 if stopIndex >= tour.stops.count - 1 {
                     finishTour()
                 } else {
-                    withAnimation(LoreSpring.smooth(reduceMotion: reduceMotion)) { stopIndex += 1 }
+                    let nextIndex = stopIndex + 1
+                    recordProgress(at: nextIndex)
+                    withAnimation(LoreSpring.smooth(reduceMotion: reduceMotion)) {
+                        stopIndex = nextIndex
+                    }
                 }
             } label: {
                 Label(
@@ -1108,14 +1180,16 @@ struct TourDetailView: View {
         )
         if let savedIndex = progress.stopIndex {
             stopIndex = savedIndex
+            furthestReachedStopIndex = savedIndex
         }
         wasCompleted = progress.isCompleted
     }
 
-    private func persistProgress() {
+    private func recordProgress(at index: Int) {
         guard didRestoreProgress, !wasCompleted else { return }
-        TourProgressStore.save(
-            stopIndex: stopIndex,
+        furthestReachedStopIndex = max(furthestReachedStopIndex, index)
+        TourProgressStore.advance(
+            to: furthestReachedStopIndex,
             for: tour.slug,
             userID: auth.session?.user.id
         )
@@ -1292,17 +1366,27 @@ private struct TourCompletionView: View {
 final class TourDetailModel {
     private var placesByID: [String: Place] = [:]
     private(set) var isLoading = false
+    private(set) var loadFailed = false
+    private(set) var loadSucceeded = false
 
     func place(id: String) -> Place? { placesByID[id] }
 
-    func load(city: String) async {
-        guard placesByID.isEmpty else { return }
+    func load(city: String, retry: Bool = false) async {
+        guard !isLoading, retry || placesByID.isEmpty else { return }
         isLoading = true
+        loadFailed = false
+        loadSucceeded = false
         defer { isLoading = false }
-        if let places = try? await LoreAPI.shared.places(city: city) {
+        do {
+            let places = try await LoreAPI.shared.places(city: city)
             placesByID = Dictionary(
                 uniqueKeysWithValues: places.map { ($0.id, $0) }
             )
+            loadSucceeded = true
+        } catch is CancellationError {
+            return
+        } catch {
+            loadFailed = true
         }
     }
 }
