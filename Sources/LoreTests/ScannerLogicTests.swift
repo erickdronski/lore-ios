@@ -317,6 +317,58 @@ final class SpecialistJourneyRegressionTests: XCTestCase {
         XCTAssertEqual(response.placeCity, "London")
     }
 
+    func testScannerAccessibilityAnnouncementsDescribeLockAndIdentification() throws {
+        let certain = try XCTUnwrap(LandmarkID(
+            name: "Clock Tower",
+            confidence: 0.94,
+            slug: "clock-tower",
+            placeID: "place-1"
+        ))
+        let uncertain = try XCTUnwrap(LandmarkID(
+            name: "Column",
+            confidence: 0.42,
+            slug: nil
+        ))
+
+        XCTAssertEqual(
+            ScannerAccessibilityAnnouncement.lockedPlace(
+                name: "City Hall",
+                distanceLabel: "80 m",
+                isAtLocation: false
+            ),
+            "City Hall locked. 80 m ahead."
+        )
+        XCTAssertEqual(
+            ScannerAccessibilityAnnouncement.lockedPlace(
+                name: "City Hall",
+                distanceLabel: "You're here",
+                isAtLocation: true
+            ),
+            "City Hall locked. You're here."
+        )
+        XCTAssertEqual(
+            ScannerAccessibilityAnnouncement.identification(.loading),
+            "Identifying one camera frame with Google Cloud Vision."
+        )
+        XCTAssertEqual(
+            ScannerAccessibilityAnnouncement.identification(.result(certain)),
+            "Landmark identified: Clock Tower. Story available."
+        )
+        XCTAssertEqual(
+            ScannerAccessibilityAnnouncement.identification(.result(uncertain)),
+            "Possible landmark: Column."
+        )
+        XCTAssertEqual(
+            ScannerAccessibilityAnnouncement.identification(.none),
+            "No landmark matched. Lore will not guess."
+        )
+        XCTAssertEqual(
+            ScannerAccessibilityAnnouncement.identification(.quotaReached),
+            "Today's landmark limit has been reached. Try again tomorrow."
+        )
+        XCTAssertNil(ScannerAccessibilityAnnouncement.identification(.idle))
+    }
+
     func testScannerOrientationMapsEveryIPadRotation() {
         XCTAssertEqual(ScannerCameraService.visionOrientation(for: .portrait), .right)
         XCTAssertEqual(ScannerCameraService.visionOrientation(for: .portraitUpsideDown), .left)

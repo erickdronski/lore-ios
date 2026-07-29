@@ -218,6 +218,17 @@ struct ScannerScreen: View {
         .onChange(of: prefs) { _, newValue in model.apply(prefs: newValue) }
         .onAppear { isVisible = true }
         .onDisappear { isVisible = false; model.stopSensors() }
+        .onChange(of: model.lockedPlace?.id) { _, newValue in
+            guard newValue != nil, let locked = model.lockedRanked else { return }
+            UIAccessibility.post(
+                notification: .announcement,
+                argument: ScannerAccessibilityAnnouncement.lockedPlace(locked)
+            )
+        }
+        .onChange(of: model.identifyState) { _, newValue in
+            guard let announcement = ScannerAccessibilityAnnouncement.identification(newValue) else { return }
+            UIAccessibility.post(notification: .announcement, argument: announcement)
+        }
         // Pause camera/location/loop when the app leaves the foreground (privacy
         // + battery); resume when it returns while the scanner is the live tab.
         // Tab switches are covered by onAppear/onDisappear.
@@ -1274,6 +1285,46 @@ enum IdentifyState: Equatable {
     case none          // ran, cloud recognized no landmark
     case unavailable(IdentifyFailure)
     case quotaReached  // authenticated daily quota exhausted
+}
+
+enum ScannerAccessibilityAnnouncement {
+    static func lockedPlace(_ ranked: ScannerRanking.Ranked) -> String {
+        lockedPlace(
+            name: ranked.place.name,
+            distanceLabel: ranked.projected.distanceLabel,
+            isAtLocation: ranked.projected.isAtLocation
+        )
+    }
+
+    static func lockedPlace(
+        name: String,
+        distanceLabel: String,
+        isAtLocation: Bool
+    ) -> String {
+        if isAtLocation { return "\(name) locked. You're here." }
+        return "\(name) locked. \(distanceLabel) ahead."
+    }
+
+    static func identification(_ state: IdentifyState) -> String? {
+        switch state {
+        case .idle:
+            return nil
+        case .loading:
+            return "Identifying one camera frame with Google Cloud Vision."
+        case .result(let landmark):
+            let prefix = landmark.isAmbiguous ? "Possible landmark" : "Landmark identified"
+            if landmark.slug != nil || landmark.placeID != nil {
+                return "\(prefix): \(landmark.name). Story available."
+            }
+            return "\(prefix): \(landmark.name)."
+        case .none:
+            return "No landmark matched. Lore will not guess."
+        case .unavailable(let failure):
+            return failure.message
+        case .quotaReached:
+            return "Today's landmark limit has been reached. Try again tomorrow."
+        }
+    }
 }
 
 enum LandmarkRequestOutcome: Equatable {
