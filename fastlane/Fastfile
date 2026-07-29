@@ -166,8 +166,15 @@ platform :ios do
     end
 
     begin
-      app.get_builds.sort_by { |bd| -bd.version.to_i }.first(3).each do |bd|
-        say.call("INFO", "TestFlight build", "#{bd.version} processing=#{bd.processing_state} expired=#{bd.expired}")
+      # Build numbers can restart for a new marketing version, so sorting by
+      # the integer alone can make an older 1.0 build look newer than 1.1.
+      Spaceship::ConnectAPI::Build.all(
+        app_id: app.id, sort: "-uploadedDate", limit: 5,
+      ).each do |bd|
+        say.call(
+          "INFO", "TestFlight build",
+          "#{bd.app_version} (#{bd.version}) uploaded=#{bd.uploaded_date} processing=#{bd.processing_state} expired=#{bd.expired}",
+        )
       end
     rescue => e
       say.call("WARN", "TestFlight builds", "lookup failed: #{e.message}")
@@ -200,7 +207,11 @@ platform :ios do
 
     # --- Privacy policy + age rating (live on AppInfo, not the version) ---
     begin
-      app.get_app_infos.each do |info|
+      info = app.fetch_edit_app_info || app.fetch_live_app_info || app.fetch_latest_app_info
+      if info.nil?
+        say.call("FAIL", "AppInfo", "No AppInfo record returned")
+      else
+        say.call("INFO", "AppInfo", "state=#{info.state}")
         begin
           info.get_app_info_localizations.each do |il|
             next if il.privacy_policy_url.to_s.empty? && il.locale != app.primary_locale
@@ -211,7 +222,7 @@ platform :ios do
           say.call("WARN", "Privacy policy URL", "lookup failed: #{e.message}")
         end
         begin
-          ard = info.get_age_rating_declaration
+          ard = info.fetch_age_rating_declaration
           say.call(ard.nil? ? "FAIL" : "PASS", "Age rating declaration", ard.nil? ? "missing" : "present")
         rescue => e
           say.call("WARN", "Age rating", "lookup failed: #{e.message}")
@@ -222,35 +233,70 @@ platform :ios do
     end
 
     # --- Subscriptions (Lore+): each needs a review screenshot to be submittable ---
-    begin
-      groups = app.get_subscription_groups
-      if groups.nil? || groups.empty?
-        say.call("WARN", "Subscriptions", "No subscription groups returned")
-      end
-      groups&.each do |g|
-        subs = begin
-                 g.get_subscriptions
-               rescue
-                 nil
-               end
-        subs&.each do |s|
-          say.call("INFO", "Subscription", "#{s.name} product=#{s.product_id} state=#{s.state}")
-        end
-      end
-    rescue => e
-      say.call("WARN", "Subscriptions", "lookup failed (may need UI check): #{e.message}")
-    end
+    say.call(
+      "NOTE", "Subscriptions",
+      "Pinned Fastlane does not expose subscription-group reads; confirm products and review screenshots in App Store Connect",
+    )
 
     # --- Already submitted? ---
     begin
-      sub = version&.fetch_app_store_version_submission
-      say.call(sub.nil? ? "INFO" : "WARN", "Existing submission",
-               sub.nil? ? "none — version is not yet submitted" : "a submission already exists")
+      platform = Spaceship::ConnectAPI::Platform::IOS
+      sub = app.get_in_progress_review_submission(
+        platform: platform, includes: "appStoreVersionForReview,items",
+      )
+      if sub.nil?
+        say.call("INFO", "Existing submission", "none in progress")
+      else
+        submitted_version = sub.app_store_version_for_review
+        submitted_build = begin
+                            submitted_version&.get_build
+                          rescue
+                            nil
+                          end
+        detail = "state=#{sub.state}"
+        detail += " version=#{submitted_version.version_string}" unless submitted_version.nil?
+        detail += " build=#{submitted_build.version}" unless submitted_build.nil?
+        say.call("WARN", "Existing submission", detail)
+      end
     rescue => e
-      say.call("INFO", "Existing submission", "none detected (#{e.class})")
+      say.call("WARN", "Existing submission", "lookup failed: #{e.message}")
     end
 
     UI.important("PF|NOTE|Manual-only checks|EU trader status, Paid Applications Agreement and subscription REVIEW SCREENSHOTS are not reliably exposed by the ASC API — confirm in the App Store Connect UI.")
+  end
+
+  desc "Cancel the active App Review submission without changing or resubmitting a build"
+  lane :hold_review do
+    asc_token!
+    platform = Spaceship::ConnectAPI::Platform::IOS
+    app = Spaceship::ConnectAPI::App.find(BUNDLE_ID)
+    UI.user_error!("No app for #{BUNDLE_ID}") if app.nil?
+
+    submission = app.get_in_progress_review_submission(
+      platform: platform, includes: "appStoreVersionForReview,items",
+    )
+    if submission.nil?
+      UI.success("No active App Review submission exists; Lore is already on hold.")
+      next
+    end
+
+    version = submission.app_store_version_for_review
+    build = begin
+              version&.get_build
+            rescue
+              nil
+            end
+    UI.important(
+      "Cancelling App Review submission #{submission.id} " \
+      "state=#{submission.state} version=#{version&.version_string || 'unknown'} " \
+      "build=#{build&.version || 'unknown'}. No build will be selected or submitted.",
+    )
+
+    result = submission.cancel_submission
+    UI.success(
+      "App Review cancellation accepted; state=#{result&.state || 'not returned'}. " \
+      "The staged version and attached build were not changed.",
+    )
   end
 
   desc "Submit the editable App Store version for review (guarded)"
