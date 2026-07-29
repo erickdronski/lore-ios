@@ -18,6 +18,7 @@ struct StoreEntitlementSnapshot: Equatable {
     let isUpgraded: Bool
     let isIntroductory: Bool
     let ownership: Ownership
+    let appAccountToken: UUID?
 }
 
 struct StoreEntitlementResolution: Equatable {
@@ -31,9 +32,20 @@ enum StoreEntitlementResolver {
     static func resolve(
         current: [StoreEntitlementSnapshot],
         history: [StoreEntitlementSnapshot],
+        accountUUID: UUID?,
         now: Date
     ) -> StoreEntitlementResolution {
+        guard let accountUUID else {
+            return StoreEntitlementResolution(
+                ownedProductIDs: [],
+                tripPassExpiresAt: nil,
+                isInIntroPeriod: false,
+                includesFamilySharedAccess: false
+            )
+        }
+
         let active = current.filter { snapshot in
+            guard snapshot.appAccountToken == accountUUID else { return false }
             guard StoreKitService.ProductID.subsAndLifetime.contains(snapshot.productID) else {
                 return false
             }
@@ -43,7 +55,8 @@ enum StoreEntitlementResolver {
         }
 
         let passExpiry = history.compactMap { snapshot -> Date? in
-            guard snapshot.revocationDate == nil,
+            guard snapshot.appAccountToken == accountUUID,
+                  snapshot.revocationDate == nil,
                   let duration = StoreKitService.ProductID.passDuration(snapshot.productID)
             else { return nil }
             return snapshot.purchaseDate.addingTimeInterval(duration)
@@ -60,14 +73,11 @@ enum StoreEntitlementResolver {
 
 /// The **StoreKit 2** client path for Lore+, the on-device transaction engine.
 ///
-/// Doctrine (docs/16-APPLE-TOOLKITS.md §1): StoreKit 2 and RevenueCat are
-/// *layers, not alternatives*. RevenueCat remains the planned **server-side
-/// truth**, its webhook writes the `entitlements` row `EntitlementStore` reads,
-/// and it owns the paywall/offering config. StoreKit 2 is the on-device engine
-/// underneath: the actual purchase sheet, restore, intro-offer eligibility, and
-///, critically, `Transaction.currentEntitlements` as a **belt-and-suspenders
-/// offline check** so a returning subscriber isn't gated during an RC outage or
-/// a first-launch-before-network.
+/// StoreKit 2 is Lore's on-device purchase engine. Apple-signed transactions
+/// are independently verified by Lore's first-party Edge Functions, which write
+/// the server entitlement used by web and cloud-gated features. The local
+/// transaction read keeps an account-scoped offline fallback without replacing
+/// that server authority.
 ///
 /// This service is that client path. It:
 /// - loads the two products (`Product.products(for:)`),
@@ -76,16 +86,6 @@ enum StoreEntitlementResolver {
 /// - listens for out-of-band changes (`Transaction.updates`),
 /// - restores (`AppStore.sync()`),
 /// - and reports StoreKit-authoritative free-trial eligibility and duration.
-///
-/// **Reconciliation TODO (docs/16 §1 + docs/00 §2):** when the RevenueCat SDK
-/// lands at P3, `Purchases.shared` becomes the primary purchase driver (it runs
-/// on StoreKit 2 under the hood) and its webhook the entitlement writer. At that
-/// point this service's `purchase`/`restore` should defer to RC, and its role
-/// narrows to the *offline union* read (`hasActiveEntitlement`) that
-/// `EntitlementStore` unions with, **never subtracts from**, the RC/`entitlements`
-/// answer. Do not run a second raw purchase path in parallel with RC once it
-/// exists; that is the double-bookkeeping trap the doc warns against. Until RC
-/// is wired, this is the real, working purchase path.
 ///
 /// Lifecycle mirrors the other stores: `@Observable @MainActor`, one instance,
 /// injected via the environment. `EntitlementStore` holds a reference and unions
@@ -152,7 +152,7 @@ final class StoreKitService {
     }
 
     /// The `entitlements` grant name these products confer. Matches the row
-    /// `EntitlementStore` reads and the RevenueCat entitlement (`plus`/`lore_plus`).
+    /// `EntitlementStore` reads from Lore's server row.
     static let entitlementName = "lore_plus"
 
     enum ProductLoadState: Equatable {
@@ -293,7 +293,7 @@ final class StoreKitService {
     /// True when any current on-device entitlement is a Lore+ product and its
     /// verified transaction hasn't been revoked/expired. This is the union input
     /// `EntitlementStore` reads, it can only *open* the gate, never close one
-    /// the server (RevenueCat/`entitlements`) has opened.
+    /// the server `entitlements` row has opened.
     var hasActiveEntitlement: Bool {
         !ownedProductIDs.isEmpty || tripPassActive
     }
@@ -327,6 +327,7 @@ final class StoreKitService {
         for await result in Transaction.currentEntitlements {
             switch result {
             case .verified(let transaction):
+                guard transaction.appAccountToken == accountUUID else { continue }
                 current.append(snapshot(for: transaction))
                 verifiedJWS.append(result.jwsRepresentation)
             case .unverified:
@@ -336,8 +337,7 @@ final class StoreKitService {
 
         // Re-assert every currently-owned entitlement server-side. This is the
         // repair path: a restore, a renewal picked up by `Transaction.updates`,
-        // a purchase made while signed out and later attributed at sign-in, or
-        // a first launch after the server row was never written all converge
+        // or a first launch after the server row was never written all converge
         // here. The endpoint is idempotent, so re-posting is harmless.
         if let sync = onVerifiedTransaction {
             for jws in verifiedJWS { await sync(jws) }
@@ -346,7 +346,9 @@ final class StoreKitService {
         for await result in Transaction.all {
             switch result {
             case .verified(let transaction):
-                guard ProductID.passDuration(transaction.productID) != nil else { continue }
+                guard transaction.appAccountToken == accountUUID,
+                      ProductID.passDuration(transaction.productID) != nil
+                else { continue }
                 history.append(snapshot(for: transaction))
             case .unverified(let transaction, _):
                 if ProductID.all.contains(transaction.productID) {
@@ -358,6 +360,7 @@ final class StoreKitService {
         let resolution = StoreEntitlementResolver.resolve(
             current: current,
             history: history,
+            accountUUID: accountUUID,
             now: Date()
         )
         ownedProductIDs = resolution.ownedProductIDs
@@ -378,7 +381,8 @@ final class StoreKitService {
             revocationDate: transaction.revocationDate,
             isUpgraded: transaction.isUpgraded,
             isIntroductory: introductory(in: transaction),
-            ownership: transaction.ownershipType == .familyShared ? .familyShared : .purchased
+            ownership: transaction.ownershipType == .familyShared ? .familyShared : .purchased,
+            appAccountToken: transaction.appAccountToken
         )
     }
 
@@ -401,12 +405,6 @@ final class StoreKitService {
     }
 
     /// Buy a product by identifier via the native StoreKit 2 purchase sheet.
-    ///
-    /// **RevenueCat reconciliation TODO (docs/16 §1):** at P3 this becomes a
-    /// `Purchases.shared.purchase(package:)` call so RC records the transaction
-    /// server-side and its webhook writes the `entitlements` row. The return
-    /// contract (a `PurchaseOutcome`) stays, so the paywall wiring is untouched
-    /// by that swap.
     func purchase(productID: String) async -> PurchaseOutcome {
         guard !isPurchaseInProgress, !isRestoreInProgress else { return .inProgress }
         guard accountUUID != nil else {
@@ -496,8 +494,6 @@ final class StoreKitService {
     /// with no Lore+ purchase, so the UI never reports a network/auth failure as
     /// "nothing to restore."
     ///
-    /// TODO(P3): defer to `Purchases.shared.restorePurchases()` once RC is wired,
-    /// so the restore also reconciles server-side.
     func restore() async -> RestoreOutcome {
         guard !isRestoreInProgress, !isPurchaseInProgress else {
             return .failed(message: "Another App Store request is already in progress.")
@@ -534,9 +530,6 @@ final class StoreKitService {
     /// has a free-trial offer and the Apple Account is eligible for it. This
     /// prevents stale local copy from promising an offer App Store Connect no
     /// longer provides.
-    ///
-    /// TODO(P3): RevenueCat exposes this per-offering too; unify on one source
-    /// when RC is wired.
     func eligibleFreeTrialDescription(productID: String) async -> String? {
         guard
             let product = products[productID],

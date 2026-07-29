@@ -435,11 +435,6 @@ struct JournalView: View {
                         .font(LoreType.caption)
                         .foregroundStyle(LoreColor.ink600)
                     Spacer()
-                    if entry.isShared {
-                        Label("Shared", systemImage: "person.2.fill")
-                            .font(LoreType.caption)
-                            .foregroundStyle(LoreColor.success)
-                    }
                 }
             }
             .padding(14)
@@ -483,7 +478,6 @@ struct JournalView: View {
         if !entry.dateLabel.isEmpty { parts.append(entry.dateLabel) }
         if let note = entry.note, !note.isEmpty { parts.append(note) }
         parts.append("\(entry.photoPaths.count) photos")
-        if entry.isShared { parts.append("shared with travelers") }
         return parts.joined(separator: ", ")
     }
 }
@@ -566,8 +560,6 @@ struct NoteEditorSheet: View {
     @State private var showDiscardConfirmation = false
     @State private var showClearConfirmation = false
     @State private var editingUserID: String?
-    /// Opt-in public sharing is committed with Save, after the visible draft.
-    @State private var isShared: Bool
 
     private let maximumCharacters = JournalDraftPolicy.maximumCharacters
     private let maximumPhotos = 12
@@ -578,7 +570,6 @@ struct NoteEditorSheet: View {
         _text = State(initialValue: entry.note ?? "")
         _persistedText = State(initialValue: JournalDraftPolicy.normalized(entry.note ?? ""))
         _persistedShared = State(initialValue: entry.isShared)
-        _isShared = State(initialValue: entry.isShared)
     }
 
     /// Live photos for this place from the store, so an upload shows immediately.
@@ -588,10 +579,10 @@ struct NoteEditorSheet: View {
 
     private var normalizedText: String { JournalDraftPolicy.normalized(text) }
     private var hasUnsavedChanges: Bool {
-        normalizedText != persistedText || isShared != persistedShared
+        normalizedText != persistedText
     }
     private var validationMessage: String? {
-        JournalDraftPolicy.validationMessage(text: text, wantsToShare: isShared)
+        JournalDraftPolicy.validationMessage(text: text, wantsToShare: false)
     }
 
     var body: some View {
@@ -678,7 +669,7 @@ struct NoteEditorSheet: View {
                     .foregroundStyle(LoreColor.ink600)
                     .fixedSize(horizontal: false, vertical: true)
 
-                    shareSection
+                    privacySection
 
                     if let message = validationMessage {
                         Label(message, systemImage: "exclamationmark.triangle.fill")
@@ -730,11 +721,10 @@ struct NoteEditorSheet: View {
             .alert("Clear this field note?", isPresented: $showClearConfirmation) {
                 Button("Clear note", role: .destructive) {
                     text = ""
-                    if isShared { isShared = false }
                 }
                 Button("Cancel", role: .cancel) {}
             } message: {
-                Text("The note is removed when you tap Save. A shared note will also become private.")
+                Text("The note is removed when you tap Save.")
             }
             .onChange(of: picked) { _, item in
                 guard let item else { return }
@@ -770,16 +760,13 @@ struct NoteEditorSheet: View {
         defer { saving = false }
 
         let desiredText = normalizedText
-        let desiredShared = isShared && !desiredText.isEmpty
-
         // Privacy first: stop publishing before clearing or privatizing a note.
-        if persistedShared && !desiredShared {
+        if persistedShared {
             guard await visits.setShared(placeID: entry.placeID, isPublic: false) else {
                 sheetError = visits.lastError ?? "Couldn't make that note private."
                 return
             }
             persistedShared = false
-            isShared = false
         }
 
         if desiredText != persistedText {
@@ -788,14 +775,6 @@ struct NoteEditorSheet: View {
                 return
             }
             persistedText = desiredText
-        }
-
-        if desiredShared != persistedShared {
-            guard await visits.setShared(placeID: entry.placeID, isPublic: desiredShared) else {
-                sheetError = visits.lastError ?? "Your note saved, but its sharing setting didn't. Try Save again."
-                return
-            }
-            persistedShared = desiredShared
         }
 
         dismiss()
@@ -842,43 +821,14 @@ struct NoteEditorSheet: View {
         )
     }
 
-    /// The live history row for this place (fresher than the captured entry).
-    private var liveEntry: VisitLogEntry {
-        visits.visitHistory.first(where: { $0.placeID == entry.placeID }) ?? entry
-    }
-
-    /// Opt-in community sharing (Guideline 1.2 pairs this with report + block
-    /// on the reading side). Default private; commits only when Save succeeds.
-    private var shareSection: some View {
+    private var privacySection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Toggle(isOn: $isShared) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Share with all travelers")
-                        .font(LoreType.button)
-                        .foregroundStyle(LoreColor.ink)
-                    // v1 shares the NOTE only: journal photos live in a private
-                    // bucket other readers can't load, so promising them here
-                    // would be a lie until the public-photo path ships.
-                    Text("When you tap Save, your note appears on this place for every traveler under your display name. Photos stay private to you.")
-                        .font(LoreType.caption)
-                        .foregroundStyle(LoreColor.ink600)
-                }
-            }
-            .tint(LoreColor.brass700)
-            .disabled(normalizedText.isEmpty && !isShared)
-            if isShared {
-                Text("Keep it kind and true. Lore that other travelers report is hidden while we review it; abusive content is removed.")
-                    .font(LoreType.caption)
-                    .foregroundStyle(LoreColor.ink600)
-            }
-            if liveEntry.isHiddenByModeration {
-                Label(
-                    "This entry was reported and is hidden from other travelers while it's reviewed. You still see it here.",
-                    systemImage: "eye.slash"
-                )
+            Label("Private journal", systemImage: "lock.fill")
+                .font(LoreType.button)
+                .foregroundStyle(LoreColor.ink)
+            Text("Your field note and photos are visible only to you.")
                 .font(LoreType.caption)
-                .foregroundStyle(LoreColor.error)
-            }
+                .foregroundStyle(LoreColor.ink600)
         }
         .padding(12)
         .background(LoreColor.bone200, in: RoundedRectangle(cornerRadius: 14))
