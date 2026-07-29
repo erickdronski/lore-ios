@@ -64,7 +64,31 @@
     </dict>
     <dict>
       <key>NSPrivacyCollectedDataType</key>
+      <string>NSPrivacyCollectedDataTypeName</string>
+      <key>NSPrivacyCollectedDataTypeLinked</key>
+      <true/>
+      <key>NSPrivacyCollectedDataTypeTracking</key>
+      <false/>
+      <key>NSPrivacyCollectedDataTypePurposes</key>
+      <array>
+        <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+      </array>
+    </dict>
+    <dict>
+      <key>NSPrivacyCollectedDataType</key>
       <string>NSPrivacyCollectedDataTypeUserID</string>
+      <key>NSPrivacyCollectedDataTypeLinked</key>
+      <true/>
+      <key>NSPrivacyCollectedDataTypeTracking</key>
+      <false/>
+      <key>NSPrivacyCollectedDataTypePurposes</key>
+      <array>
+        <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+      </array>
+    </dict>
+    <dict>
+      <key>NSPrivacyCollectedDataType</key>
+      <string>NSPrivacyCollectedDataTypePurchaseHistory</string>
       <key>NSPrivacyCollectedDataTypeLinked</key>
       <true/>
       <key>NSPrivacyCollectedDataTypeTracking</key>
@@ -84,6 +108,7 @@
       <key>NSPrivacyCollectedDataTypePurposes</key>
       <array>
         <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+        <string>NSPrivacyCollectedDataTypePurposeProductPersonalization</string>
       </array>
     </dict>
     <dict>
@@ -113,9 +138,10 @@
     <!--
       Coarse location: logging a visit stores (user_id, place_id, visited_at)
       on the server, which is a building-level record of where a signed-in
-      traveler has been. Precise coordinates are NOT transmitted or retained
-      (`visit.device_pose` is never populated) and camera frames never leave
-      the device, so only the coarse type is declared.
+      traveler has been and helps Lore prefer unvisited discoveries. Precise
+      coordinates and continuous scanner video are NOT transmitted or retained
+      (`visit.device_pose` is never populated). A user-confirmed scanner still
+      can be sent for identification and is covered by Photos or Videos above.
     -->
     <dict>
       <key>NSPrivacyCollectedDataType</key>
@@ -127,6 +153,7 @@
       <key>NSPrivacyCollectedDataTypePurposes</key>
       <array>
         <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+        <string>NSPrivacyCollectedDataTypePurposeProductPersonalization</string>
       </array>
     </dict>
   </array>
