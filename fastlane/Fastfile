@@ -29,8 +29,12 @@ def asc_token!
   )
 end
 
-def app_review_hold_enabled?
-  ENV.fetch("APP_REVIEW_HOLD", "").casecmp("true").zero?
+def app_review_hold_enabled!
+  value = ENV.fetch("APP_REVIEW_HOLD", "").downcase
+  UI.user_error!(
+    "APP_REVIEW_HOLD must be explicitly true or false in the app-store-production environment.",
+  ) unless %w[true false].include?(value)
+  value == "true"
 end
 
 platform :ios do
@@ -281,12 +285,14 @@ platform :ios do
     asc_token!
     UI.user_error!(
       "APP_REVIEW_HOLD must be true in the app-store-production environment before cancelling review.",
-    ) unless app_review_hold_enabled?
+    ) unless app_review_hold_enabled!
 
     expected_version = options[:expected_version].to_s
     expected_build = options[:expected_build].to_s
     UI.user_error!("expected_version is required") if expected_version.empty?
     UI.user_error!("expected_build is required") if expected_build.empty?
+    UI.user_error!("expected_version must contain only numeric dot-separated components") unless expected_version.match?(/\A\d+(?:\.\d+)*\z/)
+    UI.user_error!("expected_build must be a positive integer") unless expected_build.match?(/\A[1-9]\d*\z/)
 
     platform = Spaceship::ConnectAPI::Platform::IOS
     app = Spaceship::ConnectAPI::App.find(BUNDLE_ID)
@@ -360,23 +366,29 @@ platform :ios do
 
     unless submission_id.nil?
       completed = false
+      read_error = nil
       36.times do
         current = begin
                     Spaceship::ConnectAPI::ReviewSubmission.get(
                       review_submission_id: submission_id,
                       includes: "appStoreVersionForReview,items",
                     )
-                  rescue
-                    nil
+                  rescue => e
+                    read_error = e
+                    UI.message("Review-submission read failed; retrying: #{e.class}")
+                    sleep(5)
+                    next
                   end
-        if current.nil? || current.state == "COMPLETE"
+        if current&.state == "COMPLETE"
           completed = true
           break
         end
-        UI.message("Waiting for review cancellation: submission state=#{current.state}")
+        read_error = nil
+        UI.message("Waiting for review cancellation: submission state=#{current&.state || 'missing'}")
         sleep(5)
       end
-      UI.user_error!("Apple did not complete review cancellation within 3 minutes.") unless completed
+      detail = read_error.nil? ? "" : " Last read failed with #{read_error.class}."
+      UI.user_error!("Apple did not complete review cancellation within 3 minutes.#{detail}") unless completed
     end
 
     final_version = nil
@@ -391,12 +403,12 @@ platform :ios do
     end
 
     UI.user_error!("Apple no longer returned version #{expected_version} after cancellation.") if final_version.nil?
-    unsafe_states = %w[
-      WAITING_FOR_REVIEW IN_REVIEW PENDING_DEVELOPER_RELEASE READY_FOR_SALE
+    held_states = %w[
+      PREPARE_FOR_SUBMISSION DEVELOPER_REJECTED METADATA_REJECTED REJECTED READY_FOR_REVIEW
     ]
     UI.user_error!(
       "Lore is not confirmed held; version #{expected_version} is #{final_version.app_store_state}.",
-    ) if unsafe_states.include?(final_version.app_store_state)
+    ) unless held_states.include?(final_version.app_store_state)
 
     final_build = final_version.get_build
     UI.user_error!("Attached build changed while holding review.") if final_build&.version.to_s != expected_build
@@ -409,7 +421,7 @@ platform :ios do
   desc "Submit the editable App Store version for review (guarded)"
   lane :submit_for_review do
     asc_token!
-    UI.user_error!("App Review is held. Set APP_REVIEW_HOLD=false before submitting.") if app_review_hold_enabled?
+    UI.user_error!("App Review is held. Set APP_REVIEW_HOLD=false before submitting.") if app_review_hold_enabled!
     app = Spaceship::ConnectAPI::App.find(BUNDLE_ID)
     UI.user_error!("No app for #{BUNDLE_ID}") if app.nil?
     version = app.get_edit_app_store_version
@@ -450,7 +462,7 @@ platform :ios do
   desc "Swap the newest processed build onto the editable version and (re)submit"
   lane :swap_latest_build_and_resubmit do
     asc_token!
-    UI.user_error!("App Review is held. Set APP_REVIEW_HOLD=false before resubmitting.") if app_review_hold_enabled?
+    UI.user_error!("App Review is held. Set APP_REVIEW_HOLD=false before resubmitting.") if app_review_hold_enabled!
     platform = Spaceship::ConnectAPI::Platform::IOS
     app = Spaceship::ConnectAPI::App.find(BUNDLE_ID)
     UI.user_error!("No app for #{BUNDLE_ID}") if app.nil?
