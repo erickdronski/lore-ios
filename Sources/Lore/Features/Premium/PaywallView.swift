@@ -694,8 +694,9 @@ struct FeatureComparison: Identifiable {
         .init(label: "Auto-play walking guide", free: .no, plus: .yes),
         .init(label: "Offline city packs", free: .no, plus: .yes),
         // Live 2026-07-16 (DealSection): real marketplace offers matched to
-        // places. The row that makes the membership pay for itself.
-        .init(label: "Deals on the places you visit", free: .no, plus: .yes),
+        // places where approved inventory exists. Keep this scoped to coverage,
+        // not a blanket promise for every visit.
+        .init(label: "Curated deals where available", free: .no, plus: .yes),
         .init(label: "Visit journal & badges", free: .yes, plus: .yes),
     ]
 }
@@ -776,7 +777,7 @@ final class PaywallModel {
         var id: String { rawValue }
 
         /// The App Store Connect / StoreKit product identifier (docs/16 §1).
-        /// These are the live IDs the `Configuration.storekit` file and ASC
+        /// These are the live IDs the `StoreKit/Lore.storekit` file and ASC
         /// both define, not placeholders.
         var productID: String {
             switch self {
@@ -955,8 +956,6 @@ final class PaywallModel {
 
     /// Restore prior purchases via StoreKit 2 (`AppStore.sync()` +
     /// `Transaction.currentEntitlements`).
-    ///
-    /// TODO(P3): defer to `Purchases.shared.restorePurchases()` once RC is wired.
     func restore() async -> StoreKitService.RestoreOutcome {
         guard !isPurchasing else {
             return .failed(message: "Another App Store request is already in progress.")

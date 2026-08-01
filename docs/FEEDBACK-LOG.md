@@ -63,7 +63,7 @@ Legend: ✅ shipped · 🟡 already fixed in a later build (update to verify) ·
 | # | Note | Why |
 |---|------|-----|
 | 18 | "Sign in with Apple doesn't work" | Needs the App ID **Sign in with Apple** capability enabled in the Developer portal + the Apple provider configured in Supabase (Services ID + key). Google sign-in is already live; Apple needs these two switches. This is queued as task #32. |
-| 13 (Stripe) | "manage portal (Stripe) policies" | Subscriptions on iOS go through Apple IAP / RevenueCat, which needs the Paid Apps agreement + banking accepted in App Store Connect, then a RevenueCat account. |
+| 13 (Stripe) | "manage portal (Stripe) policies" | Subscriptions on iOS go through Apple IAP with StoreKit 2, not Stripe. The remaining gates are App Store Connect product/price agreement readiness and a real sandbox/TestFlight purchase + restore pass. |
 
 ---
 

@@ -55,16 +55,13 @@ enum EntitlementCachePolicy {
 /// exposes `isPlus`, true when any grant's status is `active` or `trialing`
 /// (docs/00-DECISIONS.md §7; the backend contract, `Entitlement.isActive`).
 ///
-/// **Two paths, unioned (docs/16-APPLE-TOOLKITS.md §1).** RevenueCat remains the
-/// planned server-side truth: its webhook writes the `entitlements` row this
-/// store reads over the network. StoreKit 2 is the client path, a
-/// `StoreKitService` reads `Transaction.currentEntitlements` on-device, which
-/// works offline and survives an RC outage or a first-launch-before-network.
-/// `isPlus` is the **union**: either source may *open* the gate, neither can
-/// subtract from the other (docs/16 §1: "Read it locally, union it with the RC
-/// answer, never subtract"). TODO(P3): when the RevenueCat SDK lands, RC becomes
-/// the primary purchase driver and this union narrows to RC-truth + StoreKit's
-/// offline belt-and-suspenders, the seam here does not change.
+/// **Two paths, unioned (docs/16-APPLE-TOOLKITS.md §1).** StoreKit 2 is the
+/// purchase path and local transaction truth. Lore records verified Apple
+/// transactions server-side in `entitlements` so signed-in users can restore
+/// access across devices. `StoreKitService` also reads
+/// `Transaction.currentEntitlements` on-device, which works offline and covers a
+/// first-launch-before-network. `isPlus` is the **union**: either source may
+/// *open* the gate, neither can subtract from the other.
 ///
 /// Doctrine (docs/00 §7): the app is generous by default. `isPlus == false`
 /// gates only the four Lore+ surfaces, the 4th deep dive of a day, tours,
@@ -122,11 +119,11 @@ final class EntitlementStore {
     /// grant opens every Lore+ surface; everything else (including no grant, a
     /// signed-out user, or an unconfirmed read) leaves it closed.
     ///
-    /// **Union of the two paths** (docs/16 §1): the server row (RevenueCat →
-    /// `entitlements`) *or* the on-device StoreKit 2 entitlement. Either opens
-    /// the gate; neither subtracts. StoreKit's read is the offline
-    /// belt-and-suspenders so a returning subscriber isn't gated during an RC
-    /// outage or before the first network round-trip.
+    /// **Union of the two paths** (docs/16 §1): the server row recorded from a
+    /// verified Apple transaction *or* the on-device StoreKit 2 entitlement.
+    /// Either opens the gate; neither subtracts. StoreKit's read is the offline
+    /// belt-and-suspenders so a returning subscriber isn't gated during a
+    /// backend outage or before the first network round-trip.
     var isPlus: Bool {
         #if DEBUG
         // Developer override: unlock every Lore+ surface for testing without a
