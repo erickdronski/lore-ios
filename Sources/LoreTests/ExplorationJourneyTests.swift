@@ -131,6 +131,18 @@ final class ExplorationJourneyTests: XCTestCase {
         XCTAssertLessThan(ranked[0].meters, ranked[1].meters)
     }
 
+    func testNearbyCardLayoutStaysCompactForDiscoveryDeck() {
+        XCTAssertEqual(NearMeCardLayout.cardWidth(isAccessibilitySize: false), 204)
+        XCTAssertLessThanOrEqual(NearMeCardLayout.minimumHeight(isAccessibilitySize: false), 190)
+        XCTAssertEqual(NearMeCardLayout.teaserLineLimit(isAccessibilitySize: false), 2)
+
+        XCTAssertGreaterThan(
+            NearMeCardLayout.minimumHeight(isAccessibilitySize: true),
+            NearMeCardLayout.minimumHeight(isAccessibilitySize: false)
+        )
+        XCTAssertEqual(NearMeCardLayout.teaserLineLimit(isAccessibilitySize: true), 3)
+    }
+
     func testCityRegionHandlesHomeAndInternationalMarkets() {
         XCTAssertEqual(CityRegion.region(forCountry: "US"), .unitedStates)
         XCTAssertEqual(CityRegion.region(forCountry: "JP"), .asia)

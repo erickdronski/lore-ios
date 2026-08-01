@@ -157,18 +157,12 @@ struct MapScreen: View {
                         .transition(.move(edge: .top).combined(with: .opacity))
                 }
             }
-            .safeAreaInset(edge: .bottom) {
-                // The composed Travel controls: filter chips over the near-me
-                // shelf, both reading the environment stores. Selecting a card
-                // opens the same place sheet a pin tap does.
-                TravelMapControls(
-                    places: model.places,
-                    onSelect: { selectedPlaceID = $0.id },
-                    onNeedsSignIn: onNeedsSignIn,
-                    relevance: relevance,
-                    city: city,
-                    theme: model.theme
-                )
+            .overlay(alignment: .bottom) {
+                // The composed Travel controls float above the map instead of
+                // becoming a safe-area inset. Shrinking MapKit's safe area when
+                // the deck expands can make SwiftUI re-solve the visible camera
+                // and zoom the city out; the deck should not own camera policy.
+                travelControls
             }
             .loreDossierPresentation(item: selectedPlaceBinding) { place in
                 // Detents are owned by PlaceCardView so opening the dossier can
@@ -249,6 +243,18 @@ struct MapScreen: View {
             }
             .mapStyle(mapKitStyle)
         }
+    }
+
+    private var travelControls: some View {
+        TravelMapControls(
+            places: model.places,
+            onSelect: { selectedPlaceID = $0.id },
+            onNeedsSignIn: onNeedsSignIn,
+            relevance: relevance,
+            city: city,
+            theme: model.theme
+        )
+        .padding(.bottom, 8)
     }
 
     /// Bridges Map's tag selection to a `.sheet(item:)` presentation.

@@ -38,16 +38,12 @@ struct NearMeShelf: View {
     @Environment(MapFilterStore.self) private var filters
     @Environment(\.openURL) private var openURL
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     /// Flips once per shelf population so the cards cascade in (LUXURY-MOTION §6).
     @State private var appeared = false
     /// Which of the shelf's places have a live offer — one bulk query per
     /// ranking, so a tile can wear a quiet "offers here" mark. Shown to
     /// everyone (the honest hook); the detail unlocks with Lore+.
     @State private var offerPlaceIDs: Set<String> = []
-    /// Tallest natural card in the current row. Applying it back to every card
-    /// prevents a jagged horizontal shelf without clipping Dynamic Type.
-    @State private var equalizedCardHeight: CGFloat = 0
 
     private var ranked: [RankedPlace] {
         NearMe.nearest(
@@ -159,22 +155,11 @@ struct NearMeShelf: View {
                         appeared: appeared,
                         reduceMotion: reduceMotion
                     ))
-                    .background(NearMeCardHeightReader())
-                    .frame(
-                        height: equalizedCardHeight > 0 ? equalizedCardHeight : nil,
-                        alignment: .top
-                    )
                 }
             }
             .padding(.horizontal, 16)
-            .padding(.bottom, 4)
+            .padding(.bottom, 2)
         }
-        .onPreferenceChange(NearMeCardHeightPreferenceKey.self) { height in
-            guard height.isFinite, height > 0 else { return }
-            equalizedCardHeight = height
-        }
-        .onChange(of: ranked.map(\.id)) { _, _ in equalizedCardHeight = 0 }
-        .onChange(of: dynamicTypeSize) { _, _ in equalizedCardHeight = 0 }
         .onAppear {
             if reduceMotion {
                 appeared = true
@@ -283,26 +268,21 @@ struct NearMeShelf: View {
     }
 }
 
-private struct NearMeCardHeightPreferenceKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
-    }
-}
-
-private struct NearMeCardHeightReader: View {
-    var body: some View {
-        GeometryReader { proxy in
-            Color.clear.preference(
-                key: NearMeCardHeightPreferenceKey.self,
-                value: proxy.size.height
-            )
-        }
-    }
-}
-
 // MARK: - Card
+
+enum NearMeCardLayout {
+    static func cardWidth(isAccessibilitySize: Bool) -> CGFloat {
+        isAccessibilitySize ? 248 : 204
+    }
+
+    static func minimumHeight(isAccessibilitySize: Bool) -> CGFloat {
+        isAccessibilitySize ? 238 : 188
+    }
+
+    static func teaserLineLimit(isAccessibilitySize: Bool) -> Int {
+        isAccessibilitySize ? 3 : 2
+    }
+}
 
 /// One near-you card: emoji medallion, name, live distance, and an inline
 /// "been here" toggle. Compact by doctrine (brand/ELEVATION.md §5b), a taste,
@@ -324,13 +304,12 @@ struct NearMeCard: View {
 
     private var place: Place { ranked.place }
     private var accent: Color { theme?.accentColor ?? LoreColor.brass300 }
-    private var cardWidth: CGFloat { dynamicTypeSize.isAccessibilitySize ? 260 : 220 }
-    /// A floor, not a target. It exists only so a row of cards lines up; the
-    /// teaser below now fills the space that used to sit empty, so this is set
-    /// near the natural content height rather than well above it. It was 246
-    /// while the teaser was capped at one line AND blank for 49% of places,
-    /// which left a large dead gap under the content on half the shelf.
-    private var cardMinimumHeight: CGFloat { dynamicTypeSize.isAccessibilitySize ? 268 : 214 }
+    private var isAccessibilitySize: Bool { dynamicTypeSize.isAccessibilitySize }
+    private var cardWidth: CGFloat { NearMeCardLayout.cardWidth(isAccessibilitySize: isAccessibilitySize) }
+    /// A floor, not a target. Each tile sizes to its own content; the shelf no
+    /// longer makes every card inherit the tallest card's height.
+    private var cardMinimumHeight: CGFloat { NearMeCardLayout.minimumHeight(isAccessibilitySize: isAccessibilitySize) }
+    private var teaserLineLimit: Int { NearMeCardLayout.teaserLineLimit(isAccessibilitySize: isAccessibilitySize) }
 
     /// Resolved place photo. Nil until it loads, or permanently when the place
     /// has no `wikipedia_title` (179 of 3,687) — the medallion carries the card
@@ -339,9 +318,9 @@ struct NearMeCard: View {
     @State private var photoResolved = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 11) {
+        VStack(alignment: .leading, spacing: 9) {
             Button(action: onSelect) {
-                VStack(alignment: .leading, spacing: 9) {
+                VStack(alignment: .leading, spacing: 8) {
                     HStack(alignment: .top) {
                         medallion
                         Spacer()
@@ -369,17 +348,15 @@ struct NearMeCard: View {
                         .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 2)
                         .multilineTextAlignment(.leading)
 
-                    // `teaser`, not `layer1?.hook`: the curated hook is empty on
-                    // 49% of places, which used to render nothing here while the
-                    // card kept its height. The server-derived fallback (first
-                    // sentence of the dive narrative) means every card has a
-                    // line to show, and 3 lines lets it fill the tile instead of
-                    // leaving the space blank.
+                    // `teaser`, not `layer1?.hook`: the curated hook is often
+                    // empty, while the server fallback keeps the card useful.
+                    // Cap it tightly so a single long note cannot stretch the
+                    // whole discovery shelf.
                     if let teaser = place.teaser, !teaser.isEmpty {
                         Text(teaser)
                             .font(LoreType.caption)
                             .foregroundStyle(LoreColor.bone.opacity(0.7))
-                            .lineLimit(dynamicTypeSize.isAccessibilitySize ? 4 : 3)
+                            .lineLimit(teaserLineLimit)
                             .multilineTextAlignment(.leading)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -399,7 +376,7 @@ struct NearMeCard: View {
             VisitToggle(place: place, source: .map, onNeedsSignIn: onNeedsSignIn, onLogged: onSelect)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(14)
+        .padding(12)
         .frame(width: cardWidth, alignment: .topLeading)
         .frame(minHeight: cardMinimumHeight, alignment: .topLeading)
         // Resolve from the title the read view now carries, so a shelf of cards
@@ -443,12 +420,12 @@ struct NearMeCard: View {
 
             if let photoURL {
                 BlurUpAsyncImage(url: photoURL)
-                    .frame(width: 48, height: 48)
+                    .frame(width: 44, height: 44)
                     .clipShape(Circle())
                     .transition(.opacity)
             }
         }
-            .frame(width: 48, height: 48)
+            .frame(width: 44, height: 44)
             .overlay(Circle().strokeBorder(accent.opacity(0.55), lineWidth: 1))
             // The emoji badge sits OUTSIDE the 48pt circle, so it must be an
             // overlay anchored to the frame rather than a member of the ZStack.
