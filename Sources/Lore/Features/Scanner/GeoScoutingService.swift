@@ -25,18 +25,23 @@ final class GeoScoutingService {
         case unavailable
         /// Device can't run geo tracking at all (rung 4, docs/05 §5).
         case unsupported
+
+        var statusSuffix: String {
+            switch self {
+            case .unknown: return ""
+            case .checking: return " · checking precise coverage"
+            case .available: return " · VPS coverage here"
+            case .unavailable: return " · no VPS coverage"
+            case .unsupported: return ""
+            }
+        }
     }
 
     private(set) var availability: Availability = .unknown
     private var activeRequestID = UUID()
 
     var statusSuffix: String {
-        switch availability {
-        case .unknown, .checking: return ""
-        case .available: return " · VPS coverage here"
-        case .unavailable: return " · no VPS coverage"
-        case .unsupported: return ""
-        }
+        availability.statusSuffix
     }
 
     /// Probes geo-tracking availability at a coordinate. Safe to call on
