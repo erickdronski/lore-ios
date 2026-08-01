@@ -1,4 +1,5 @@
 import CoreLocation
+import SwiftUI
 import XCTest
 @testable import Lore
 
@@ -160,6 +161,17 @@ final class ExplorationJourneyTests: XCTestCase {
 
     func testOfflineCityPackDownloadsStayHiddenForCurrentRelease() {
         XCTAssertFalse(Config.offlineCityPacksEnabled)
+    }
+
+    func testTourBrowseLayoutContainsDecorativeArtworkInsideCards() {
+        XCTAssertGreaterThan(TourBrowseLayout.sectionSpacing, 0)
+        XCTAssertGreaterThan(TourBrowseLayout.tourRowArtworkWidth, 0)
+        XCTAssertGreaterThan(TourBrowseLayout.tourRowArtworkHeight, 0)
+        XCTAssertGreaterThanOrEqual(TourBrowseLayout.tourRowArtworkTrailingInset, 0)
+        XCTAssertGreaterThanOrEqual(TourBrowseLayout.tourRowArtworkTopInset, 0)
+        XCTAssertEqual(TourBrowseLayout.hiddenInterstitialHeight, 0)
+        XCTAssertLessThanOrEqual(TourBrowseLayout.tourRowInsets.top, 4)
+        XCTAssertLessThanOrEqual(TourBrowseLayout.tourRowInsets.bottom, 4)
     }
 
     func testCityRegionHandlesHomeAndInternationalMarkets() {

@@ -35,7 +35,7 @@ struct CityDealsSection: View {
             if deals.isEmpty {
                 // Zero-size anchor: `.task` must fire while empty or the rail
                 // could never learn the city has offers (the empty-Group trap).
-                Color.clear.frame(width: 0, height: 0)
+                Color.clear.frame(width: 0, height: TourBrowseLayout.hiddenInterstitialHeight)
             } else if entitlements.isPlus {
                 section
             } else {
@@ -46,6 +46,9 @@ struct CityDealsSection: View {
         .sheet(isPresented: $showPaywall) {
             PaywallView(entitlements: entitlements, store: store, auth: auth, context: .general)
         }
+        .listRowBackground(Color.clear)
+        .listRowSeparator(.hidden)
+        .listRowInsets(deals.isEmpty ? EdgeInsets() : TourBrowseLayout.interstitialRowInsets)
     }
 
     private func load() async {
