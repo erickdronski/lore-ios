@@ -137,13 +137,13 @@ struct PaywallView: View {
             HStack(spacing: 10) {
                 valueHighlight("Go deeper", icon: "books.vertical.fill", detail: "Unlimited dossiers")
                 valueHighlight("Walk hands-free", icon: "headphones", detail: "Narrated tours")
-                valueHighlight("Travel ready", icon: "arrow.down.circle.fill", detail: "Offline city packs")
+                valueHighlight("Follow the route", icon: "figure.walk", detail: "Walking guides")
             }
 
             VStack(spacing: 10) {
                 valueHighlight("Go deeper", icon: "books.vertical.fill", detail: "Unlimited dossiers")
                 valueHighlight("Walk hands-free", icon: "headphones", detail: "Narrated tours")
-                valueHighlight("Travel ready", icon: "arrow.down.circle.fill", detail: "Offline city packs")
+                valueHighlight("Follow the route", icon: "figure.walk", detail: "Walking guides")
             }
         }
         .accessibilityElement(children: .contain)
@@ -679,9 +679,9 @@ struct FeatureComparison: Identifiable {
         case text(String)
     }
 
-    /// The honest table: only features that actually ship and are actually
-    /// gated. Offline city packs returned 2026-07-16, the day they shipped for
-    /// real (CityPackStore); early-access cities stay out until they exist.
+    /// The honest table mirrors the App Store / Terms benefit language:
+    /// deep dives, walking tours, and narration. Feature-specific gates can
+    /// still explain scoped extras where the user encounters them.
     static let all: [FeatureComparison] = [
         .init(label: "Unlimited scanning", free: .yes, plus: .yes),
         .init(label: "Layer-1 story cards", free: .yes, plus: .yes),
@@ -692,11 +692,6 @@ struct FeatureComparison: Identifiable {
         .init(label: "Curated walking tours", free: .text("Free"), plus: .text("All")),
         .init(label: "Audio narration", free: .no, plus: .yes),
         .init(label: "Auto-play walking guide", free: .no, plus: .yes),
-        .init(label: "Offline city packs", free: .no, plus: .yes),
-        // Live 2026-07-16 (DealSection): real marketplace offers matched to
-        // places where approved inventory exists. Keep this scoped to coverage,
-        // not a blanket promise for every visit.
-        .init(label: "Curated deals where available", free: .no, plus: .yes),
         .init(label: "Visit journal & badges", free: .yes, plus: .yes),
     ]
 }

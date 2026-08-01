@@ -59,6 +59,12 @@ struct VisionRead: Equatable, Sendable {
 @Observable
 final class VisionRecognitionService {
 
+    typealias Recognizer = (
+        _ cgImage: CGImage?,
+        _ pixelBuffer: CVPixelBuffer?,
+        _ orientation: CGImagePropertyOrientation
+    ) -> VisionRead
+
     /// The most recent read. Observed by the scanner view; mutated on main only.
     private(set) var latest: VisionRead = .empty
 
@@ -92,6 +98,16 @@ final class VisionRecognitionService {
     /// state, so it enables recognition only then — the whole pipeline idles
     /// (no classification, no OCR) in the common "found a place" case.
     @ObservationIgnored private var enabled = false
+    /// Incremented synchronously whenever the scanner disables/resets Vision.
+    /// Any in-flight recognition result from an older epoch is discarded before
+    /// it can repopulate the UI after teardown.
+    @ObservationIgnored private let epochLock = NSLock()
+    @ObservationIgnored private var epoch: UInt64 = 0
+    @ObservationIgnored private let recognizer: Recognizer
+
+    init(recognizer: @escaping Recognizer = VisionRecognitionService.perform) {
+        self.recognizer = recognizer
+    }
 
     // MARK: - Entry points
 
@@ -99,6 +115,7 @@ final class VisionRecognitionService {
     /// scanner calls this as its state changes so Vision never burns battery
     /// producing a read nothing will show.
     func setEnabled(_ on: Bool) {
+        if !on { advanceEpoch() }
         queue.async { [weak self] in self?.enabled = on }
     }
 
@@ -107,9 +124,10 @@ final class VisionRecognitionService {
     func recognize(pixelBuffer: CVPixelBuffer, orientation: CGImagePropertyOrientation = .up) {
         queue.async { [weak self] in
             guard let self, self.enabled, self.shouldRun() else { return }
-            let read = Self.perform(cgImage: nil, pixelBuffer: pixelBuffer, orientation: orientation)
+            let epoch = self.currentEpoch()
+            let read = self.recognizer(nil, pixelBuffer, orientation)
             self.lastCompleted = CACurrentMediaTime()
-            self.publish(read)
+            self.publish(read, epoch: epoch)
         }
     }
 
@@ -117,9 +135,10 @@ final class VisionRecognitionService {
     func recognize(cgImage: CGImage, orientation: CGImagePropertyOrientation = .up) {
         queue.async { [weak self] in
             guard let self else { return }
-            let read = Self.perform(cgImage: cgImage, pixelBuffer: nil, orientation: orientation)
+            let epoch = self.currentEpoch()
+            let read = self.recognizer(cgImage, nil, orientation)
             self.lastCompleted = CACurrentMediaTime()
-            self.publish(read)
+            self.publish(read, epoch: epoch)
         }
     }
 
@@ -130,7 +149,8 @@ final class VisionRecognitionService {
 
     /// Clear state when the scanner disappears.
     func reset() {
-        publish(.empty)
+        let epoch = advanceEpoch()
+        publish(.empty, epoch: epoch)
         queue.async { [weak self] in
             self?.lastCompleted = 0
             self?.enabled = false
@@ -143,8 +163,25 @@ final class VisionRecognitionService {
         CACurrentMediaTime() - lastCompleted >= Self.minimumInterval
     }
 
-    private func publish(_ read: VisionRead) {
-        DispatchQueue.main.async { [weak self] in self?.latest = read }
+    @discardableResult
+    private func advanceEpoch() -> UInt64 {
+        epochLock.lock()
+        defer { epochLock.unlock() }
+        epoch &+= 1
+        return epoch
+    }
+
+    private func currentEpoch() -> UInt64 {
+        epochLock.lock()
+        defer { epochLock.unlock() }
+        return epoch
+    }
+
+    private func publish(_ read: VisionRead, epoch: UInt64) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.currentEpoch() == epoch else { return }
+            self.latest = read
+        }
     }
 
     // MARK: - Recognition (pure, off the main actor)
