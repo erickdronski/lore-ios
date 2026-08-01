@@ -69,7 +69,7 @@ platform :ios do
     run_tests(
       project: "Lore.xcodeproj",
       scheme: "Lore",
-      devices: ["iPhone 16 Pro"],
+      devices: ["iPhone 17 Pro"],
       ensure_devices_found: true,
       clean: true,
       result_bundle: true,

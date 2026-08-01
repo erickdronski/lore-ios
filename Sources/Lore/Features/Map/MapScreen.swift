@@ -102,6 +102,7 @@ struct MapScreen: View {
     var body: some View {
         NavigationStack {
             baseMap
+            .ignoresSafeArea()
             // Depth behind an open card (LUXURY-MOTION §4): the map recedes —
             // dims to a scrim + a soft blur, so the focused place sheet floats.
             // Reduce Motion keeps the dim (a still tint is safe) but drops blur.
@@ -633,11 +634,21 @@ final class MapScreenModel {
         }
     }
 
-    /// A region roughly framing all loaded pins, as a fly-to fallback.
-    private static func regionFitting(_ places: [Place]) -> MKCoordinateRegion? {
+    /// A region roughly framing the loaded city pins, as a fly-to fallback.
+    /// Uses a median anchor and a metro-radius inlier pass so one polluted
+    /// coordinate cannot zoom the deck out to a country or continent.
+    static func regionFitting(_ places: [Place]) -> MKCoordinateRegion? {
         guard !places.isEmpty else { return nil }
-        let lats = places.map(\.lat)
-        let lngs = places.map(\.lng)
+        let anchor = CLLocation(
+            latitude: median(places.map(\.lat)),
+            longitude: median(places.map(\.lng))
+        )
+        let inliers = places.filter {
+            anchor.distance(from: $0.location) <= fallbackRegionMaxMeters
+        }
+        let fittedPlaces = inliers.isEmpty ? places : inliers
+        let lats = fittedPlaces.map(\.lat)
+        let lngs = fittedPlaces.map(\.lng)
         guard let minLat = lats.min(), let maxLat = lats.max(),
               let minLng = lngs.min(), let maxLng = lngs.max() else { return nil }
         let center = CLLocationCoordinate2D(
@@ -645,10 +656,21 @@ final class MapScreenModel {
             longitude: (minLng + maxLng) / 2
         )
         let span = MKCoordinateSpan(
-            latitudeDelta: max(0.02, (maxLat - minLat) * 1.4),
-            longitudeDelta: max(0.02, (maxLng - minLng) * 1.4)
+            latitudeDelta: clampedCityDelta((maxLat - minLat) * 1.4),
+            longitudeDelta: clampedCityDelta((maxLng - minLng) * 1.4)
         )
         return MKCoordinateRegion(center: center, span: span)
+    }
+
+    private static func clampedCityDelta(_ raw: Double) -> CLLocationDegrees {
+        min(0.18, max(0.02, raw))
+    }
+
+    private static let fallbackRegionMaxMeters: CLLocationDistance = 50_000
+
+    private static func median(_ values: [Double]) -> Double {
+        let sorted = values.sorted()
+        return sorted[sorted.count / 2]
     }
 
     /// Approximate MapKit span from the curated web-style zoom. This keeps

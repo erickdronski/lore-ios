@@ -14,13 +14,14 @@ import UIKit
 /// does. Each card carries an inline `VisitToggle`, so marking "been here" is
 /// zero extra navigation.
 ///
-/// Honors the persona lens and hard filter: `MapRelevance.arrange` orders the
-/// candidates (for-you first, hidden kinds dropped) before the nearest-N cut, so
-/// the shelf shows what's both *close* and *relevant*, never a hidden kind.
+/// Honors the persona lens without redefining "near": hidden kinds are dropped,
+/// for-you places get a badge, and the shelf itself remains distance-first so
+/// its live meters and ordering describe the user's actual surroundings.
 struct NearMeShelf: View {
     /// The city's places (the same array the map renders).
     let places: [Place]
-    /// Persona weighting + hard filter, so the shelf respects the map's lens.
+    /// Persona weighting + hard filter, so the shelf respects the map's lens
+    /// while keeping "around me" ordered by real distance.
     let relevance: MapRelevance
     /// Present the place (host reuses its pin-tap sheet).
     let onSelect: (Place) -> Void
@@ -38,6 +39,7 @@ struct NearMeShelf: View {
     @Environment(MapFilterStore.self) private var filters
     @Environment(\.openURL) private var openURL
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     /// Flips once per shelf population so the cards cascade in (LUXURY-MOTION §6).
     @State private var appeared = false
     /// Which of the shelf's places have a live offer — one bulk query per
@@ -160,6 +162,13 @@ struct NearMeShelf: View {
             .padding(.horizontal, 16)
             .padding(.bottom, 2)
         }
+        .frame(
+            maxHeight: NearMeCardLayout.shelfMaxHeight(
+                isAccessibilitySize: dynamicTypeSize.isAccessibilitySize
+            ),
+            alignment: .top
+        )
+        .fixedSize(horizontal: false, vertical: true)
         .onAppear {
             if reduceMotion {
                 appeared = true
@@ -279,6 +288,10 @@ enum NearMeCardLayout {
         isAccessibilitySize ? 238 : 188
     }
 
+    static func shelfMaxHeight(isAccessibilitySize: Bool) -> CGFloat {
+        minimumHeight(isAccessibilitySize: isAccessibilitySize) + (isAccessibilitySize ? 26 : 18)
+    }
+
     static func teaserLineLimit(isAccessibilitySize: Bool) -> Int {
         isAccessibilitySize ? 3 : 2
     }
@@ -368,8 +381,6 @@ struct NearMeCard: View {
             .accessibilityLabel(Text(cardAccessibilityLabel))
             .accessibilityHint(Text("Opens this field note"))
 
-            Spacer(minLength: 0)
-
             // Marking visited here flows straight into the place, where the
             // "your lore" editor lives — so adding a lore is one gesture from
             // the shelf, not a scavenger hunt.
@@ -379,6 +390,7 @@ struct NearMeCard: View {
         .padding(12)
         .frame(width: cardWidth, alignment: .topLeading)
         .frame(minHeight: cardMinimumHeight, alignment: .topLeading)
+        .fixedSize(horizontal: false, vertical: true)
         // Resolve from the title the read view now carries, so a shelf of cards
         // costs zero extra dive fetches. WikipediaService is an actor with a
         // cache that also remembers misses, so scrolling back does not refetch.
@@ -572,9 +584,9 @@ struct RankedPlace: Identifiable {
 
 /// The nearest-N computation, factored out so it's pure and testable.
 enum NearMe {
-    /// The nearest `limit` places to `location`, after the persona lens orders
-    /// candidates and the hard filter drops hidden kinds. With no `location`
-    /// (permission pending), returns empty so the shelf shows its prompt.
+    /// The nearest `limit` places to `location`, after the hard filter drops
+    /// hidden kinds. With no `location` (permission pending), returns empty so
+    /// the shelf shows its prompt.
     static func nearest(
         to location: CLLocation?,
         among places: [Place],

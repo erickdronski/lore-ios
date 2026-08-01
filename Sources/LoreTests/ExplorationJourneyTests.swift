@@ -134,13 +134,28 @@ final class ExplorationJourneyTests: XCTestCase {
     func testNearbyCardLayoutStaysCompactForDiscoveryDeck() {
         XCTAssertEqual(NearMeCardLayout.cardWidth(isAccessibilitySize: false), 204)
         XCTAssertLessThanOrEqual(NearMeCardLayout.minimumHeight(isAccessibilitySize: false), 190)
+        XCTAssertLessThanOrEqual(NearMeCardLayout.shelfMaxHeight(isAccessibilitySize: false), 210)
         XCTAssertEqual(NearMeCardLayout.teaserLineLimit(isAccessibilitySize: false), 2)
 
         XCTAssertGreaterThan(
             NearMeCardLayout.minimumHeight(isAccessibilitySize: true),
             NearMeCardLayout.minimumHeight(isAccessibilitySize: false)
         )
+        XCTAssertLessThanOrEqual(NearMeCardLayout.shelfMaxHeight(isAccessibilitySize: true), 270)
         XCTAssertEqual(NearMeCardLayout.teaserLineLimit(isAccessibilitySize: true), 3)
+    }
+
+    func testMapFallbackCameraIgnoresFarOutlierCoordinates() throws {
+        let close = place(id: "close", kind: "building", lat: 41.882, lng: -87.629)
+        let farther = place(id: "farther", kind: "park", lat: 41.89, lng: -87.629)
+        let overseas = place(id: "overseas", kind: "building", lat: 48.8566, lng: 2.3522)
+
+        let region = try XCTUnwrap(MapScreenModel.regionFitting([overseas, farther, close]))
+
+        XCTAssertEqual(region.center.latitude, 41.886, accuracy: 0.01)
+        XCTAssertEqual(region.center.longitude, -87.629, accuracy: 0.01)
+        XCTAssertLessThanOrEqual(region.span.latitudeDelta, 0.18)
+        XCTAssertLessThanOrEqual(region.span.longitudeDelta, 0.18)
     }
 
     func testOfflineCityPackDownloadsStayHiddenForCurrentRelease() {
