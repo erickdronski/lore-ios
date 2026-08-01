@@ -88,6 +88,18 @@ final class ScannerLogicTests: XCTestCase {
         XCTAssertFalse(LocationHeadingProvider.isHeadingSampleFresh(stale, now: now))
     }
 
+    func testLocationRuntimeIssueMappingKeepsTransientUnknownSilent() {
+        XCTAssertNil(LocationHeadingProvider.runtimeIssue(for: CLError(.locationUnknown)))
+        XCTAssertEqual(
+            LocationHeadingProvider.runtimeIssue(for: CLError(.denied)),
+            .permissionDenied
+        )
+        XCTAssertEqual(
+            LocationHeadingProvider.runtimeIssue(for: CLError(.network)),
+            .locationUnavailable
+        )
+    }
+
     func testScannerLocalContextLocksNearestLiveCityWithinCoverage() {
         let chicago = city(slug: "chicago", lat: 41.8827, lng: -87.6233)
         let paris = city(slug: "paris", lat: 48.8566, lng: 2.3522)
@@ -385,6 +397,43 @@ final class SpecialistJourneyRegressionTests: XCTestCase {
         XCTAssertEqual(nearby.accessibilityAnnouncement, "City Hall selected from the stack. 80 m ahead.")
         XCTAssertEqual(here.statusLine, "Confirmed Place")
         XCTAssertEqual(here.accessibilityAnnouncement, "Place selected from the stack. You're here.")
+    }
+
+    func testPostcardCaptureRequiresLockedPlace() {
+        XCTAssertFalse(ScannerCapturePolicy.canCaptureMoment(
+            preciseMode: false,
+            isTransitioningToPreciseMode: false,
+            permissionDenied: false,
+            needsPreciseLocation: false,
+            localContextBlocksScanning: false,
+            isLoadingContent: false,
+            hasLockedPlace: false
+        ))
+        XCTAssertTrue(ScannerCapturePolicy.canCaptureMoment(
+            preciseMode: false,
+            isTransitioningToPreciseMode: false,
+            permissionDenied: false,
+            needsPreciseLocation: false,
+            localContextBlocksScanning: false,
+            isLoadingContent: false,
+            hasLockedPlace: true
+        ))
+        XCTAssertFalse(ScannerCapturePolicy.canCaptureMoment(
+            preciseMode: true,
+            isTransitioningToPreciseMode: false,
+            permissionDenied: false,
+            needsPreciseLocation: false,
+            localContextBlocksScanning: false,
+            isLoadingContent: false,
+            hasLockedPlace: true
+        ))
+    }
+
+    func testGeoScoutingCheckingStateIsVisible() {
+        XCTAssertEqual(GeoScoutingService.Availability.checking.statusSuffix, " · checking precise coverage")
+        XCTAssertEqual(GeoScoutingService.Availability.available.statusSuffix, " · VPS coverage here")
+        XCTAssertEqual(GeoScoutingService.Availability.unavailable.statusSuffix, " · no VPS coverage")
+        XCTAssertEqual(GeoScoutingService.Availability.unknown.statusSuffix, "")
     }
 
     func testScannerOrientationMapsEveryIPadRotation() {

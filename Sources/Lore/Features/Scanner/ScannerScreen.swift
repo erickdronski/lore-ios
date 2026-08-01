@@ -595,7 +595,10 @@ struct ScannerScreen: View {
             HStack {
                 CompassRing(headingDegrees: model.pose.headingDegrees)
                 Spacer()
-                if model.canLockOn || model.preciseMode || model.isTransitioningToPreciseMode {
+                if model.canLockOn
+                    || model.preciseMode
+                    || model.isTransitioningToPreciseMode
+                    || model.isCheckingPreciseCoverage {
                     lockOnToggle
                 } else {
                     // Balance the compass so the row reads symmetric.
@@ -645,13 +648,13 @@ struct ScannerScreen: View {
             }
         } label: {
             HStack(spacing: 4) {
-                if model.isTransitioningToPreciseMode {
+                if model.isTransitioningToPreciseMode || model.isCheckingPreciseCoverage {
                     ProgressView().tint(LoreColor.bone).controlSize(.small)
                 } else {
                     Image(systemName: model.preciseMode ? "scope" : "dot.viewfinder")
                         .font(.system(size: 13, weight: .semibold))
                 }
-                Text(model.isTransitioningToPreciseMode ? "Starting" : (model.preciseMode ? "Precise on" : "Lock on"))
+                Text(model.preciseButtonTitle)
                     .font(LoreType.button)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
@@ -671,10 +674,12 @@ struct ScannerScreen: View {
             )
         }
         .buttonStyle(.plain)
-        .disabled(model.isTransitioningToPreciseMode)
+        .disabled(model.isTransitioningToPreciseMode || model.isCheckingPreciseCoverage)
         .accessibilityLabel(Text(
             model.isTransitioningToPreciseMode
                 ? "Starting precise AR"
+                : model.isCheckingPreciseCoverage
+                ? "Checking precise AR coverage"
                 : model.preciseMode
                 ? "Precise AR on, tap to return to coarse mode"
                 : "Lock on, start precise AR"
@@ -1557,7 +1562,7 @@ final class ScannerModel {
         case .coverageUnavailable:
             return "Couldn't check local scanner coverage"
         case .foundNearby(let n):
-            return String(format: L10n.t("scan.foundNearby"), n)
+            return String(format: L10n.t("scan.foundNearby"), n) + scouting.statusSuffix
         case .nothingRecognized:
             return L10n.t("scan.nothingHere")
         }
@@ -1581,12 +1586,15 @@ final class ScannerModel {
     }
 
     var canCaptureMoment: Bool {
-        !preciseMode
-            && !isTransitioningToPreciseMode
-            && !permissionDenied
-            && !needsPreciseLocation
-            && !localContextBlocksScanning
-            && !isLoadingContent
+        ScannerCapturePolicy.canCaptureMoment(
+            preciseMode: preciseMode,
+            isTransitioningToPreciseMode: isTransitioningToPreciseMode,
+            permissionDenied: permissionDenied,
+            needsPreciseLocation: needsPreciseLocation,
+            localContextBlocksScanning: localContextBlocksScanning,
+            isLoadingContent: isLoadingContent,
+            hasLockedPlace: lockedRanked != nil
+        )
     }
 
     /// Whether the "Lock on" upgrade is offered: coverage scouted available
@@ -1600,6 +1608,22 @@ final class ScannerModel {
             && pose.freshLocation() != nil
             && pose.freshHeading() != nil
             && !places.isEmpty
+    }
+
+    var isCheckingPreciseCoverage: Bool {
+        !preciseMode
+            && !isTransitioningToPreciseMode
+            && scouting.availability == .checking
+            && GeoARSessionController.isSupported
+            && pose.freshLocation() != nil
+            && pose.freshHeading() != nil
+            && !places.isEmpty
+    }
+
+    var preciseButtonTitle: String {
+        if isTransitioningToPreciseMode { return "Starting" }
+        if isCheckingPreciseCoverage { return "Checking" }
+        return preciseMode ? "Precise on" : "Lock on"
     }
 
     /// The precise-mode render set: in-front projections only, joined back
@@ -1863,11 +1887,12 @@ final class ScannerModel {
     /// crashes the scan.
     func captureMoment() async {
         guard !preciseMode,
+              let lockedPlace = lockedRanked?.place,
               let data = await camera.capturePhotoData(),
               let image = UIImage(data: data) else { return }
         capturedShot = CapturedShot(
             image: image,
-            place: lockedRanked?.place,
+            place: lockedPlace,
             city: loadedCity ?? Config.defaultCity
         )
     }

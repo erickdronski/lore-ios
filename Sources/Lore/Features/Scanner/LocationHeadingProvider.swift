@@ -10,6 +10,20 @@ struct ScannerHeadingSample: Equatable, Sendable {
     let timestamp: Date
 }
 
+enum ScannerLocationRuntimeIssue: Equatable, Sendable {
+    case permissionDenied
+    case locationUnavailable
+
+    var statusLine: String {
+        switch self {
+        case .permissionDenied:
+            return L10n.t("scan.permissionNeeded")
+        case .locationUnavailable:
+            return "Location unavailable · try again in a moment"
+        }
+    }
+}
+
 /// GPS + compass + gravity source for the coarse scanner (docs/05 §5, rung 2).
 ///
 /// Publishes location, true heading, their accuracy figures, and the camera's
@@ -32,6 +46,7 @@ final class LocationHeadingProvider: NSObject, CLLocationManagerDelegate {
 
     private(set) var location: CLLocation?
     private(set) var headingSample: ScannerHeadingSample?
+    private(set) var runtimeIssue: ScannerLocationRuntimeIssue?
     /// Degrees clockwise from true north; -1 while unknown or stale.
     var headingDegrees: Double { freshHeading()?.degrees ?? -1 }
     /// Compass accuracy in degrees; negative while unknown or stale.
@@ -96,7 +111,9 @@ final class LocationHeadingProvider: NSObject, CLLocationManagerDelegate {
     /// Human-readable status for the StatusChip (localized chrome).
     var statusLine: String {
         if !isAuthorized { return L10n.t("scan.permissionNeeded") }
-        guard let location = freshLocation() else { return L10n.t("scan.findingBlock") }
+        guard let location = freshLocation() else {
+            return runtimeIssue?.statusLine ?? L10n.t("scan.findingBlock")
+        }
         let radius = max(1, Int(location.horizontalAccuracy.rounded()))
         if freshHeading() == nil { return "±\(radius) m · \(L10n.t("scan.findingNorth"))" }
         return "\(L10n.t("scan.coarseMode")) · ±\(radius) m"
@@ -139,6 +156,20 @@ final class LocationHeadingProvider: NSObject, CLLocationManagerDelegate {
         // The previous sample was calculated against the old top edge. Wait
         // for Core Location to deliver one in the new orientation.
         headingSample = nil
+    }
+
+    static func runtimeIssue(for error: Error) -> ScannerLocationRuntimeIssue? {
+        guard let coreLocationError = error as? CLError else {
+            return .locationUnavailable
+        }
+        switch coreLocationError.code {
+        case .locationUnknown:
+            return nil
+        case .denied:
+            return .permissionDenied
+        default:
+            return .locationUnavailable
+        }
     }
 
     func start() {
@@ -238,6 +269,7 @@ final class LocationHeadingProvider: NSObject, CLLocationManagerDelegate {
               fix.horizontalAccuracy > 0,
               fix.horizontalAccuracy < 100
         else { return }
+        runtimeIssue = nil
         location = fix
     }
 
@@ -270,7 +302,14 @@ final class LocationHeadingProvider: NSObject, CLLocationManagerDelegate {
         _ manager: CLLocationManager,
         didFailWithError error: Error
     ) {
-        // Keep the last fix for diagnostics; `freshLocation()` prevents it from
-        // driving scanner locks after it expires.
+        guard let issue = Self.runtimeIssue(for: error) else {
+            return
+        }
+        runtimeIssue = issue
+        if issue == .permissionDenied {
+            location = nil
+            headingSample = nil
+            onPermissionDenied?()
+        }
     }
 }
