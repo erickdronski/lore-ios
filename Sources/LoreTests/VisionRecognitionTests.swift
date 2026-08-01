@@ -64,6 +64,25 @@ final class VisionRecognitionTests: XCTestCase {
         XCTAssertEqual(read.phrase, "I can read “EMPIRE STATE”")
     }
 
+    func testResetDropsInFlightAsyncRead() async throws {
+        let recognitionStarted = expectation(description: "recognition started")
+        let releaseRecognition = DispatchSemaphore(value: 0)
+        let service = VisionRecognitionService { _, _, _ in
+            recognitionStarted.fulfill()
+            releaseRecognition.wait()
+            return VisionRead(topCategory: "skyscraper", confidence: 0.92, readableText: ["STALE"])
+        }
+
+        service.recognize(cgImage: renderText("STALE"))
+        await fulfillment(of: [recognitionStarted], timeout: 1.0)
+
+        service.reset()
+        releaseRecognition.signal()
+
+        try await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertEqual(service.latest, .empty)
+    }
+
     // MARK: - Helpers
 
     private func renderText(_ text: String, size: CGSize = CGSize(width: 640, height: 200)) -> CGImage {
