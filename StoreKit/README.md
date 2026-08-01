@@ -2,8 +2,7 @@
 
 A local **StoreKit Configuration file** so the Lore+ purchase, 7-day trial
 eligibility, and restore can be exercised in the simulator with **zero App Store
-Connect / RevenueCat dependency** (docs/16-APPLE-TOOLKITS.md §1: "do this during
-P1/P2 so the paywall UI is real before the money plumbing is").
+Connect dependency**.
 
 ## What it defines
 
@@ -39,29 +38,25 @@ not flip only one side.
 
 ## Wiring it into the scheme
 
-The generated shared `Lore` scheme does not currently reference this file. On a
-development machine, after `xcodegen generate`:
+`project.yml` wires this file into the generated shared `Lore` scheme through
+`storeKitConfiguration: StoreKit/Lore.storekit`. After `xcodegen generate`, run
+the app in the simulator. `Product.products(for:)` returns the local products
+with localized `displayPrice`, `product.purchase()` shows the test sheet, and
+`Transaction.currentEntitlements` reflects the test purchase.
 
-1. Xcode → **Product → Scheme → Edit Scheme… → Run → Options**.
-2. **StoreKit Configuration** → select `StoreKit/Lore.storekit`.
-3. Run in the simulator. `Product.products(for:)` now returns these two products
-   with localized `displayPrice`, `product.purchase()` shows the test sheet, and
-   `Transaction.currentEntitlements` reflects the test purchase.
-4. **Debug → StoreKit → Manage Transactions** to reset/refund and re-test the
-   trial-eligibility branch (subscribe once → the CTA should drop the trial copy
-   and read "Subscribe").
+Use **Debug → StoreKit → Manage Transactions** to reset/refund and re-test the
+trial-eligibility branch (subscribe once → the CTA should drop the trial copy
+and read "Subscribe").
 
 The internal UUIDs here are placeholders; Xcode fills real ones on first open.
 The `productID`s are load-bearing. The paywall displays only StoreKit's
 localized `Product.displayPrice`, never the numeric values in this README.
 
-## Relationship to RevenueCat (the P3 server-side truth)
+## Relationship to the backend entitlement truth
 
-This file drives **StoreKit 2 directly** — the client path adopted now. At P3,
-RevenueCat becomes the server-side entitlement truth (its webhook writes the
-`entitlements` row `EntitlementStore` reads) and the primary purchase driver
-(`Purchases.shared`, which runs on StoreKit 2 under the hood). This
-configuration file stays useful for offline/simulator testing of the on-device
-belt-and-suspenders read. See the reconciliation TODOs in `StoreKitService.swift`
-and `PaywallView.swift`. Do **not** run a second raw purchase path in parallel
-with RevenueCat once it exists (docs/16 §1: the double-bookkeeping trap).
+This file drives **StoreKit 2 directly**. The app records verified Apple-signed
+transactions to Lore's backend so `EntitlementStore` can restore access across
+devices, while `StoreKitService` remains the on-device transaction truth for
+offline and first-launch-before-network access. Keep the StoreKit product IDs,
+App Store Connect products, and backend entitlement recorder in sync; do not add
+a second purchase provider without a separate entitlement migration plan.

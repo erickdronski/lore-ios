@@ -179,7 +179,7 @@ struct DealSection: View {
 
     /// Shows the *shape* of the value (which families are here + the true
     /// count) without revealing the offers, behind one soft lock. No prices,
-    /// no pressure — a quiet promise that pays for itself.
+    /// no pressure, and no promise beyond approved inventory that is really here.
     private var lockedTeaser: some View {
         Button {
             showPaywall = true
