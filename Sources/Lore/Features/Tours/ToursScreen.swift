@@ -23,9 +23,12 @@ struct ToursScreen: View {
     /// The city switcher sheet (TestFlight feedback: "how does a user change
     /// the city here?").
     @State private var showCitySwitcher = false
+    /// Pushes tour detail without using a visible `NavigationLink` row accessory,
+    /// so the card remains the full visual tap target.
+    @State private var tourPath: [Tour] = []
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $tourPath) {
             List {
                 madeForYouSection
 
@@ -43,11 +46,7 @@ struct ToursScreen: View {
 
                 // City passes & standing deals (Lore+): the day-planner's
                 // money section. Self-hides for cities with nothing real.
-                Section {
-                    CityDealsSection(city: router.selectedCity)
-                        .listRowBackground(Color.clear)
-                        .listRowInsets(EdgeInsets())
-                }
+                CityDealsSection(city: router.selectedCity)
 
                 switch model.state {
                 case .loading:
@@ -70,16 +69,20 @@ struct ToursScreen: View {
                     ForEach(model.cities, id: \.self) { city in
                         Section {
                             ForEach(model.toursByCity[city] ?? []) { tour in
-                                NavigationLink(value: tour) {
+                                Button {
+                                    Haptics.play(.chipTap)
+                                    tourPath.append(tour)
+                                } label: {
                                     TourRow(
                                         tour: tour,
                                         isPlus: entitlements.isPlus,
                                         userID: auth.session?.user.id
                                     )
                                 }
+                                .buttonStyle(.plain)
                                 .listRowBackground(Color.clear)
                                 .listRowSeparator(.hidden)
-                                .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                                .listRowInsets(TourBrowseLayout.tourRowInsets)
                             }
                         } header: {
                             Text(city.replacingOccurrences(of: "-", with: " ").capitalized)
@@ -91,6 +94,7 @@ struct ToursScreen: View {
                 }
             }
             .listStyle(.insetGrouped)
+            .listSectionSpacing(TourBrowseLayout.sectionSpacing)
             .scrollContentBackground(.hidden)
             .background(LoreColor.bone100)
             .navigationTitle("Tours")
@@ -200,6 +204,18 @@ struct ToursScreen: View {
     }
 }
 
+enum TourBrowseLayout {
+    static let sectionSpacing: CGFloat = 14
+    static let tourRowCornerRadius: CGFloat = 18
+    static let tourRowArtworkWidth: CGFloat = 118
+    static let tourRowArtworkHeight: CGFloat = 76
+    static let tourRowArtworkTopInset: CGFloat = 8
+    static let tourRowArtworkTrailingInset: CGFloat = 10
+    static let hiddenInterstitialHeight: CGFloat = 0
+    static let tourRowInsets = EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16)
+    static let interstitialRowInsets = EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16)
+}
+
 /// The featured "1 Hour In {city}" entry: a dark field-guide cover with a
 /// route signature and one Amber call to action. Taps generate the walk on the
 /// fly (a brief routing state), then push the standard tour stepper.
@@ -304,9 +320,13 @@ struct TourRow: View {
     var userID: String?
     @State private var progress = TourProgressStore.Progress.empty
 
+    private var cardShape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: TourBrowseLayout.tourRowCornerRadius, style: .continuous)
+    }
+
     var body: some View {
         ZStack(alignment: .topTrailing) {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            cardShape
                 .fill(LoreColor.bone50)
 
             TourRouteArtwork(
@@ -314,11 +334,12 @@ struct TourRow: View {
                 color: LoreColor.brass,
                 activeFraction: progressFraction
             )
-            .frame(width: 132, height: 82)
+            .frame(width: TourBrowseLayout.tourRowArtworkWidth, height: TourBrowseLayout.tourRowArtworkHeight)
             .opacity(0.18)
-            .padding(.top, 6)
-            .padding(.trailing, -14)
+            .padding(.top, TourBrowseLayout.tourRowArtworkTopInset)
+            .padding(.trailing, TourBrowseLayout.tourRowArtworkTrailingInset)
             .accessibilityHidden(true)
+            .allowsHitTesting(false)
 
             HStack(alignment: .top, spacing: 13) {
                 ZStack {
@@ -371,8 +392,9 @@ struct TourRow: View {
             }
             .padding(15)
         }
+        .clipShape(cardShape)
         .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            cardShape
                 .strokeBorder(LoreColor.bone300.opacity(0.8), lineWidth: 1)
         }
         .loreElevation(.elev1)
