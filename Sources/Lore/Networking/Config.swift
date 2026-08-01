@@ -53,6 +53,12 @@ enum Config {
     /// app cannot deliver.
     static let pushNotificationsEnabled = false
 
+    /// Offline city-pack downloads are intentionally excluded from the current
+    /// App Store release. Keep the cache/store code for future work, but do not
+    /// render a purchase-gated download surface until legal, App Store copy, and
+    /// physical-device offline verification are ready together.
+    static let offlineCityPacksEnabled = false
+
     /// Render the native MapLibre GL Native map (the flagship map, docs/17 +
     /// docs/22) instead of the MapKit stand-in. Default false so the app builds
     /// and runs today on any machine, MapKit is still the shipped map. Flip to

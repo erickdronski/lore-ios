@@ -29,14 +29,16 @@ struct ToursScreen: View {
             List {
                 madeForYouSection
 
-                // Take this city with you: pins every story, tour, and photo
-                // so the walk survives subways and roaming dead zones (Lore+).
-                Section {
-                    CityPackButton(city: router.selectedCity) {
-                        showPackPaywall = true
+                if Config.offlineCityPacksEnabled {
+                    // Take this city with you: pins every story, tour, and photo
+                    // so the walk survives subways and roaming dead zones (Lore+).
+                    Section {
+                        CityPackButton(city: router.selectedCity) {
+                            showPackPaywall = true
+                        }
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets())
                     }
-                    .listRowBackground(Color.clear)
-                    .listRowInsets(EdgeInsets())
                 }
 
                 // City passes & standing deals (Lore+): the day-planner's

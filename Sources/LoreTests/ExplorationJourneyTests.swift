@@ -143,6 +143,10 @@ final class ExplorationJourneyTests: XCTestCase {
         XCTAssertEqual(NearMeCardLayout.teaserLineLimit(isAccessibilitySize: true), 3)
     }
 
+    func testOfflineCityPackDownloadsStayHiddenForCurrentRelease() {
+        XCTAssertFalse(Config.offlineCityPacksEnabled)
+    }
+
     func testCityRegionHandlesHomeAndInternationalMarkets() {
         XCTAssertEqual(CityRegion.region(forCountry: "US"), .unitedStates)
         XCTAssertEqual(CityRegion.region(forCountry: "JP"), .asia)

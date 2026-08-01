@@ -50,7 +50,9 @@ struct SettingsView: View {
             whatYouSeeSection
             preferencesSection
             languageSection
-            OfflinePacksSection()
+            if Config.offlineCityPacksEnabled {
+                OfflinePacksSection()
+            }
             permissionsSection
             subscriptionSection
             privacyDataSection

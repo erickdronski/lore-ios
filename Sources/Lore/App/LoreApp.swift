@@ -42,7 +42,8 @@ struct LoreApp: App {
     @State private var diveMeter = DiveMeter()
     /// Owns the Travel stores (visits + filters) and the unlock bridge.
     @State private var travel: TravelSession
-    /// Offline city packs: "Download this city" state + orchestration (Lore+).
+    /// Offline city pack state + orchestration. UI is hidden while
+    /// Config.offlineCityPacksEnabled is false for the current release.
     @State private var packs = CityPackStore()
 
     init() {

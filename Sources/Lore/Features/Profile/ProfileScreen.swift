@@ -278,7 +278,7 @@ struct ProfileScreen: View {
                             Text(entitlements.isTrialing ? "Lore+ trial active" : "Lore+ member")
                                 .font(LoreType.body)
                                 .foregroundStyle(LoreColor.ink)
-                            Text("Manage access, billing, and offline packs")
+                            Text("Manage access, billing, and purchases")
                                 .font(LoreType.caption)
                                 .foregroundStyle(LoreColor.ink600)
                         }

@@ -64,8 +64,8 @@ enum EntitlementCachePolicy {
 /// *open* the gate, neither can subtract from the other.
 ///
 /// Doctrine (docs/00 §7): the app is generous by default. `isPlus == false`
-/// gates only the four Lore+ surfaces, the 4th deep dive of a day, tours,
-/// offline packs, audio narration. Scanning, Layer-1 cards, and the first three
+/// gates only the live Lore+ surfaces, the 4th deep dive of a day, tours, and
+/// audio narration. Scanning, Layer-1 cards, and the first three
 /// dives are never gated (that generosity lives in `DiveMeter`, not here).
 ///
 /// **Offline resilience.** Verified StoreKit transactions are the durable local
