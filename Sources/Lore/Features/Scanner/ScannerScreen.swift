@@ -48,10 +48,10 @@ struct ScannerScreen: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var model = ScannerModel()
     @State private var showPaywall = false
-    @State private var showSignIn = false
     @State private var isVisible = false
     @State private var showCameraRationale = false
-    @State private var showCloudIdentificationDisclosure = false
+    @State private var guidanceToast: ScannerGuidanceToast?
+    @State private var guidanceToastTask: Task<Void, Never>?
 
     /// Raised so a scanner-opened place card can hand off to the city's culture
     /// surface (wired by the tab shell); the no-op default keeps previews working.
@@ -145,12 +145,9 @@ struct ScannerScreen: View {
                         audioOffer(for: offered)
                             .padding(.bottom, 8)
                     }
-                    if !model.preciseMode {
-                        recognitionReadout
-                            .animation(
-                                LoreSpring.smooth(reduceMotion: reduceMotion),
-                                value: model.scanState
-                            )
+                    if let guidanceToast, !model.preciseMode {
+                        scannerGuidanceToast(guidanceToast)
+                            .padding(.bottom, 10)
                     }
                     if !model.preciseMode {
                         directionalRail
@@ -193,24 +190,6 @@ struct ScannerScreen: View {
         .sheet(isPresented: $showPaywall) {
             PaywallView(entitlements: entitlements, store: store, auth: auth, context: .scanner)
         }
-        .sheet(isPresented: $showSignIn) {
-            SignInView()
-        }
-        .alert("Send one photo to Google?", isPresented: $showCloudIdentificationDisclosure) {
-            Button("Send photo") {
-                guard let userID = auth.session?.user.id else {
-                    showSignIn = true
-                    return
-                }
-                CloudLandmarkDisclosureConsent.accept(userID: userID)
-                Task {
-                    await identifyLandmarkWithFreshSession()
-                }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("To identify this landmark, Lore sends the current camera frame to Google Cloud Vision for analysis. The photo is used only for this identification request and is not saved by Lore.")
-        }
         .task {
             model.apply(prefs: prefs)
             let needsCameraRationale = model.needsCameraPermissionRationale
@@ -221,13 +200,28 @@ struct ScannerScreen: View {
         }
         .onChange(of: prefs) { _, newValue in model.apply(prefs: newValue) }
         .onAppear { isVisible = true }
-        .onDisappear { isVisible = false; model.stopSensors() }
+        .onDisappear {
+            isVisible = false
+            guidanceToastTask?.cancel()
+            guidanceToastTask = nil
+            guidanceToast = nil
+            model.stopSensors()
+        }
         .onChange(of: model.lockedPlace?.id) { _, newValue in
             guard newValue != nil, let locked = model.lockedRanked else { return }
             UIAccessibility.post(
                 notification: .announcement,
                 argument: ScannerAccessibilityAnnouncement.lockedPlace(locked)
             )
+        }
+        .onChange(of: model.scanState) { _, newValue in
+            if case .nothingRecognized = newValue {
+                showScannerGuidance(
+                    ScannerGuidanceToast.unableToRead(visionPhrase: model.vision.latest.phrase)
+                )
+            } else {
+                showScannerGuidance(nil)
+            }
         }
         .onChange(of: model.identifyState) { _, newValue in
             guard let announcement = ScannerAccessibilityAnnouncement.identification(newValue) else { return }
@@ -250,6 +244,7 @@ struct ScannerScreen: View {
         .onChange(of: model.vision.latest.phrase) { old, new in
             guard case .nothingRecognized = model.scanState, let new, new != old else { return }
             Haptics.play(.scanRecognizing)
+            showScannerGuidance(ScannerGuidanceToast.unableToRead(visionPhrase: new))
         }
     }
 
@@ -455,196 +450,66 @@ struct ScannerScreen: View {
         .transition(.move(edge: .bottom).combined(with: .opacity))
     }
 
-    // MARK: Recognition readout (the honest "what did I see" response)
+    // MARK: Scanner guidance
 
-    /// The always-visible response when Lore has nothing to point you at: the
-    /// on-device Vision read (honest category / signage it can literally see),
-    /// then a truthful nudge that the scanner reads real places around you, not
-    /// photos. This turns "it did nothing" into "it saw a skyscraper and was
-    /// honest about what it can and can't name."
-    @ViewBuilder
-    private var recognitionReadout: some View {
-        if case .nothingRecognized = model.scanState {
-            VStack(spacing: 10) {
-                if let phrase = model.vision.latest.phrase {
-                    HStack(spacing: 7) {
-                        Image(systemName: "sparkle.magnifyingglass")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(LoreColor.amber)
-                        Text(phrase)
-                            .font(LoreType.button)
-                            .foregroundStyle(LoreColor.bone)
-                            .lineLimit(2)
-                            .multilineTextAlignment(.center)
-                    }
-                }
-                Text(L10n.t("scan.pointAtLandmark"))
-                    .font(LoreType.caption)
-                    .foregroundStyle(LoreColor.bone.opacity(0.85))
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
+    private func scannerGuidanceToast(_ toast: ScannerGuidanceToast) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: toast.systemImage)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(LoreColor.amber)
+                .frame(width: 32, height: 32)
+                .background(LoreColor.ink.opacity(0.65), in: Circle())
+                .overlay(Circle().strokeBorder(LoreColor.amber.opacity(0.45), lineWidth: 1))
 
-                identifyAffordance
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-            .frame(maxWidth: 330)
-            .background(LoreColor.scrimSky, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .strokeBorder(LoreColor.amber.opacity(0.35), lineWidth: 1)
-            )
-            .padding(.bottom, 10)
-            .transition(.opacity.combined(with: .move(edge: .bottom)))
-        }
-    }
-
-    /// The opt-in cloud landmark identification: a "What is this?" tap, its
-    /// in-flight + result states, and (for a resolved Lore place) an open-story
-    /// action. Plus-gated — it's a paid cloud call; free users get the paywall.
-    /// Everything above it (the on-device read + honest nudge) stays free.
-    @ViewBuilder
-    private var identifyAffordance: some View {
-        switch model.identifyState {
-        case .idle:
-            Button {
-                beginLandmarkIdentification()
-            } label: {
-                HStack(spacing: 7) {
-                    Image(systemName: "building.columns")
-                        .font(.system(size: 13, weight: .semibold))
-                    Text("Identify with Google")
-                        .font(LoreType.button)
-                    if !entitlements.isPlus {
-                        Image(systemName: "lock.fill").font(.system(size: 10, weight: .semibold))
-                    }
-                }
-                .foregroundStyle(LoreColor.ink900)
-                .padding(.horizontal, 16)
-                .frame(height: 40)
-                .background(LoreColor.amber, in: Capsule())
-                .frame(minHeight: 44)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.pressable)
-
-        case .loading:
-            HStack(spacing: 8) {
-                ProgressView().tint(LoreColor.bone)
-                Text("Identifying…").font(LoreType.caption).foregroundStyle(LoreColor.bone)
-            }
-            .frame(height: 40)
-
-        case .result(let id):
-            VStack(spacing: 6) {
-                if id.isAmbiguous {
-                    Label("POSSIBLE MATCH", systemImage: "questionmark.diamond")
-                        .font(LoreType.micro)
-                        .tracking(0.8)
-                        .foregroundStyle(LoreColor.amber)
-                }
-                Text(id.name)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(toast.title)
                     .font(LoreType.button)
                     .foregroundStyle(LoreColor.bone)
-                    .multilineTextAlignment(.center)
-                Text(id.confidence != nil
-                    ? "Google Cloud Vision · \(Int((id.confidence ?? 0) * 100))% \(id.isAmbiguous ? "possibility" : "match")"
-                    : "Google Cloud Vision")
-                    .font(LoreType.micro)
-                    .foregroundStyle(LoreColor.bone.opacity(0.7))
-                if id.slug != nil || id.placeID != nil {
-                    Button {
-                        Task { await model.openIdentified(id) }
-                    } label: {
-                        Text("Open its story")
-                            .font(LoreType.button)
-                            .foregroundStyle(LoreColor.ink900)
-                            .padding(.horizontal, 16)
-                            .frame(height: 38)
-                            .background(LoreColor.amber, in: Capsule())
-                            .frame(minHeight: 44)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.pressable)
+                    .lineLimit(1)
+                Text(toast.message)
+                    .font(LoreType.caption)
+                    .foregroundStyle(LoreColor.bone.opacity(0.78))
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .frame(maxWidth: 330, alignment: .leading)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(LoreColor.amber.opacity(0.42), lineWidth: 1)
+        )
+        .padding(.horizontal, 16)
+        .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .bottom)))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Text("\(toast.title). \(toast.message)"))
+        .id(toast.id)
+    }
+
+    private func showScannerGuidance(_ toast: ScannerGuidanceToast?) {
+        guidanceToastTask?.cancel()
+        guidanceToastTask = nil
+
+        let animation = LoreSpring.smooth(reduceMotion: reduceMotion)
+        guard let toast else {
+            withAnimation(animation) { guidanceToast = nil }
+            return
+        }
+
+        withAnimation(animation) { guidanceToast = toast }
+        let toastID = toast.id
+        let shouldReduceMotion = reduceMotion
+        guidanceToastTask = Task {
+            try? await Task.sleep(for: .milliseconds(shouldReduceMotion ? 1_800 : 2_400))
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                guard guidanceToast?.id == toastID else { return }
+                withAnimation(LoreSpring.smooth(reduceMotion: shouldReduceMotion)) {
+                    guidanceToast = nil
                 }
-                retryIdentificationButton(title: "Try another angle")
             }
-
-        case .none:
-            VStack(spacing: 7) {
-                Text("No landmark cleared the confidence threshold. Lore won't guess.")
-                    .font(LoreType.caption)
-                    .foregroundStyle(LoreColor.bone.opacity(0.8))
-                    .multilineTextAlignment(.center)
-                retryIdentificationButton(title: "Try another angle")
-            }
-
-        case .unavailable(let failure):
-            VStack(spacing: 7) {
-                Text(failure.message)
-                    .font(LoreType.caption)
-                    .foregroundStyle(LoreColor.bone.opacity(0.8))
-                    .multilineTextAlignment(.center)
-                retryIdentificationButton(title: "Retry identification")
-            }
-
-        case .quotaReached:
-            Text("Today's landmark limit has been reached. Try again tomorrow.")
-                .font(LoreType.caption)
-                .foregroundStyle(LoreColor.bone.opacity(0.8))
-        }
-    }
-
-    private func retryIdentificationButton(title: String) -> some View {
-        Button(title) {
-            model.resetIdentification()
-            beginLandmarkIdentification()
-        }
-        .font(LoreType.caption)
-        .foregroundStyle(LoreColor.amber)
-        .frame(minHeight: 44)
-        .buttonStyle(.plain)
-    }
-
-    private func beginLandmarkIdentification() {
-        guard entitlements.isPlus else {
-            showPaywall = true
-            return
-        }
-        guard let userID = auth.session?.user.id else {
-            showSignIn = true
-            return
-        }
-        if CloudLandmarkDisclosureConsent.hasAccepted(userID: userID) {
-            Task { await identifyLandmarkWithFreshSession() }
-        } else {
-            showCloudIdentificationDisclosure = true
-        }
-    }
-
-    private func identifyLandmarkWithFreshSession() async {
-        guard let accessToken = await auth.validAccessToken() else {
-            showSignIn = true
-            return
-        }
-        let outcome = await model.identifyLandmark(accessToken: accessToken)
-        if outcome == .plusRequired {
-            await entitlements.refresh(accessToken: accessToken)
-            if !entitlements.isPlus { showPaywall = true }
-            return
-        }
-        guard outcome == .unauthorized else { return }
-
-        guard let refreshedToken = await auth.validAccessToken(forceRefresh: true) else {
-            if !auth.isSignedIn { showSignIn = true }
-            return
-        }
-        let retry = await model.identifyLandmark(accessToken: refreshedToken)
-        if retry == .plusRequired {
-            await entitlements.refresh(accessToken: refreshedToken)
-            if !entitlements.isPlus { showPaywall = true }
-        } else if retry == .unauthorized, !auth.isSignedIn {
-            showSignIn = true
         }
     }
 
@@ -899,7 +764,7 @@ struct ScannerScreen: View {
                     .font(LoreType.displayM)
                     .foregroundStyle(LoreColor.bone)
                     .multilineTextAlignment(.center)
-                Text("Lore uses the camera to place stories on the buildings around you and your location to know which block you are on. Live scanning stays on your device. If you choose Identify with Google, Lore asks before sending one camera frame for cloud analysis.")
+                Text("Lore uses the camera to place stories on the buildings around you and your location to know which block you are on. Live scanning stays on your device, and Lore only opens a place when the local geospatial match earns it.")
                     .font(LoreType.body)
                     .foregroundStyle(LoreColor.bone.opacity(0.78))
                     .multilineTextAlignment(.center)
@@ -1325,6 +1190,32 @@ struct GeoPinDisplay: Identifiable {
     let place: Place
     let pin: ProjectedPin
     var id: UUID { anchorID }
+}
+
+struct ScannerGuidanceToast: Identifiable {
+    let id = UUID()
+    let title: String
+    let message: String
+    let systemImage: String
+
+    static func unableToRead(visionPhrase: String?) -> ScannerGuidanceToast {
+        let phrase = visionPhrase?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if let phrase, !phrase.isEmpty {
+            return ScannerGuidanceToast(
+                title: "Try again",
+                message: "No nearby place matched. Try a clearer angle.",
+                systemImage: "arrow.clockwise"
+            )
+        }
+
+        return ScannerGuidanceToast(
+            title: "Unable to read",
+            message: "Aim at a clearer facade, sign, or landmark nearby.",
+            systemImage: "viewfinder"
+        )
+    }
 }
 
 /// A cloud landmark identification (Google Cloud Vision), the opt-in "what is

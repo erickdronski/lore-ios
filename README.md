@@ -31,8 +31,7 @@ Lore is a curated city guide for iPhone. People can browse a living map, point t
 ## What ships
 
 - A city map, city switcher, search, place cards, deep dives, and culture content
-- A live camera scanner that ranks known nearby places using on-device Apple frameworks
-- An explicit Google identification action for one user-confirmed frame
+- A live camera scanner that ranks known nearby places using on-device Apple frameworks and opens database-backed dossiers only after local geospatial confidence
 - Curated walking tours and an on-device tour Live Activity
 - Passport, visits, private notes and photos, and achievements
 - Keychain-backed authentication and secure password recovery
@@ -47,15 +46,13 @@ flowchart LR
     UI["SwiftUI app and widget"] --> Domain["Places, tours, journal, and StoreKit domains"]
     Scanner["On-device camera and sensor pipeline"] --> Resolver["Nearby-place resolver"]
     Resolver --> Domain
-    Confirm["Explicit Google identify action"] --> Edge["Authenticated Edge Function"]
-    Edge --> Vision["Google Cloud Vision"]
     Domain --> API["Supabase API boundary"]
     API --> Data["Curated city data and private user records"]
     Actions["GitHub Actions"] --> Tests["Unit tests and unsigned Release build"]
     Tests --> Release["Manual signed TestFlight lane"]
 ```
 
-Normal scanning stays on-device. Lore does not store continuous camera video or continuous location history. The separate Google identification action requires authentication, disclosure, confirmation, a single current image, and server-side payload and quota enforcement.
+Normal scanning stays on-device. Lore does not store continuous camera video or continuous location history. The landmark-ID Edge Function remains gated infrastructure, not a primary scanner control; any cloud-assisted path must stay authenticated, explicitly disclosed, one-frame only, and server quota enforced before it is re-exposed.
 
 ## Repository map
 

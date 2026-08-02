@@ -474,6 +474,21 @@ final class SpecialistJourneyRegressionTests: XCTestCase {
         XCTAssertNil(ScannerAccessibilityAnnouncement.identification(.idle))
     }
 
+    func testScannerGuidanceToastStaysCompactAndProviderAgnostic() {
+        let empty = ScannerGuidanceToast.unableToRead(visionPhrase: nil)
+        XCTAssertEqual(empty.title, "Unable to read")
+        XCTAssertTrue(empty.message.contains("clearer"))
+        XCTAssertFalse(empty.title.localizedCaseInsensitiveContains("Google"))
+        XCTAssertFalse(empty.message.localizedCaseInsensitiveContains("Google"))
+
+        let read = ScannerGuidanceToast.unableToRead(visionPhrase: " brick facade\n")
+        XCTAssertEqual(read.title, "Try again")
+        XCTAssertTrue(read.message.contains("No nearby place matched"))
+        XCTAssertFalse(read.message.contains("brick facade"))
+        XCTAssertFalse(read.title.localizedCaseInsensitiveContains("Google"))
+        XCTAssertFalse(read.message.localizedCaseInsensitiveContains("Google"))
+    }
+
     func testStackConfirmationFeedbackIsCompactAndHonest() {
         let nearby = ScannerConfirmationFeedback(
             placeName: " City Hall ",
