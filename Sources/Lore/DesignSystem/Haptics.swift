@@ -1,3 +1,4 @@
+import QuartzCore
 import UIKit
 
 /// The haptic vocabulary, brand/ELEVATION.md §4: "the app should be *felt*."
@@ -21,7 +22,7 @@ import UIKit
 @MainActor
 enum Haptics {
     /// Every haptic-worthy moment in Lore, named for the doctrine table.
-    enum Event {
+    enum Event: Hashable {
         /// A pin on the living map was tapped, `.light` impact.
         case pinTap
         /// A bearing chip (scanner) or filter chip was tapped, `.light` impact.
@@ -69,7 +70,7 @@ enum Haptics {
     /// on devices without a Taptic Engine the generators quietly no-op, and
     /// the whole vocabulary is gated by the user's Settings toggle.
     static func play(_ event: Event) {
-        guard isEnabled else { return }
+        guard isEnabled, shouldPlay(event) else { return }
         switch event {
         case .pinTap, .chipTap:
             impact(.light)
@@ -90,21 +91,56 @@ enum Haptics {
 
     // MARK: - Generators
 
+    /// Dense interactions can call the haptic layer faster than the Taptic
+    /// Engine can express. Coalesce only seasoning ticks; reward, warning, and
+    /// scanner-lock moments always play.
+    private static var lastPlayedAt: [Event: CFTimeInterval] = [:]
+    private static let minimumIntervals: [Event: CFTimeInterval] = [
+        .pinTap: 0.08,
+        .chipTap: 0.08,
+        .scannerChipPass: 0.14,
+        .timelineSnap: 0.08,
+        .scanRecognizing: 0.16,
+        .scanAttempt: 0.12,
+    ]
+
+    private static func shouldPlay(
+        _ event: Event,
+        now: CFTimeInterval = CACurrentMediaTime()
+    ) -> Bool {
+        guard let minimumInterval = minimumIntervals[event] else { return true }
+        if let previous = lastPlayedAt[event], now - previous < minimumInterval {
+            return false
+        }
+        lastPlayedAt[event] = now
+        return true
+    }
+
+    private static let lightImpact = UIImpactFeedbackGenerator(style: .light)
+    private static let mediumImpact = UIImpactFeedbackGenerator(style: .medium)
+    private static let rigidImpact = UIImpactFeedbackGenerator(style: .rigid)
+    private static let selectionGenerator = UISelectionFeedbackGenerator()
+    private static let notificationGenerator = UINotificationFeedbackGenerator()
+
     private static func impact(_ style: UIImpactFeedbackGenerator.FeedbackStyle) {
-        let generator = UIImpactFeedbackGenerator(style: style)
-        generator.prepare()
+        let generator: UIImpactFeedbackGenerator
+        switch style {
+        case .light: generator = lightImpact
+        case .medium: generator = mediumImpact
+        case .rigid: generator = rigidImpact
+        default: generator = UIImpactFeedbackGenerator(style: style)
+        }
         generator.impactOccurred()
+        generator.prepare()
     }
 
     private static func selection() {
-        let generator = UISelectionFeedbackGenerator()
-        generator.prepare()
-        generator.selectionChanged()
+        selectionGenerator.selectionChanged()
+        selectionGenerator.prepare()
     }
 
     private static func notify(_ type: UINotificationFeedbackGenerator.FeedbackType) {
-        let generator = UINotificationFeedbackGenerator()
-        generator.prepare()
-        generator.notificationOccurred(type)
+        notificationGenerator.notificationOccurred(type)
+        notificationGenerator.prepare()
     }
 }

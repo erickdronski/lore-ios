@@ -6,6 +6,9 @@ import SwiftUI
 /// CC-BY-SA prose may only render where these source links do, docs/04 §2.2).
 struct DiveView: View {
     let place: Place
+    /// Optional dossier already fetched by the Layer-1 card for its teaser.
+    /// Reusing it avoids a second network hop when the reader taps Go deeper.
+    var initialDive: Dive? = nil
     /// The shared-element morph namespace (LUXURY-MOTION §6): when the dossier is
     /// grown from a Layer-1 card, the pin/emoji medallion morphs from the card
     /// header into this header via `matchedGeometryEffect`. `nil` when the
@@ -80,16 +83,14 @@ struct DiveView: View {
             // open normally. Spend a free dive only after real dossier content
             // loads; an empty or failed request must not consume the allowance.
             if diveMeter.canOpenDive(isPlus: entitlements.isPlus) {
-                if await model.load(placeID: place.id) {
-                    diveMeter.recordDiveOpened(isPlus: entitlements.isPlus)
-                    // Persist the read so the "Deep dives" stat counts it and the
-                    // dive-read badges can unlock (local counter alone left both
-                    // stuck at zero). Fire-and-forget; the server insert commits
-                    // regardless of how the client handles the response.
-                    if let token = auth.session?.accessToken {
-                        Task { try? await LoreAPI.shared.recordDiveRead(placeID: place.id, accessToken: token) }
-                    }
+                let loaded: Bool
+                if let initialDive {
+                    model.loadCached(initialDive)
+                    loaded = true
+                } else {
+                    loaded = await model.load(placeID: place.id)
                 }
+                if loaded { recordDiveOpened() }
             } else {
                 gated = true
             }
@@ -103,6 +104,17 @@ struct DiveView: View {
         }
         .sheet(isPresented: $showPaywall) {
             PaywallView(entitlements: entitlements, store: store, auth: auth, context: .fourthDive)
+        }
+    }
+
+    private func recordDiveOpened() {
+        diveMeter.recordDiveOpened(isPlus: entitlements.isPlus)
+        // Persist the read so the "Deep dives" stat counts it and the
+        // dive-read badges can unlock (local counter alone left both stuck at
+        // zero). Fire-and-forget; the server insert commits regardless of how
+        // the client handles the response.
+        if let token = auth.session?.accessToken {
+            Task { try? await LoreAPI.shared.recordDiveRead(placeID: place.id, accessToken: token) }
         }
     }
 
@@ -389,6 +401,11 @@ final class DiveModel {
 
     /// Returns true only when a real dossier loaded, used by DiveMeter so empty
     /// and failed requests never consume a free daily dive.
+    func loadCached(_ dive: Dive) {
+        activeRequestID = nil
+        state = .loaded(dive)
+    }
+
     func load(placeID: String) async -> Bool {
         let requestID = UUID()
         activeRequestID = requestID

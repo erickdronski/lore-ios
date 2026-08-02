@@ -184,7 +184,9 @@ struct TravelMapControls: View {
     private func setCollapsed(_ value: Bool) {
         guard value != collapsed else { return }
         Haptics.play(.chipTap)
-        withAnimation(LoreSpring.smooth(reduceMotion: reduceMotion)) { collapsed = value }
+        withAnimation(reduceMotion ? LoreSpring.reducedCrossfade : LoreMotion.tap) {
+            collapsed = value
+        }
     }
 
     private func filterError(_ message: String) -> some View {

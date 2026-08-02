@@ -175,9 +175,6 @@ struct LoreMapLibreView: UIViewRepresentable {
             if let feature = features.first,
                let id = feature.attribute(forKey: LorePins.idKey) as? String {
                 onSelectPlace(id)
-                // UIKit delivers gesture actions on the main thread; hop to the
-                // main actor so the isolated Haptics API is satisfied.
-                Task { @MainActor in Haptics.play(.pinTap) }
             }
         }
     }

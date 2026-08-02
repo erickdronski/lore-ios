@@ -113,7 +113,7 @@ struct MapScreen: View {
                     .ignoresSafeArea()
                     .allowsHitTesting(false)
             }
-            .animation(LoreSpring.smooth(reduceMotion: reduceMotion), value: cardOpen)
+            .animation(LoreMotion.tap, value: cardOpen)
             .onChange(of: selectedPlaceID) { _, newValue in
                 // Pin tap, light impact (brand/ELEVATION.md §4).
                 if newValue != nil { Haptics.play(.pinTap) }
@@ -396,7 +396,7 @@ struct MapScreen: View {
             .contentShape(Rectangle())
             .scaleEffect(on && !reduceMotion ? 1.04 : 1)
         }
-        .buttonStyle(.pressable)
+        .buttonStyle(.pressableSilent)
         .disabled(!enabled)
         .opacity(enabled ? 1 : 0.48)
         .accessibilityLabel(Text(label))
@@ -799,7 +799,7 @@ struct MapHeader: View {
                 .frame(width: 44, height: 44)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.pressable)
+        .buttonStyle(.pressableSilent)
         .accessibilityLabel(Text(label))
         .accessibilityValue(Text(value ?? ""))
     }

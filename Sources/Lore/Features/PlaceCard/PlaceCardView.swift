@@ -384,22 +384,41 @@ struct PlaceCardView: View {
         }
     }
 
-    /// Fetch the place's dive to read its curated `wikipedia_title`, then resolve
-    /// that to a photo URL. A miss (no dive, no title, or no image) leaves
-    /// `heroURL` nil and marks the hero resolved so it hides.
+    /// Resolve the lead image from the already-projected `Place` when possible,
+    /// while the full dive loads in parallel for the story teaser. A miss (no
+    /// title, no dive, or no image) leaves `heroURL` nil and marks the hero
+    /// resolved so it hides.
     private func resolveHero() async {
         heroResolved = false
         heroURL = nil
         dive = nil
-        let loaded = (try? await LoreAPI.shared.dive(placeID: place.id)) ?? nil
+        async let loadedDive: Dive? = (try? await LoreAPI.shared.dive(placeID: place.id)) ?? nil
+        if let title = cleanTitle(place.wikipediaTitle) {
+            async let resolvedURL = WikipediaService.shared.portraitURL(for: title)
+            let resolved = await resolvedURL
+            guard !Task.isCancelled else { return }
+            heroURL = resolved
+            heroResolved = true
+            let loaded = await loadedDive
+            guard !Task.isCancelled else { return }
+            dive = loaded
+            return
+        }
+
+        let loaded = await loadedDive
         guard !Task.isCancelled else { return }
         dive = loaded
-        if let title = loaded?.media.wikipediaTitle, !title.isEmpty {
+        if let title = cleanTitle(loaded?.media.wikipediaTitle) {
             let resolvedURL = await WikipediaService.shared.portraitURL(for: title)
             guard !Task.isCancelled else { return }
             heroURL = resolvedURL
         }
         heroResolved = true
+    }
+
+    private func cleanTitle(_ value: String?) -> String? {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     // MARK: Dossier (morph target)
@@ -411,7 +430,7 @@ struct PlaceCardView: View {
             // geometry to hand off and the dossier's `matchedGeometryEffect`
             // receiver would float over the narrative. Nil namespace = the
             // medallion just appears in its correct header slot.
-            DiveView(place: place)
+            DiveView(place: place, initialDive: dive)
 
             HStack {
                 // Dismiss affordance, springs the dossier back down into the card.
