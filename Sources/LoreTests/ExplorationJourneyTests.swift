@@ -134,9 +134,9 @@ final class ExplorationJourneyTests: XCTestCase {
 
     func testNearbyCardLayoutStaysCompactForDiscoveryDeck() {
         XCTAssertEqual(NearMeCardLayout.cardWidth(isAccessibilitySize: false), 204)
-        XCTAssertLessThanOrEqual(NearMeCardLayout.cardHeight(isAccessibilitySize: false), 240)
-        XCTAssertLessThanOrEqual(NearMeCardLayout.shelfMaxHeight(isAccessibilitySize: false), 255)
-        XCTAssertEqual(NearMeCardLayout.teaserLineLimit(isAccessibilitySize: false), 1)
+        XCTAssertLessThanOrEqual(NearMeCardLayout.cardHeight(isAccessibilitySize: false), 224)
+        XCTAssertLessThanOrEqual(NearMeCardLayout.shelfMaxHeight(isAccessibilitySize: false), 238)
+        XCTAssertEqual(NearMeCardLayout.teaserLineLimit(isAccessibilitySize: false), 0)
 
         XCTAssertGreaterThan(
             NearMeCardLayout.cardHeight(isAccessibilitySize: true),
@@ -144,6 +144,11 @@ final class ExplorationJourneyTests: XCTestCase {
         )
         XCTAssertLessThanOrEqual(NearMeCardLayout.shelfMaxHeight(isAccessibilitySize: true), 310)
         XCTAssertEqual(NearMeCardLayout.teaserLineLimit(isAccessibilitySize: true), 2)
+    }
+
+    func testDiscoveryDeckClearsFloatingTabDockWhenExpanded() {
+        XCTAssertGreaterThanOrEqual(TravelMapControlsLayout.collapsedBottomClearance, 18)
+        XCTAssertGreaterThanOrEqual(TravelMapControlsLayout.expandedBottomDockClearance, 132)
     }
 
     func testMapFallbackCameraIgnoresFarOutlierCoordinates() throws {

@@ -64,7 +64,9 @@ struct TravelMapControls: View {
     }
 
     private var bottomClearance: CGFloat {
-        collapsed ? 10 : 86
+        collapsed
+            ? TravelMapControlsLayout.collapsedBottomClearance
+            : TravelMapControlsLayout.expandedBottomDockClearance
     }
 
     var body: some View {
@@ -212,6 +214,16 @@ struct TravelMapControls: View {
         .padding(.horizontal, 16)
         .accessibilityElement(children: .contain)
     }
+}
+
+enum TravelMapControlsLayout {
+    /// Collapsed still needs a little lift so the pill clears the floating tab
+    /// bar glow and remains tappable near the bottom edge.
+    static let collapsedBottomClearance: CGFloat = 18
+    /// The expanded Discovery Deck owns a horizontal shelf with visit CTAs.
+    /// Keep the shelf above Lore's translucent tab dock; otherwise the cards
+    /// look unfinished and the "I've been here" action lands under the dock.
+    static let expandedBottomDockClearance: CGFloat = 136
 }
 
 /// One owner for the Travel stores + the unlock bridge. The integrator creates a

@@ -289,7 +289,7 @@ enum NearMeCardLayout {
     }
 
     static func cardHeight(isAccessibilitySize: Bool) -> CGFloat {
-        isAccessibilitySize ? 286 : 236
+        isAccessibilitySize ? 286 : 222
     }
 
     static func shelfMaxHeight(isAccessibilitySize: Bool) -> CGFloat {
@@ -297,7 +297,7 @@ enum NearMeCardLayout {
     }
 
     static func teaserLineLimit(isAccessibilitySize: Bool) -> Int {
-        isAccessibilitySize ? 2 : 1
+        isAccessibilitySize ? 2 : 0
     }
 }
 
@@ -333,9 +333,9 @@ struct NearMeCard: View {
     @State private var photoResolved = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: 6) {
             Button(action: onSelect) {
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 5) {
                     HStack(alignment: .top) {
                         medallion
                         Spacer()
@@ -358,7 +358,7 @@ struct NearMeCard: View {
                         .foregroundStyle(accent)
 
                     Text(place.name)
-                        .font(LoreType.display(size: 17, weight: .semibold))
+                        .font(LoreType.display(size: 16, weight: .semibold))
                         .foregroundStyle(LoreColor.bone)
                         .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 2)
                         .multilineTextAlignment(.leading)
@@ -368,7 +368,7 @@ struct NearMeCard: View {
                     // empty, while the server fallback keeps the card useful.
                     // Cap it tightly so a single long note cannot stretch the
                     // whole discovery shelf.
-                    if let teaser = place.teaser, !teaser.isEmpty {
+                    if teaserLineLimit > 0, let teaser = place.teaser, !teaser.isEmpty {
                         Text(teaser)
                             .font(LoreType.caption)
                             .foregroundStyle(LoreColor.bone.opacity(0.7))
@@ -379,8 +379,10 @@ struct NearMeCard: View {
 
                     proximityRow
                 }
+                .frame(maxHeight: .infinity, alignment: .topLeading)
             }
             .buttonStyle(.plain)
+            .frame(maxHeight: .infinity, alignment: .topLeading)
             .accessibilityLabel(Text(cardAccessibilityLabel))
             .accessibilityHint(Text("Opens this field note"))
 
@@ -487,24 +489,17 @@ struct NearMeCard: View {
                 Text(proximityLabel)
                     .font(LoreType.button)
                     .foregroundStyle(LoreColor.bone)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.78)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
                 Text(ranked.distanceLabel)
                     .font(LoreType.caption)
                     .foregroundStyle(LoreColor.amber)
                     .contentTransition(.numericText())
             }
             Spacer(minLength: 6)
-            HStack(spacing: 3) {
-                ForEach(0..<3, id: \.self) { index in
-                    Circle()
-                        .fill(index == 2 ? accent : LoreColor.bone.opacity(0.28))
-                        .frame(width: index == 2 ? 6 : 4, height: index == 2 ? 6 : 4)
-                }
-                Image(systemName: "mappin.circle.fill")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(accent)
-            }
+            Image(systemName: "mappin.circle.fill")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(accent)
             .accessibilityHidden(true)
         }
     }
@@ -531,8 +526,8 @@ struct NearMeCard: View {
         switch ranked.meters {
         case ..<250: return "Steps away"
         case ..<900: return "Easy walk"
-        case ..<2_000: return "A short wander"
-        default: return "Worth the detour"
+        case ..<2_000: return "Short wander"
+        default: return "Worth a stop"
         }
     }
 
