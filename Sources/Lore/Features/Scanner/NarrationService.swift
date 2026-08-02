@@ -7,11 +7,13 @@ import Observation
 /// mode, the phone talks and the user looks up at the actual building, the
 /// accessibility win *and* the magic moment.
 ///
-/// P0 is on-device `AVSpeechSynthesizer` (TTS now, recorded voice later, docs/02
-/// §product). The hook text comes from the place's Layer-1 (CC0/PD, safe to
-/// speak without attribution, docs/04 §2.2). Auto-offer etiquette is the open
-/// question (docs/12 open Q4): we *offer* on lock and let the user start it —
-/// we do not auto-*play*, which would be intrusive on a quiet street or in a
+/// The paid-quality path is pre-rendered studio audio from the `narration`
+/// bucket. When a city still lacks that asset, the fallback deliberately chooses
+/// the best installed iOS voice and a slower docent cadence instead of the raw
+/// system default. The hook text comes from the place's Layer-1 (CC0/PD, safe
+/// to speak without attribution, docs/04 §2.2). Auto-offer etiquette is the
+/// open question (docs/12 open Q4): we *offer* on lock and let the user start it
+/// — we do not auto-*play*, which would be intrusive on a quiet street or in a
 /// museum. The one-tap start is `speak(_:)`.
 @Observable
 @MainActor
@@ -94,7 +96,10 @@ final class NarrationService {
         playbackError = nil
         configureSession()
         let utterance = AVSpeechUtterance(string: Self.hookText(for: place, register: register))
-        utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 0.96 * playbackRate
+        utterance.voice = Self.docentVoice()
+        utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 0.90 * playbackRate
+        utterance.pitchMultiplier = 0.97
+        utterance.volume = 0.95
         utterance.postUtteranceDelay = 0.2
         activeUtterance = utterance
         isSpeaking = true
@@ -114,7 +119,10 @@ final class NarrationService {
         playbackError = nil
         configureSession()
         let utterance = AVSpeechUtterance(string: text)
-        utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 0.94 * playbackRate
+        utterance.voice = Self.docentVoice()
+        utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 0.88 * playbackRate
+        utterance.pitchMultiplier = 0.97
+        utterance.volume = 0.95
         utterance.postUtteranceDelay = 0.15
         activeUtterance = utterance
         isSpeaking = true
@@ -133,6 +141,8 @@ final class NarrationService {
         let utterance = AVSpeechUtterance(string: text)
         utterance.voice = Self.voice(matching: languageName)
         utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 0.86 * playbackRate
+        utterance.pitchMultiplier = 0.98
+        utterance.volume = 0.95
         utterance.postUtteranceDelay = 0.1
         activeUtterance = utterance
         activeSpeechID = id
@@ -310,6 +320,23 @@ final class NarrationService {
         markStopped()
     }
 
+    nonisolated static func voiceQualityRank(_ quality: AVSpeechSynthesisVoiceQuality) -> Int {
+        switch quality {
+        case .premium:
+            return 3
+        case .enhanced:
+            return 2
+        case .default:
+            return 1
+        @unknown default:
+            return 0
+        }
+    }
+
+    private static func docentVoice() -> AVSpeechSynthesisVoice? {
+        preferredVoice(for: ["en-US", "en-GB", "en-AU", "en-CA"]) ?? AVSpeechSynthesisVoice(language: "en-US")
+    }
+
     private static func voice(matching languageName: String?) -> AVSpeechSynthesisVoice? {
         guard let languageName else { return nil }
         let english = Locale(identifier: "en")
@@ -318,7 +345,7 @@ final class NarrationService {
             locale: english
         )
 
-        return AVSpeechSynthesisVoice.speechVoices().first { voice in
+        let matches = AVSpeechSynthesisVoice.speechVoices().filter { voice in
             guard let code = Locale(identifier: voice.language).language.languageCode?.identifier,
                   let localizedName = english.localizedString(forLanguageCode: code) else {
                 return false
@@ -329,6 +356,35 @@ final class NarrationService {
             )
             return requested.contains(candidate) || candidate.contains(requested)
         }
+        return preferredVoice(from: matches)
+    }
+
+    private static func preferredVoice(for languages: [String]) -> AVSpeechSynthesisVoice? {
+        let languageCodes = Set(languages.compactMap {
+            Locale(identifier: $0).language.languageCode?.identifier
+        })
+        let matches = AVSpeechSynthesisVoice.speechVoices().filter { voice in
+            languages.contains(voice.language) ||
+            Locale(identifier: voice.language).language.languageCode.map { languageCodes.contains($0.identifier) } == true
+        }
+        return preferredVoice(from: matches, exactLanguages: Set(languages))
+    }
+
+    private static func preferredVoice(
+        from voices: [AVSpeechSynthesisVoice],
+        exactLanguages: Set<String> = []
+    ) -> AVSpeechSynthesisVoice? {
+        voices.sorted { lhs, rhs in
+            let lhsQuality = voiceQualityRank(lhs.quality)
+            let rhsQuality = voiceQualityRank(rhs.quality)
+            if lhsQuality != rhsQuality { return lhsQuality > rhsQuality }
+
+            let lhsExact = exactLanguages.contains(lhs.language)
+            let rhsExact = exactLanguages.contains(rhs.language)
+            if lhsExact != rhsExact { return lhsExact }
+
+            return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+        }.first
     }
 
     private func configureSession() {

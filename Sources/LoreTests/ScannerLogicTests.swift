@@ -10,6 +10,19 @@ import AVFoundation
 /// test is framework-light value code, so it runs without the AR stack.
 final class ScannerLogicTests: XCTestCase {
 
+    // MARK: - Narration fallback
+
+    func testNarrationFallbackRanksPremiumVoicesAboveDefaultVoices() {
+        XCTAssertGreaterThan(
+            NarrationService.voiceQualityRank(.premium),
+            NarrationService.voiceQualityRank(.enhanced)
+        )
+        XCTAssertGreaterThan(
+            NarrationService.voiceQualityRank(.enhanced),
+            NarrationService.voiceQualityRank(.default)
+        )
+    }
+
     // MARK: - BearingProjector
 
     func testBearingDueNorthAndEast() {
