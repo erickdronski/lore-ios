@@ -221,7 +221,9 @@ struct PlaceCardView: View {
                         Text(hook)
                             .font(LoreType.hook)
                             .foregroundStyle(LoreColor.ink)
+                            .multilineTextAlignment(.leading)
                             .fixedSize(horizontal: false, vertical: true)
+                            .padding(.horizontal, 2)
                     }
 
                     factChips
@@ -297,8 +299,11 @@ struct PlaceCardView: View {
                     }
                     .buttonStyle(.pressable)
                 }
-                .padding(16)
+                .padding(.horizontal, 24)
+                .padding(.top, 16)
+                .padding(.bottom, 24)
             }
+            .scrollClipDisabled()
             .background(LoreColor.bone100)
             .overlay(alignment: .top) {
                 CityThemeWash(theme: activeTheme)
@@ -331,34 +336,50 @@ struct PlaceCardView: View {
     @ViewBuilder
     private var storyTeaser: some View {
         if let narrative = dive?.narrative, !narrative.isEmpty {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 9) {
-                    LoreArtworkMedallion(kind: .story, accent: accent, diameter: 34)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("THE STORY")
-                            .loreLabelStyle()
-                            .foregroundStyle(accent)
-                        Text("A first page from the full dossier")
-                            .font(LoreType.micro)
-                            .foregroundStyle(LoreColor.ink600)
+            Button {
+                Haptics.play(.dossierOpen)
+                showDive = true
+            } label: {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 9) {
+                        LoreArtworkMedallion(kind: .story, accent: accent, diameter: 34)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("THE STORY")
+                                .loreLabelStyle()
+                                .foregroundStyle(accent)
+                            Text("A first page from the full dossier")
+                                .font(LoreType.micro)
+                                .foregroundStyle(LoreColor.ink600)
+                        }
+                    }
+
+                    Text(narrative)
+                        .font(LoreType.body)
+                        .foregroundStyle(LoreColor.ink)
+                        .lineLimit(4)
+                        .multilineTextAlignment(.leading)
+
+                    HStack(spacing: 7) {
+                        Text("Read the full story")
+                            .font(LoreType.button)
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 12, weight: .bold))
+                    }
+                    .foregroundStyle(accent)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(14)
+                .background {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 14).fill(LoreColor.bone200)
+                        LoreTileArtwork(kind: .story, accent: accent, intensity: 0.08)
+                            .clipShape(RoundedRectangle(cornerRadius: 14))
                     }
                 }
-                Text(narrative)
-                    .font(LoreType.body)
-                    .foregroundStyle(LoreColor.ink)
-                    .lineLimit(4)
-                    .fixedSize(horizontal: false, vertical: true)
+                .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(accent.opacity(0.16), lineWidth: 1))
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(14)
-            .background {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 14).fill(LoreColor.bone200)
-                    LoreTileArtwork(kind: .story, accent: accent, intensity: 0.08)
-                        .clipShape(RoundedRectangle(cornerRadius: 14))
-                }
-            }
-            .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(accent.opacity(0.16), lineWidth: 1))
+            .buttonStyle(.pressable)
+            .accessibilityLabel(Text("Read the full story for \(place.name)"))
         }
     }
 
@@ -483,7 +504,7 @@ struct PlaceCardView: View {
     }
 
     private var header: some View {
-        HStack(alignment: .center, spacing: 12) {
+        HStack(alignment: .top, spacing: 12) {
             Text(place.displayEmoji)
                 .font(.system(size: 34))
                 .frame(width: 54, height: 54)
@@ -496,17 +517,27 @@ struct PlaceCardView: View {
                 Text(place.name)
                     .font(LoreType.displayL)
                     .foregroundStyle(LoreColor.ink)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.82)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
                 Text(place.kind.capitalized)
                     .loreLabelStyle()
                     .foregroundStyle(LoreColor.ink600)
             }
-            Spacer()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .layoutPriority(1)
+
+            Spacer(minLength: 6)
+
             VStack(alignment: .trailing, spacing: 8) {
                 if let year = place.layer1?.yearBuilt {
                     YearChip(year: year, accent: accent)
                 }
                 shareButton
             }
+            .fixedSize()
+            .layoutPriority(2)
         }
     }
 
@@ -565,6 +596,7 @@ struct NumericFactRow: View {
                 .frame(width: 88, alignment: .leading)
             CountUpText.integer(value, suffix: suffix, font: LoreType.body)
                 .foregroundStyle(LoreColor.ink)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }
@@ -596,6 +628,9 @@ struct FactRow: View {
             Text(value)
                 .font(LoreType.body)
                 .foregroundStyle(LoreColor.ink)
+                .lineLimit(2)
+                .minimumScaleFactor(0.86)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }

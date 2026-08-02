@@ -165,7 +165,9 @@ struct MapScreen: View {
                 // and zoom the city out; the deck should not own camera policy.
                 travelControls
             }
-            .loreDossierPresentation(item: selectedPlaceBinding) { place in
+            .loreDossierPresentation(item: selectedPlaceBinding, onDismiss: {
+                selectedPlaceID = nil
+            }) { place in
                 // Detents are owned by PlaceCardView so opening the dossier can
                 // promote the sheet to `.large` from every entry point.
                 PlaceCardView(place: place, onMeetCity: onMeetCity, cityTheme: model.theme)
@@ -957,28 +959,29 @@ extension View {
     @ViewBuilder
     func loreDossierPresentation<Item: Identifiable, Content: View>(
         item: Binding<Item?>,
+        onDismiss: @escaping () -> Void = {},
         @ViewBuilder content: @escaping (Item) -> Content
     ) -> some View {
         switch LoreDossierPresentationPolicy.current {
         case .standardSheet:
-            sheet(item: item) { value in
+            sheet(item: item, onDismiss: onDismiss) { value in
                 content(value)
                     .presentationBackground(.regularMaterial)
                     .presentationCornerRadius(24)
             }
         case .pageSheet:
             if #available(iOS 18.0, *) {
-                sheet(item: item) { value in
+                sheet(item: item, onDismiss: onDismiss) { value in
                     content(value)
                         .presentationBackground(.regularMaterial)
                         .presentationCornerRadius(24)
                         .presentationSizing(.page)
                 }
             } else {
-                fullScreenCover(item: item, content: content)
+                fullScreenCover(item: item, onDismiss: onDismiss, content: content)
             }
         case .fullScreen:
-            fullScreenCover(item: item, content: content)
+            fullScreenCover(item: item, onDismiss: onDismiss, content: content)
         }
     }
 }

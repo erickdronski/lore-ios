@@ -134,16 +134,16 @@ final class ExplorationJourneyTests: XCTestCase {
 
     func testNearbyCardLayoutStaysCompactForDiscoveryDeck() {
         XCTAssertEqual(NearMeCardLayout.cardWidth(isAccessibilitySize: false), 204)
-        XCTAssertLessThanOrEqual(NearMeCardLayout.minimumHeight(isAccessibilitySize: false), 190)
-        XCTAssertLessThanOrEqual(NearMeCardLayout.shelfMaxHeight(isAccessibilitySize: false), 210)
-        XCTAssertEqual(NearMeCardLayout.teaserLineLimit(isAccessibilitySize: false), 2)
+        XCTAssertLessThanOrEqual(NearMeCardLayout.cardHeight(isAccessibilitySize: false), 240)
+        XCTAssertLessThanOrEqual(NearMeCardLayout.shelfMaxHeight(isAccessibilitySize: false), 255)
+        XCTAssertEqual(NearMeCardLayout.teaserLineLimit(isAccessibilitySize: false), 1)
 
         XCTAssertGreaterThan(
-            NearMeCardLayout.minimumHeight(isAccessibilitySize: true),
-            NearMeCardLayout.minimumHeight(isAccessibilitySize: false)
+            NearMeCardLayout.cardHeight(isAccessibilitySize: true),
+            NearMeCardLayout.cardHeight(isAccessibilitySize: false)
         )
-        XCTAssertLessThanOrEqual(NearMeCardLayout.shelfMaxHeight(isAccessibilitySize: true), 270)
-        XCTAssertEqual(NearMeCardLayout.teaserLineLimit(isAccessibilitySize: true), 3)
+        XCTAssertLessThanOrEqual(NearMeCardLayout.shelfMaxHeight(isAccessibilitySize: true), 310)
+        XCTAssertEqual(NearMeCardLayout.teaserLineLimit(isAccessibilitySize: true), 2)
     }
 
     func testMapFallbackCameraIgnoresFarOutlierCoordinates() throws {

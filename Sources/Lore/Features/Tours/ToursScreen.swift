@@ -97,6 +97,11 @@ struct ToursScreen: View {
             .listSectionSpacing(TourBrowseLayout.sectionSpacing)
             .scrollContentBackground(.hidden)
             .background(LoreColor.bone100)
+            .safeAreaInset(edge: .bottom) {
+                Color.clear
+                    .frame(height: TourBrowseLayout.bottomDockClearance)
+                    .allowsHitTesting(false)
+            }
             .navigationTitle("Tours")
             .navigationDestination(for: Tour.self) { tour in
                 TourDetailView(tour: tour)
@@ -211,6 +216,7 @@ enum TourBrowseLayout {
     static let tourRowArtworkHeight: CGFloat = 76
     static let tourRowArtworkTopInset: CGFloat = 8
     static let tourRowArtworkTrailingInset: CGFloat = 10
+    static let bottomDockClearance: CGFloat = 88
     static let hiddenInterstitialHeight: CGFloat = 0
     static let tourRowInsets = EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16)
     static let interstitialRowInsets = EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16)
@@ -256,10 +262,10 @@ struct OneHourHero: View {
                     color: LoreColor.amber,
                     activeFraction: isGenerating ? 0.45 : 1
                 )
-                .frame(width: 170, height: 104)
-                .opacity(0.45)
+                .frame(width: 138, height: 92)
+                .opacity(0.34)
                 .padding(.top, 22)
-                .padding(.trailing, -18)
+                .padding(.trailing, 12)
                 .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 14) {
@@ -304,6 +310,7 @@ struct OneHourHero: View {
                 .padding(18)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
             .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         }
         .buttonStyle(.pressable)

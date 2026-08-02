@@ -63,6 +63,10 @@ struct TravelMapControls: View {
         return "\(filteredPlaces.count) places to wander"
     }
 
+    private var bottomClearance: CGFloat {
+        collapsed ? 10 : 86
+    }
+
     var body: some View {
         VStack(spacing: 8) {
             handle
@@ -90,7 +94,7 @@ struct TravelMapControls: View {
             }
         }
         .padding(.top, 6)
-        .padding(.bottom, 10)
+        .padding(.bottom, bottomClearance)
         .background(
             // The ink fade only exists to keep the shelf text legible over the
             // map. When collapsed there is nothing to protect, so it disappears
