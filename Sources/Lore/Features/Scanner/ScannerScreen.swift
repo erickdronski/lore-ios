@@ -731,15 +731,12 @@ struct ScannerScreen: View {
                     .foregroundStyle(LoreColor.bone.opacity(0.78))
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
-                Button("Continue") {
+                Button {
                     showCameraRationale = false
                     model.requestCameraAccess()
+                } label: {
+                    scannerBrassActionLabel("Continue")
                 }
-                .font(LoreType.button)
-                .foregroundStyle(LoreColor.ink)
-                .padding(.horizontal, 22)
-                .frame(height: 46)
-                .background(BrassSheenSurface(shape: Capsule(), sweepOnAppear: false))
                 .buttonStyle(.plain)
             }
             .padding(28)
@@ -774,12 +771,7 @@ struct ScannerScreen: View {
                         UIApplication.shared.open(url)
                     }
                 } label: {
-                    Text("Open Settings")
-                        .font(LoreType.button)
-                        .foregroundStyle(LoreColor.ink)
-                        .padding(.horizontal, 22)
-                        .padding(.vertical, 12)
-                        .background(BrassSheenSurface(shape: Capsule(), sweepOnAppear: false))
+                    scannerBrassActionLabel("Open Settings")
                 }
                 .buttonStyle(.plain)
             }
@@ -807,23 +799,19 @@ struct ScannerScreen: View {
                     .foregroundStyle(LoreColor.bone.opacity(0.78))
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
-                Button("Use Precise Location") {
+                Button {
                     model.requestPreciseLocation()
+                } label: {
+                    scannerBrassActionLabel("Use Precise Location")
                 }
-                .font(LoreType.button)
-                .foregroundStyle(LoreColor.ink)
-                .padding(.horizontal, 22)
-                .frame(height: 46)
-                .background(BrassSheenSurface(shape: Capsule(), sweepOnAppear: false))
                 .buttonStyle(.plain)
-                Button("Open Settings") {
+                Button {
                     if let url = URL(string: UIApplication.openSettingsURLString) {
                         UIApplication.shared.open(url)
                     }
+                } label: {
+                    scannerSecondaryActionLabel("Open Settings")
                 }
-                .font(LoreType.button)
-                .foregroundStyle(LoreColor.brass300)
-                .frame(minHeight: 44)
                 .buttonStyle(.plain)
             }
             .padding(28)
@@ -855,14 +843,11 @@ struct ScannerScreen: View {
                     .foregroundStyle(LoreColor.bone.opacity(0.68))
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
-                Button("Try camera again") {
+                Button {
                     model.retryCamera()
+                } label: {
+                    scannerAmberActionLabel("Try camera again")
                 }
-                .font(LoreType.button)
-                .foregroundStyle(LoreColor.ink)
-                .padding(.horizontal, 22)
-                .frame(height: 46)
-                .background(LoreColor.amber, in: Capsule())
                 .buttonStyle(.plain)
             }
             .padding(28)
@@ -893,23 +878,19 @@ struct ScannerScreen: View {
                     .fixedSize(horizontal: false, vertical: true)
 
                 if model.canRetryLocalContext {
-                    Button("Try again") {
+                    Button {
                         model.retryLocalContext()
+                    } label: {
+                        scannerAmberActionLabel("Try again")
                     }
-                    .font(LoreType.button)
-                    .foregroundStyle(LoreColor.ink)
-                    .padding(.horizontal, 22)
-                    .frame(height: 46)
-                    .background(LoreColor.amber, in: Capsule())
                     .buttonStyle(.plain)
                 }
 
-                Button("Browse city maps") {
+                Button {
                     onBrowseCities()
+                } label: {
+                    scannerSecondaryActionLabel("Browse city maps")
                 }
-                .font(LoreType.button)
-                .foregroundStyle(LoreColor.brass300)
-                .frame(minHeight: 44)
                 .buttonStyle(.plain)
             }
             .padding(28)
@@ -978,6 +959,35 @@ struct ScannerScreen: View {
         #else
         return "You can still explore every place from Map and Tours while the camera is unavailable."
         #endif
+    }
+
+    private func scannerBrassActionLabel(_ title: String) -> some View {
+        Text(title)
+            .font(LoreType.button)
+            .foregroundStyle(LoreColor.ink)
+            .padding(.horizontal, 22)
+            .frame(minWidth: 96, minHeight: 46)
+            .background(BrassSheenSurface(shape: Capsule(), sweepOnAppear: false))
+            .contentShape(Capsule())
+    }
+
+    private func scannerAmberActionLabel(_ title: String) -> some View {
+        Text(title)
+            .font(LoreType.button)
+            .foregroundStyle(LoreColor.ink)
+            .padding(.horizontal, 22)
+            .frame(minWidth: 96, minHeight: 46)
+            .background(LoreColor.amber, in: Capsule())
+            .contentShape(Capsule())
+    }
+
+    private func scannerSecondaryActionLabel(_ title: String) -> some View {
+        Text(title)
+            .font(LoreType.button)
+            .foregroundStyle(LoreColor.brass300)
+            .padding(.horizontal, 12)
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
     }
 
     // MARK: Layout

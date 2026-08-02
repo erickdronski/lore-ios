@@ -22,6 +22,13 @@ languages([
 # The scheme wired for testing in project.yml (its Test action runs LoreUITests).
 scheme("LoreScreenshots")
 
+# Keep App Store capture isolated from the broader UI verification suite. The
+# release CI runs those checks separately; snapshot should only drive the six
+# deterministic marketing frames per device.
+only_testing([
+  "LoreUITests/LoreScreenshots/testCaptureScreenshots",
+])
+
 # Where the PNGs land (also the artifact the workflow uploads).
 output_directory("./fastlane/screenshots")
 
