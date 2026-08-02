@@ -19,6 +19,18 @@ final class NearMeLocationProvider: NSObject, CLLocationManagerDelegate {
     private(set) var authorizationStatus: CLAuthorizationStatus = .notDetermined
     private(set) var lastError: String?
 
+    #if DEBUG
+    private static var screenshotLocation: CLLocation {
+        CLLocation(
+            coordinate: CLLocationCoordinate2D(latitude: 41.8889, longitude: -87.6359),
+            altitude: 180,
+            horizontalAccuracy: 8,
+            verticalAccuracy: 12,
+            timestamp: Date()
+        )
+    }
+    #endif
+
     var isAuthorized: Bool {
         authorizationStatus == .authorizedWhenInUse
             || authorizationStatus == .authorizedAlways
@@ -33,6 +45,13 @@ final class NearMeLocationProvider: NSObject, CLLocationManagerDelegate {
     override init() {
         super.init()
         manager.delegate = self
+        #if DEBUG
+        if ScreenshotSupport.isActive {
+            authorizationStatus = .authorizedWhenInUse
+            location = Self.screenshotLocation
+            return
+        }
+        #endif
         authorizationStatus = manager.authorizationStatus
         // The shelf shows literal distance labels ("60 m away"), which users
         // read as a promise, so this asks for a genuinely accurate fix
@@ -47,6 +66,13 @@ final class NearMeLocationProvider: NSObject, CLLocationManagerDelegate {
     /// shelf's `.onAppear`; idempotent.
     func start(requestPermission: Bool = true) {
         lastError = nil
+        #if DEBUG
+        if ScreenshotSupport.isActive {
+            authorizationStatus = .authorizedWhenInUse
+            location = Self.screenshotLocation
+            return
+        }
+        #endif
         authorizationStatus = manager.authorizationStatus
         if requestPermission && authorizationStatus == .notDetermined {
             manager.requestWhenInUseAuthorization()
