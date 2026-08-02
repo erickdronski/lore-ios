@@ -43,6 +43,7 @@ final class LoreScreenshots: XCTestCase {
 
         // ── Launch 1: the tab surfaces ──────────────────────────────────────
         app.launch()
+        dismissSystemPermissionAlertIfNeeded()
 
         if UIDevice.current.userInterfaceIdiom == .phone {
             XCTAssertTrue(
@@ -61,6 +62,7 @@ final class LoreScreenshots: XCTestCase {
         // alert, then let pins + the near-me shelf settle over the network.
         tapTab(app, "Map")
         sleep(13)
+        dismissSystemPermissionAlertIfNeeded()
         snapshot("01Map")
 
         // TOURS — curated walking tours.
@@ -87,6 +89,7 @@ final class LoreScreenshots: XCTestCase {
         // Cold launch → fetch Chicago places → present the card → expand the
         // dossier → load the dive narrative + hero. Give the network room.
         sleep(15)
+        dismissSystemPermissionAlertIfNeeded()
         snapshot("03Dive")
         app.terminate()
 
@@ -94,6 +97,7 @@ final class LoreScreenshots: XCTestCase {
         app.launchEnvironment["LORE_SHOW"] = "culture"
         app.launch()
         sleep(10)
+        dismissSystemPermissionAlertIfNeeded()
         snapshot("04Culture")
     }
 
@@ -119,5 +123,20 @@ final class LoreScreenshots: XCTestCase {
         app.buttons
             .matching(NSPredicate(format: "label BEGINSWITH %@", "\(label),"))
             .firstMatch
+    }
+
+    @MainActor
+    private func dismissSystemPermissionAlertIfNeeded(timeout: TimeInterval = 2) {
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let alert = springboard.alerts.firstMatch
+        guard alert.waitForExistence(timeout: timeout) else { return }
+
+        for label in ["Allow While Using App", "Allow", "OK", "Allow Once"] {
+            let button = alert.buttons[label]
+            if button.exists {
+                button.tap()
+                return
+            }
+        }
     }
 }
