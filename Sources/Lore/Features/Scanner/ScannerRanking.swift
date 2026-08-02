@@ -288,6 +288,7 @@ enum ScannerRanking {
         let projected: ProjectedPlace
         let tier: Tier
         let score: Double
+        let visionTextScore: Double
         /// The interests this place matched for the current user (drives the
         /// "for you" emphasis; empty for everyone else, §3 curation-nudge).
         let matchedInterests: Set<String>
@@ -341,6 +342,67 @@ enum ScannerRanking {
         seenPlaceIDs.contains(place.id) ? 0 : 1
     }
 
+    private static let genericSignWords: Set<String> = [
+        "the", "and", "for", "with", "from", "building", "tower", "hotel",
+        "museum", "center", "centre", "station", "street", "avenue", "road",
+        "plaza", "park", "hall", "house", "north", "south", "east", "west",
+    ]
+
+    private static func normalizedWords(_ text: String) -> [String] {
+        let folded = text
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            .lowercased()
+        return folded
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+
+    /// Text read from the camera can corroborate a known nearby database row,
+    /// but it never creates a new identity. This keeps OCR in its proper place:
+    /// evidence for ranking, not a standalone landmark classifier.
+    static func visionTextMatchScore(read: VisionRead, place: Place) -> Double {
+        guard !read.readableText.isEmpty else { return 0 }
+        let placeName = normalizedWords(place.name)
+        let placeSlug = normalizedWords(place.slug.replacingOccurrences(of: "-", with: " "))
+        let placeTokens = Set((placeName + placeSlug).filter { !genericSignWords.contains($0) && $0.count >= 3 })
+        guard !placeTokens.isEmpty else { return 0 }
+
+        let readWords = read.readableText.flatMap(normalizedWords)
+        let readTokens = Set(readWords.filter { !genericSignWords.contains($0) && $0.count >= 3 })
+        guard !readTokens.isEmpty else { return 0 }
+
+        let placePhrase = placeName.joined(separator: " ")
+        let readPhrase = readWords.joined(separator: " ")
+        if placePhrase.count >= 4,
+           readPhrase.count >= 4,
+           (readPhrase.contains(placePhrase) || placePhrase.contains(readPhrase)) {
+            return 1
+        }
+
+        let overlap = placeTokens.intersection(readTokens)
+        if overlap.contains(where: { $0.count >= 5 }) { return 0.85 }
+        if overlap.count >= 2 { return 0.75 }
+        return 0
+    }
+
+    /// OCR can upgrade a Tier-B bearing to a Tier-A lock only when the text
+    /// literally matches this known nearby place and the geometry was already
+    /// close. It cannot rescue Tier-C/noisy-heading guesses.
+    static func corroboratedTier(
+        base: Tier,
+        projected: ProjectedPlace,
+        visionTextScore: Double
+    ) -> Tier {
+        guard base == .b,
+              visionTextScore >= 0.75,
+              projected.isInView,
+              projected.distance <= 350,
+              gazeScore(screenFraction: projected.screenFraction) >= 0.35
+        else { return base }
+        return .a
+    }
+
     /// Rank a frame of projected candidates. `prefs` supplies the persona lens
     /// (weights + the `InterestMap` context term); pass `nil` to fall back to
     /// the traveler default, the app works signed-out (docs/12 §4: chosen at
@@ -349,7 +411,8 @@ enum ScannerRanking {
         _ projected: [ProjectedPlace],
         prefs: UserPrefs?,
         quality: PoseQuality,
-        seenPlaceIDs: Set<String> = []
+        seenPlaceIDs: Set<String> = [],
+        visionRead: VisionRead = .empty
     ) -> [Ranked] {
         let persona = prefs?.persona ?? .traveler
         let weights = Weights.forPersona(persona)
@@ -364,12 +427,21 @@ enum ScannerRanking {
                 .map { InterestMap.relevanceScore(place: p.place, prefs: $0) }
                 ?? 0
 
+            let visionTextScore = visionTextMatchScore(read: visionRead, place: p.place)
+            let rawTier = tier(for: p, quality: quality)
+            let displayTier = corroboratedTier(
+                base: rawTier,
+                projected: p,
+                visionTextScore: visionTextScore
+            )
+
             let score =
                 weights.proximity  * proximityScore(distance: p.distance) +
                 weights.prominence * prominenceScore(for: p.place) +
                 weights.gaze       * gazeScore(screenFraction: p.screenFraction) +
                 weights.novelty    * noveltyScore(place: p.place, seenPlaceIDs: seenPlaceIDs) +
-                weights.context    * context
+                weights.context    * context +
+                visionTextScore    * 1.4
 
             let matched = prefs
                 .map { InterestMap.matchedInterests(place: p.place, prefs: $0) }
@@ -377,8 +449,9 @@ enum ScannerRanking {
 
             return Ranked(
                 projected: p,
-                tier: tier(for: p, quality: quality),
+                tier: displayTier,
                 score: score,
+                visionTextScore: visionTextScore,
                 matchedInterests: matched
             )
         }

@@ -15,20 +15,35 @@ SPEC.loader.exec_module(wave)
 
 
 def row(city: str, kind: str, sequence: int = 0) -> dict:
-    return {
-        "city": city,
-        "kind": kind,
-        "title": f"{city} {kind} {sequence}",
-        "body": "A specific and useful traveler note with enough detail.",
-        "attribution": "traveler pronunciation" if kind == "phrase" else None,
-        "emoji": "note",
-        "links": {},
-        "meta": {
+    links = {}
+    meta = {}
+    title = f"{city} {kind} {sequence}"
+    if kind == "phrase":
+        meta = {
             "language": "English",
             "pronunciation": "traveler pronunciation",
             "english": "Thank you",
             "usage": "A polite everyday phrase",
-        } if kind == "phrase" else ({"nonalcoholic": True} if kind == "drink" else {}),
+        }
+    elif kind == "drink":
+        meta = {"nonalcoholic": True}
+    elif kind == "watch":
+        links = {"youtube_url": "https://www.youtube.com/watch?v=alpha123"}
+        meta = {"platform": "YouTube"}
+    elif kind == "hashtag":
+        title = f"#{city.title()}Lore{sequence}"
+        links = {"hashtag_url": "https://www.tiktok.com/tag/example"}
+        meta = {"hashtag": title}
+
+    return {
+        "city": city,
+        "kind": kind,
+        "title": title,
+        "body": "A specific and useful traveler note with enough detail.",
+        "attribution": "traveler pronunciation" if kind == "phrase" else None,
+        "emoji": "note",
+        "links": links,
+        "meta": meta,
         "source": "https://example.org/travel",
         "license": "cc0",
         "sort": wave.EXPECTED_SORTS[kind] + sequence,
@@ -38,11 +53,12 @@ def row(city: str, kind: str, sequence: int = 0) -> dict:
 
 class ContentWaveTests(unittest.TestCase):
     @staticmethod
-    def city_rows(city: str) -> list[dict]:
+    def city_rows(city: str, profile: str = "traveler-kit") -> list[dict]:
+        counts = wave.required_kind_counts(profile)
         return [
             row(city, kind, sequence)
-            for kind in wave.REQUIRED_KINDS
-            for sequence in range(wave.REQUIRED_KIND_COUNTS[kind])
+            for kind in counts
+            for sequence in range(counts[kind])
         ]
 
     def test_validates_complete_city_sets(self) -> None:
@@ -52,12 +68,68 @@ class ContentWaveTests(unittest.TestCase):
 
         self.assertEqual(summary["rows"], 26)
         self.assertEqual(summary["cities"], 2)
+        self.assertEqual(summary["profile"], "traveler-kit")
+
+    def test_validates_local_expert_city_sets(self) -> None:
+        rows = self.city_rows("alpha", profile="local-expert-kit")
+
+        summary = wave.validate_rows(
+            rows,
+            expected_city_count=1,
+            profile="local-expert-kit",
+        )
+
+        self.assertEqual(summary["rows"], 27)
+        self.assertEqual(summary["profile"], "local-expert-kit")
+        self.assertEqual(summary["kinds"]["watch"], 2)
+        self.assertEqual(summary["kinds"]["hashtag"], 3)
+
+    def test_validates_local_expert_addon_sets(self) -> None:
+        rows = self.city_rows("alpha", profile="local-expert-addons")
+
+        summary = wave.validate_rows(
+            rows,
+            expected_city_count=1,
+            profile="local-expert-addons",
+        )
+
+        self.assertEqual(summary["rows"], 14)
+        self.assertNotIn("phrase", summary["kinds"])
+        self.assertEqual(summary["kinds"]["seasonal"], 1)
 
     def test_rejects_missing_kind(self) -> None:
         rows = [item for item in self.city_rows("alpha") if item["kind"] != "market"]
 
         with self.assertRaises(wave.WaveError):
             wave.validate_rows(rows, expected_city_count=1)
+
+    def test_rejects_rich_profile_without_video_links(self) -> None:
+        rows = self.city_rows("alpha", profile="local-expert-kit")
+        rows = [dict(item) for item in rows]
+        watch = next(item for item in rows if item["kind"] == "watch")
+        watch["links"] = {}
+
+        with self.assertRaises(wave.WaveError):
+            wave.validate_rows(
+                rows,
+                expected_city_count=1,
+                profile="local-expert-kit",
+            )
+
+    def test_rejects_rich_profile_without_hashtag_link(self) -> None:
+        rows = self.city_rows("alpha", profile="local-expert-kit")
+        rows = [dict(item) for item in rows]
+        hashtag = next(item for item in rows if item["kind"] == "hashtag")
+        hashtag["title"] = "not a tag"
+        hashtag["links"] = {}
+        hashtag["meta"] = {}
+
+        with self.assertRaises(wave.WaveError):
+            wave.validate_rows(
+                rows,
+                expected_city_count=1,
+                profile="local-expert-kit",
+            )
 
     def test_rejects_non_https_source(self) -> None:
         rows = self.city_rows("alpha")

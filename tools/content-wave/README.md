@@ -21,6 +21,25 @@ assigns stable display order, requires HTTPS sources, `cc0` text, and
 malformed traveler-facing punctuation. Database publication remains a
 separate, authenticated review step.
 
+For the richer city pages, compile the same shape with the stricter
+`local-expert-kit` profile. It keeps the traveler kit and additionally requires
+2 watch/video links, 3 hashtags, 2 local legends, 2 first-timer mistakes,
+2 neighborhood decoders, 2 photo prompts, and 1 seasonal hook per city:
+
+```sh
+python3 tools/content-wave/build_sql.py \
+  supabase/content/wave-2026-07/africa-oceania-south-america.json \
+  supabase/content/wave-2026-07/asia.json \
+  supabase/content/wave-2026-07/europe.json \
+  supabase/content/wave-2026-07/north-america.json \
+  --profile local-expert-kit \
+  --expected-city-count 141 \
+  --sql-out supabase/content/wave-2026-07/regional-sections.sql
+```
+
+When a city already has the traveler kit, use `local-expert-addons` for a
+14-row append-only wave containing only the richer local-expert kinds.
+
 Compile the missing place dossiers without touching existing audio fields:
 
 ```sh

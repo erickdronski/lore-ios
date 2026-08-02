@@ -140,8 +140,88 @@ class ContentAuditTests(unittest.TestCase):
 
         alpha = report["cities"][0]
         self.assertIn("city_section.drink", alpha["gaps"])
+        self.assertIn("city_section.watch", alpha["gaps"])
         self.assertEqual(alpha["section_kind_checks"]["phrase"]["count"], 13)
+        self.assertEqual(alpha["section_kind_checks"]["watch"]["minimum"], 2)
         self.assertFalse(alpha["passed"])
+
+    def test_flags_low_quality_local_expert_rows(self) -> None:
+        dataset = {metric: [] for metric in audit.METRICS}
+        dataset["city"] = [{"slug": "alpha", "name": "Alpha", "status": "live"}]
+        dataset["city_section"] = [
+            {
+                "id": "watch-1",
+                "city": "alpha",
+                "kind": "watch",
+                "title": "Watch the waterfront",
+                "body": "A useful prompt for a first look at the city.",
+                "links": {},
+                "meta": {"review_state": "pending_human_review"},
+                "source": "editorial:missing",
+                "provenance_state": "unverified",
+            },
+            {
+                "id": "tag-1",
+                "city": "alpha",
+                "kind": "hashtag",
+                "title": "HiddenAlpha",
+                "body": "A search trail for local architecture and food.",
+                "links": {},
+                "meta": {},
+                "source": "https://example.org/source",
+                "provenance_state": "reference_only",
+            },
+        ]
+        minimums = {metric: 0 for metric in audit.METRICS}
+        minimums["city_section"] = 1
+
+        report = audit.build_report(dataset, minimums)
+
+        alpha = report["cities"][0]
+        reasons = {issue["reason"] for issue in alpha["section_quality_checks"]}
+        self.assertIn("missing_https_source", reasons)
+        self.assertIn("missing_https_video_link", reasons)
+        self.assertIn("missing_platform", reasons)
+        self.assertIn("unfinished_review_state", reasons)
+        self.assertIn("missing_literal_hashtag", reasons)
+        self.assertIn("missing_https_hashtag_link", reasons)
+        self.assertIn("city_section.quality.watch", alpha["gaps"])
+        self.assertFalse(alpha["passed"])
+
+    def test_accepts_sourced_local_expert_rows(self) -> None:
+        dataset = {metric: [] for metric in audit.METRICS}
+        dataset["city"] = [{"slug": "alpha", "name": "Alpha", "status": "live"}]
+        dataset["city_section"] = [
+            {
+                "id": "watch-1",
+                "city": "alpha",
+                "kind": "watch",
+                "title": "Watch the waterfront",
+                "body": "A useful prompt for a first look at the city.",
+                "links": {"youtube_url": "https://www.youtube.com/watch?v=abc123"},
+                "meta": {"platform": "YouTube"},
+                "source": "https://example.org/source",
+                "provenance_state": "reference_only",
+            },
+            {
+                "id": "tag-1",
+                "city": "alpha",
+                "kind": "hashtag",
+                "title": "#HiddenAlpha",
+                "body": "A search trail for local architecture and food.",
+                "links": {"hashtag_url": "https://www.tiktok.com/tag/hiddenalpha"},
+                "meta": {"hashtag": "#HiddenAlpha"},
+                "source": "https://example.org/source",
+                "provenance_state": "reviewed",
+            },
+        ]
+        minimums = {metric: 0 for metric in audit.METRICS}
+
+        report = audit.build_report(dataset, minimums)
+
+        alpha = report["cities"][0]
+        self.assertEqual(alpha["section_quality_checks"], [])
+        self.assertTrue(alpha["passed"])
 
     def test_threshold_file_and_cli_override_are_validated(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

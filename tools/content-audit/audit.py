@@ -29,7 +29,49 @@ METRICS = (
     "tour",
 )
 
-SECTION_KIND_MINIMUMS = {"phrase": 6, "drink": 2, "etiquette": 4, "market": 1}
+SECTION_KIND_MINIMUMS = {
+    "phrase": 6,
+    "drink": 2,
+    "etiquette": 4,
+    "market": 1,
+    "watch": 2,
+    "hashtag": 3,
+    "local_legend": 2,
+    "first_timer_mistake": 2,
+    "neighborhood_decode": 2,
+    "photo_prompt": 2,
+    "seasonal": 1,
+}
+LOCAL_EXPERT_KINDS = frozenset(
+    {
+        "watch",
+        "hashtag",
+        "local_legend",
+        "first_timer_mistake",
+        "neighborhood_decode",
+        "photo_prompt",
+        "seasonal",
+    }
+)
+PUBLIC_PROVENANCE_STATES = frozenset({"reference_only", "reviewed"})
+UNSAFE_PHOTO_PROMPT_MARKERS = (
+    "trespass",
+    "sneak into",
+    "private property",
+    "restricted area",
+    "climb over",
+    "jump the fence",
+)
+REVIEW_STATE_KEYS = (
+    "review_state",
+    "review_status",
+    "fact_review",
+    "cultural_safety_review",
+    "rights_review",
+    "recheck_state",
+    "recheck_status",
+)
+UNFINISHED_REVIEW_MARKERS = ("pending", "not_reviewed", "unreviewed")
 
 # These defaults describe a useful city experience, not merely a non-empty DB.
 DEFAULT_MINIMUMS = {
@@ -40,7 +82,7 @@ DEFAULT_MINIMUMS = {
     "city_culture": 8,
     "city_fact": 8,
     "city_theme": 1,
-    "city_section": 13,
+    "city_section": sum(SECTION_KIND_MINIMUMS.values()),
     "tour": 1,
 }
 
@@ -52,7 +94,10 @@ ENDPOINTS = {
     "city_culture": {"select": "id,city", "order": "id.asc"},
     "city_fact": {"select": "id,city", "order": "id.asc"},
     "city_theme": {"select": "city", "order": "city.asc"},
-    "city_section": {"select": "id,city,kind", "order": "id.asc"},
+    "city_section": {
+        "select": "id,city,kind,title,body,links,meta,source,provenance_state",
+        "order": "id.asc",
+    },
     "tour": {"select": "id,city", "order": "id.asc"},
 }
 
@@ -331,6 +376,7 @@ def build_report(
     section_kind_counts = {
         slug: {kind: 0 for kind in SECTION_KIND_MINIMUMS} for slug in scoped_cities
     }
+    section_quality_issues = {slug: [] for slug in scoped_cities}
     for slug in counts:
         counts[slug]["city"] = 1
 
@@ -360,8 +406,11 @@ def build_report(
             city = row.get("city")
             if city in scoped_cities:
                 counts[city][metric] += 1
-                if metric == "city_section" and row.get("kind") in SECTION_KIND_MINIMUMS:
-                    section_kind_counts[city][str(row["kind"])] += 1
+                if metric == "city_section":
+                    kind = row.get("kind")
+                    if kind in SECTION_KIND_MINIMUMS:
+                        section_kind_counts[city][str(kind)] += 1
+                    section_quality_issues[city].extend(_city_section_quality_issues(row))
             elif city in all_cities:
                 out_of_scope_rows[metric] += 1
             else:
@@ -405,6 +454,7 @@ def build_report(
                 gaps.append(metric)
 
         section_kind_checks = {}
+        section_quality_checks = []
         if minimums["city_section"] > 0 and availability["city_section"]:
             for kind, required in SECTION_KIND_MINIMUMS.items():
                 count = section_kind_counts[slug][kind]
@@ -417,6 +467,9 @@ def build_report(
                 }
                 if not passed:
                     gaps.append(f"city_section.{kind}")
+            for issue in section_quality_issues[slug]:
+                section_quality_checks.append(issue)
+                gaps.append(f"city_section.quality.{issue['kind']}")
 
         place_count = len(places_by_city[slug])
         covered_place_count = len(places_with_dive[slug])
@@ -430,6 +483,7 @@ def build_report(
                 "counts": city_counts,
                 "checks": checks,
                 "section_kind_checks": section_kind_checks,
+                "section_quality_checks": section_quality_checks,
                 "dive_linkage": {
                     "places_with_dive": covered_place_count,
                     "places_total": place_count,
@@ -475,6 +529,85 @@ def build_report(
     }
 
 
+def _city_section_quality_issues(row: Mapping[str, Any]) -> list[dict[str, str]]:
+    kind = row.get("kind")
+    if kind not in LOCAL_EXPERT_KINDS:
+        return []
+
+    city = str(row.get("city") or "")
+    title = str(row.get("title") or row.get("id") or "")
+    links = row.get("links") if isinstance(row.get("links"), dict) else {}
+    meta = row.get("meta") if isinstance(row.get("meta"), dict) else {}
+    issues: list[dict[str, str]] = []
+
+    def add(reason: str) -> None:
+        issues.append({"city": city, "kind": str(kind), "title": title, "reason": reason})
+
+    if _https_url(row.get("source")) is None:
+        add("missing_https_source")
+    provenance_state = row.get("provenance_state")
+    if provenance_state not in PUBLIC_PROVENANCE_STATES:
+        add("unpublished_provenance")
+    if _has_unfinished_review_marker(meta):
+        add("unfinished_review_state")
+
+    if kind == "watch":
+        if _first_https_link(links, "video_url", "youtube_url", "tiktok_url", "website") is None:
+            add("missing_https_video_link")
+        if not _nonempty(meta.get("platform")):
+            add("missing_platform")
+    elif kind == "hashtag":
+        hashtag = str(meta.get("hashtag") or title).strip()
+        if not hashtag.startswith("#") or len(hashtag) < 2:
+            add("missing_literal_hashtag")
+        if _first_https_link(
+            links, "hashtag_url", "tiktok_url", "instagram_url", "website"
+        ) is None:
+            add("missing_https_hashtag_link")
+    elif kind == "local_legend":
+        confidence = str(meta.get("confidence") or "").strip().casefold()
+        if confidence not in {"legend", "oral tradition", "disputed", "documented"}:
+            add("missing_legend_confidence_label")
+    elif kind == "photo_prompt":
+        body = str(row.get("body") or "").casefold()
+        if any(marker in body for marker in UNSAFE_PHOTO_PROMPT_MARKERS):
+            add("unsafe_photo_prompt_language")
+
+    return issues
+
+
+def _has_unfinished_review_marker(meta: Mapping[str, Any]) -> bool:
+    for key in REVIEW_STATE_KEYS:
+        value = meta.get(key)
+        if not isinstance(value, str):
+            continue
+        folded = value.casefold()
+        if any(marker in folded for marker in UNFINISHED_REVIEW_MARKERS):
+            return True
+    return False
+
+
+def _nonempty(value: Any) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+def _https_url(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    parsed = urllib.parse.urlsplit(value.strip())
+    if parsed.scheme == "https" and parsed.netloc:
+        return value.strip()
+    return None
+
+
+def _first_https_link(links: Mapping[str, Any], *keys: str) -> str | None:
+    for key in keys:
+        url = _https_url(links.get(key))
+        if url:
+            return url
+    return None
+
+
 def human_summary(report: Mapping[str, Any]) -> str:
     summary = report["summary"]
     result = "PASS" if summary["passed"] else "GAPS FOUND"
@@ -505,6 +638,16 @@ def human_summary(report: Mapping[str, Any]) -> str:
         for city in failing:
             details = []
             for metric in city["gaps"]:
+                if metric.startswith("city_section.quality."):
+                    kind = metric.rsplit(".", 1)[1]
+                    quality_issues = [
+                        issue
+                        for issue in city.get("section_quality_checks", [])
+                        if issue.get("kind") == kind
+                    ]
+                    reason = quality_issues[0]["reason"] if quality_issues else "invalid"
+                    details.append(f"{metric} {reason}")
+                    continue
                 if metric.startswith("city_section."):
                     kind = metric.split(".", 1)[1]
                     check = city["section_kind_checks"][kind]

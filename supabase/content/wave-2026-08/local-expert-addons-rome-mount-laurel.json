@@ -1,0 +1,723 @@
+[
+  {
+    "city": "rome",
+    "kind": "watch",
+    "title": "Start with the official tourism channel",
+    "body": "Use Turismo Roma's video channel as the first moving-image pass: look for the city's current campaign language, event clips, and neighborhood cues before chasing random influencer lists.",
+    "attribution": "Official tourism video channel",
+    "emoji": "🎬",
+    "links": {
+      "youtube_url": "https://www.youtube.com/@turismoroma",
+      "source": "https://www.wikidata.org/wiki/Q123584566"
+    },
+    "meta": {
+      "wave": "2026-08",
+      "profile": "local-expert-addons",
+      "platform": "YouTube",
+      "creator": "Turismo Roma",
+      "duration": "Channel",
+      "rights": "external_link_only",
+      "confidence": "source-backed",
+      "review_state": "source_checked",
+      "rights_review": "link_only_ok",
+      "accessed": "2026-08-02"
+    },
+    "source": "https://www.wikidata.org/wiki/Q123584566",
+    "license": "cc0",
+    "sort": 160,
+    "provenance_state": "reference_only"
+  },
+  {
+    "city": "rome",
+    "kind": "watch",
+    "title": "Watch Rome through civic media",
+    "body": "Roma Capitale's official media channel is useful for how the city explains public places, ceremonies, and services to residents. Use it as context, not as a sightseeing shortcut.",
+    "attribution": "Official city media channel",
+    "emoji": "📺",
+    "links": {
+      "youtube_url": "https://www.youtube.com/notizieromacapitale",
+      "source": "https://www.comune.roma.it/web/it/social-media-n.page"
+    },
+    "meta": {
+      "wave": "2026-08",
+      "profile": "local-expert-addons",
+      "platform": "YouTube",
+      "creator": "Roma Capitale",
+      "duration": "Channel",
+      "rights": "external_link_only",
+      "confidence": "official-source",
+      "review_state": "source_checked",
+      "rights_review": "link_only_ok",
+      "accessed": "2026-08-02"
+    },
+    "source": "https://www.comune.roma.it/web/it/social-media-n.page",
+    "license": "cc0",
+    "sort": 161,
+    "provenance_state": "reference_only"
+  },
+  {
+    "city": "rome",
+    "kind": "hashtag",
+    "title": "#Roma",
+    "body": "Use this broad tag to read how residents, institutions, and travelers are currently framing the city. It is a public search trail, so pair it with a neighborhood before trusting the vibe.",
+    "attribution": "Roma Capitale social-channel context",
+    "emoji": "#️⃣",
+    "links": {
+      "hashtag_url": "https://www.instagram.com/explore/tags/roma/",
+      "instagram_url": "https://www.instagram.com/explore/tags/roma/",
+      "source": "https://www.comune.roma.it/web/it/social-media-policy.page"
+    },
+    "meta": {
+      "wave": "2026-08",
+      "profile": "local-expert-addons",
+      "platform": "Instagram",
+      "hashtag": "#Roma",
+      "creator": "Public search",
+      "rights": "external_search_only",
+      "confidence": "public-search",
+      "review_state": "source_checked",
+      "rights_review": "link_only_ok",
+      "accessed": "2026-08-02"
+    },
+    "source": "https://www.comune.roma.it/web/it/social-media-policy.page",
+    "license": "cc0",
+    "sort": 170,
+    "provenance_state": "reference_only"
+  },
+  {
+    "city": "rome",
+    "kind": "hashtag",
+    "title": "#VisitRome",
+    "body": "This is the cleaner discovery tag when you want visitor-facing clips, official-adjacent posts, and trip planning ideas. Verify opening hours in Lore or on the venue site before acting.",
+    "attribution": "Official Turismo Roma hashtag",
+    "emoji": "#️⃣",
+    "links": {
+      "hashtag_url": "https://www.tiktok.com/tag/visitrome",
+      "tiktok_url": "https://www.tiktok.com/tag/visitrome",
+      "source": "https://www.turismoroma.it/it/accoglienza/turismoromait"
+    },
+    "meta": {
+      "wave": "2026-08",
+      "profile": "local-expert-addons",
+      "platform": "TikTok",
+      "hashtag": "#VisitRome",
+      "creator": "Public search",
+      "rights": "external_search_only",
+      "confidence": "official-source",
+      "review_state": "source_checked",
+      "rights_review": "link_only_ok",
+      "accessed": "2026-08-02"
+    },
+    "source": "https://www.turismoroma.it/it/accoglienza/turismoromait",
+    "license": "cc0",
+    "sort": 171,
+    "provenance_state": "reference_only"
+  },
+  {
+    "city": "rome",
+    "kind": "hashtag",
+    "title": "#FUTOUROMA",
+    "body": "Use this campaign tag to see Rome framed through tourism quality, sustainability, resident life, and the city's future-facing identity rather than only postcard antiquity.",
+    "attribution": "Roma Capitale tourism campaign",
+    "emoji": "#️⃣",
+    "links": {
+      "hashtag_url": "https://www.instagram.com/explore/tags/futouroma/",
+      "instagram_url": "https://www.instagram.com/explore/tags/futouroma/",
+      "source": "https://www.turismoroma.it/it/node/37819"
+    },
+    "meta": {
+      "wave": "2026-08",
+      "profile": "local-expert-addons",
+      "platform": "Instagram",
+      "hashtag": "#FUTOUROMA",
+      "creator": "Public search",
+      "rights": "external_search_only",
+      "confidence": "official-source",
+      "review_state": "source_checked",
+      "rights_review": "link_only_ok",
+      "accessed": "2026-08-02"
+    },
+    "source": "https://www.turismoroma.it/it/node/37819",
+    "license": "cc0",
+    "sort": 172,
+    "provenance_state": "reference_only"
+  },
+  {
+    "city": "rome",
+    "kind": "local_legend",
+    "title": "The coin is a promise to return",
+    "body": "At Trevi Fountain, the familiar coin toss is a city ritual attached to the promise of returning to Rome. Treat it as legend and custom, not as a guaranteed outcome.",
+    "attribution": "Legend noted by Turismo Roma",
+    "emoji": "🪙",
+    "links": {
+      "source": "https://www.turismoroma.it/en/places/trevi-fountain"
+    },
+    "meta": {
+      "wave": "2026-08",
+      "profile": "local-expert-addons",
+      "confidence": "legend",
+      "neighborhood": "Trevi",
+      "rights": "original_lore_copy",
+      "review_state": "source_checked",
+      "accessed": "2026-08-02"
+    },
+    "source": "https://www.turismoroma.it/en/places/trevi-fountain",
+    "license": "cc0",
+    "sort": 180,
+    "provenance_state": "reference_only"
+  },
+  {
+    "city": "rome",
+    "kind": "local_legend",
+    "title": "The Mouth of Truth still tests the nervous",
+    "body": "The Bocca della Verita is tied to the tale that it can bite a liar's hand. Read it as a playful Roman legend with a long tourist afterlife, especially after Roman Holiday.",
+    "attribution": "Legend noted by Turismo Roma itinerary",
+    "emoji": "🫲",
+    "links": {
+      "source": "https://www.turismoroma.it/en/node/31554"
+    },
+    "meta": {
+      "wave": "2026-08",
+      "profile": "local-expert-addons",
+      "confidence": "legend",
+      "neighborhood": "Bocca della Verita",
+      "rights": "original_lore_copy",
+      "review_state": "source_checked",
+      "accessed": "2026-08-02"
+    },
+    "source": "https://www.turismoroma.it/en/node/31554",
+    "license": "cc0",
+    "sort": 181,
+    "provenance_state": "reference_only"
+  },
+  {
+    "city": "rome",
+    "kind": "first_timer_mistake",
+    "title": "Treating Trevi like a free-for-all",
+    "body": "Before you go, check the current Trevi access rules. Visitor flow, payment, crowd limits, and maintenance windows can change, and sitting, eating, or smoking at the basin is not the move.",
+    "attribution": "Access guidance from Turismo Roma",
+    "emoji": "⚠️",
+    "links": {
+      "source": "https://www.turismoroma.it/en/places/trevi-fountain"
+    },
+    "meta": {
+      "wave": "2026-08",
+      "profile": "local-expert-addons",
+      "confidence": "documented",
+      "neighborhood": "Trevi",
+      "rights": "original_lore_copy",
+      "review_state": "source_checked",
+      "accessed": "2026-08-02"
+    },
+    "source": "https://www.turismoroma.it/en/places/trevi-fountain",
+    "license": "cc0",
+    "sort": 190,
+    "provenance_state": "reference_only"
+  },
+  {
+    "city": "rome",
+    "kind": "first_timer_mistake",
+    "title": "Calling Trastevere only nightlife",
+    "body": "Trastevere is evening energy, yes, but also churches, fountains, residents, and old lanes. Arrive before dinner once, then return at night with a quieter sense of the neighborhood.",
+    "attribution": "Neighborhood context from Turismo Roma",
+    "emoji": "🌙",
+    "links": {
+      "source": "https://www.turismoroma.it/en/node/31554"
+    },
+    "meta": {
+      "wave": "2026-08",
+      "profile": "local-expert-addons",
+      "confidence": "documented",
+      "neighborhood": "Trastevere",
+      "rights": "original_lore_copy",
+      "review_state": "source_checked",
+      "accessed": "2026-08-02"
+    },
+    "source": "https://www.turismoroma.it/en/node/31554",
+    "license": "cc0",
+    "sort": 191,
+    "provenance_state": "reference_only"
+  },
+  {
+    "city": "rome",
+    "kind": "neighborhood_decode",
+    "title": "Trevi is a three-street machine",
+    "body": "Read Trevi by its name: the rione gathers movement around a historic confluence of streets and water. Duck into side lanes when the fountain crush feels too loud.",
+    "attribution": "Rione context from Turismo Roma",
+    "emoji": "🧭",
+    "links": {
+      "source": "https://www.turismoroma.it/en/page/rione-ii-trevi"
+    },
+    "meta": {
+      "wave": "2026-08",
+      "profile": "local-expert-addons",
+      "neighborhood": "Trevi",
+      "confidence": "documented",
+      "rights": "original_lore_copy",
+      "review_state": "source_checked",
+      "accessed": "2026-08-02"
+    },
+    "source": "https://www.turismoroma.it/en/page/rione-ii-trevi",
+    "license": "cc0",
+    "sort": 200,
+    "provenance_state": "reference_only"
+  },
+  {
+    "city": "rome",
+    "kind": "neighborhood_decode",
+    "title": "Trastevere rewards slow wandering",
+    "body": "Across the Tiber, read Trastevere through its piazzas, fountains, church fronts, and lived-in lanes before you judge it by one restaurant row.",
+    "attribution": "Neighborhood context from Turismo Roma",
+    "emoji": "🏘️",
+    "links": {
+      "source": "https://www.turismoroma.it/en/node/31554"
+    },
+    "meta": {
+      "wave": "2026-08",
+      "profile": "local-expert-addons",
+      "neighborhood": "Trastevere",
+      "confidence": "documented",
+      "rights": "original_lore_copy",
+      "review_state": "source_checked",
+      "accessed": "2026-08-02"
+    },
+    "source": "https://www.turismoroma.it/en/node/31554",
+    "license": "cc0",
+    "sort": 201,
+    "provenance_state": "reference_only"
+  },
+  {
+    "city": "rome",
+    "kind": "photo_prompt",
+    "title": "Find the small fountain of lovers",
+    "body": "At Trevi, look to the right of the main monument for the small rectangular basin tied to the lovers' tradition. Photograph the detail, not other visitors' faces.",
+    "attribution": "Detail noted by Turismo Roma",
+    "emoji": "📷",
+    "links": {
+      "source": "https://www.turismoroma.it/en/places/trevi-fountain"
+    },
+    "meta": {
+      "wave": "2026-08",
+      "profile": "local-expert-addons",
+      "prompt_type": "detail",
+      "neighborhood": "Trevi",
+      "confidence": "documented",
+      "rights": "original_lore_copy",
+      "review_state": "source_checked",
+      "accessed": "2026-08-02"
+    },
+    "source": "https://www.turismoroma.it/en/places/trevi-fountain",
+    "license": "cc0",
+    "sort": 210,
+    "provenance_state": "reference_only"
+  },
+  {
+    "city": "rome",
+    "kind": "photo_prompt",
+    "title": "Catch Trastevere at fountain height",
+    "body": "In Piazza di Santa Maria in Trastevere, frame the fountain, church facade, and moving square from public space. Let people pass through the scene without making them the subject.",
+    "attribution": "Place context from Turismo Roma",
+    "emoji": "📷",
+    "links": {
+      "source": "https://www.turismoroma.it/en/node/1509"
+    },
+    "meta": {
+      "wave": "2026-08",
+      "profile": "local-expert-addons",
+      "prompt_type": "public_square",
+      "neighborhood": "Trastevere",
+      "confidence": "documented",
+      "rights": "original_lore_copy",
+      "review_state": "source_checked",
+      "accessed": "2026-08-02"
+    },
+    "source": "https://www.turismoroma.it/en/node/1509",
+    "license": "cc0",
+    "sort": 211,
+    "provenance_state": "reference_only"
+  },
+  {
+    "city": "rome",
+    "kind": "seasonal",
+    "title": "April 21 is Rome's birthday",
+    "body": "Natale di Roma turns the city's foundation story into concerts, visits, itineraries, and reenactments around April 21. Check the year's program before you build a day around it.",
+    "attribution": "Official event listing",
+    "emoji": "📅",
+    "links": {
+      "source": "https://www.turismoroma.it/en/events/natale-di-roma-2026"
+    },
+    "meta": {
+      "wave": "2026-08",
+      "profile": "local-expert-addons",
+      "best_season": "April",
+      "confidence": "documented",
+      "rights": "original_lore_copy",
+      "review_state": "source_checked",
+      "accessed": "2026-08-02"
+    },
+    "source": "https://www.turismoroma.it/en/events/natale-di-roma-2026",
+    "license": "cc0",
+    "sort": 220,
+    "provenance_state": "reference_only"
+  },
+  {
+    "city": "mount-laurel",
+    "kind": "watch",
+    "title": "Tour Paulsdale before you arrive",
+    "body": "The Alice Paul virtual tour is the strongest pre-visit watch: it turns the house from a landmark pin into a civic rights story before you step onto Hooton Road.",
+    "attribution": "Alice Paul Institute virtual tour",
+    "emoji": "🎬",
+    "links": {
+      "youtube_url": "https://www.youtube.com/playlist?list=PLgp6ECtCoSZNCC0bdoHjRkS0RtJVZV4WE",
+      "source": "https://suffrageandthemedia.org/source/virtual-tour-explore-alice-pauls-home/"
+    },
+    "meta": {
+      "wave": "2026-08",
+      "profile": "local-expert-addons",
+      "platform": "YouTube",
+      "creator": "Alice Paul Institute",
+      "duration": "Playlist",
+      "rights": "external_link_only",
+      "confidence": "source-backed",
+      "review_state": "source_checked",
+      "rights_review": "link_only_ok",
+      "accessed": "2026-08-02"
+    },
+    "source": "https://suffrageandthemedia.org/source/virtual-tour-explore-alice-pauls-home/",
+    "license": "cc0",
+    "sort": 160,
+    "provenance_state": "reference_only"
+  },
+  {
+    "city": "mount-laurel",
+    "kind": "watch",
+    "title": "Preview the Woods like a local",
+    "body": "Before heading to Rancocas Woods, check the official events and shops pages so you know whether you are visiting quiet shop hours, a farmers market, or a packed craft day.",
+    "attribution": "Rancocas Woods event guide",
+    "emoji": "🪵",
+    "links": {
+      "website": "https://rancocaswoodseventsnshops.com/farmers-market",
+      "source": "https://rancocaswoodseventsnshops.com/farmers-market"
+    },
+    "meta": {
+      "wave": "2026-08",
+      "profile": "local-expert-addons",
+      "platform": "Website",
+      "creator": "Rancocas Woods Events and Shops",
+      "duration": "Event guide",
+      "rights": "external_link_only",
+      "confidence": "source-backed",
+      "review_state": "source_checked",
+      "rights_review": "link_only_ok",
+      "accessed": "2026-08-02"
+    },
+    "source": "https://rancocaswoodseventsnshops.com/farmers-market",
+    "license": "cc0",
+    "sort": 161,
+    "provenance_state": "reference_only"
+  },
+  {
+    "city": "mount-laurel",
+    "kind": "hashtag",
+    "title": "#RancocasWoods",
+    "body": "Use this tag to check market days, maker booths, creek-side snapshots, and visitor flow around the Woods before you drive over.",
+    "attribution": "Rancocas Woods search trail",
+    "emoji": "#️⃣",
+    "links": {
+      "hashtag_url": "https://www.instagram.com/explore/tags/rancocaswoods/",
+      "instagram_url": "https://www.instagram.com/explore/tags/rancocaswoods/",
+      "source": "https://rancocaswoodseventsnshops.com/rw-business-association"
+    },
+    "meta": {
+      "wave": "2026-08",
+      "profile": "local-expert-addons",
+      "platform": "Instagram",
+      "hashtag": "#RancocasWoods",
+      "creator": "Public search",
+      "rights": "external_search_only",
+      "confidence": "source-backed",
+      "review_state": "source_checked",
+      "rights_review": "link_only_ok",
+      "accessed": "2026-08-02"
+    },
+    "source": "https://rancocaswoodseventsnshops.com/rw-business-association",
+    "license": "cc0",
+    "sort": 170,
+    "provenance_state": "reference_only"
+  },
+  {
+    "city": "mount-laurel",
+    "kind": "hashtag",
+    "title": "#AlicePaul",
+    "body": "Use this tag for suffrage, equality, and Paulsdale context. It is the wider historical lane, so pair it with Paulsdale when you want Mount Laurel specifically.",
+    "attribution": "Alice Paul Center source trail",
+    "emoji": "#️⃣",
+    "links": {
+      "hashtag_url": "https://www.instagram.com/explore/tags/alicepaul/",
+      "instagram_url": "https://www.instagram.com/explore/tags/alicepaul/",
+      "source": "https://www.alicepaul.org/about-the-institute/"
+    },
+    "meta": {
+      "wave": "2026-08",
+      "profile": "local-expert-addons",
+      "platform": "Instagram",
+      "hashtag": "#AlicePaul",
+      "creator": "Public search",
+      "rights": "external_search_only",
+      "confidence": "source-backed",
+      "review_state": "source_checked",
+      "rights_review": "link_only_ok",
+      "accessed": "2026-08-02"
+    },
+    "source": "https://www.alicepaul.org/about-the-institute/",
+    "license": "cc0",
+    "sort": 171,
+    "provenance_state": "reference_only"
+  },
+  {
+    "city": "mount-laurel",
+    "kind": "hashtag",
+    "title": "#Paulsdale",
+    "body": "Use this narrower tag when you want the house, programs, grounds, and Women’s Equality Day activity rather than the entire national Alice Paul conversation.",
+    "attribution": "Paulsdale visit context",
+    "emoji": "#️⃣",
+    "links": {
+      "hashtag_url": "https://www.instagram.com/explore/tags/paulsdale/",
+      "instagram_url": "https://www.instagram.com/explore/tags/paulsdale/",
+      "source": "https://www.alicepaul.org/visit/"
+    },
+    "meta": {
+      "wave": "2026-08",
+      "profile": "local-expert-addons",
+      "platform": "Instagram",
+      "hashtag": "#Paulsdale",
+      "creator": "Public search",
+      "rights": "external_search_only",
+      "confidence": "source-backed",
+      "review_state": "source_checked",
+      "rights_review": "link_only_ok",
+      "accessed": "2026-08-02"
+    },
+    "source": "https://www.alicepaul.org/visit/",
+    "license": "cc0",
+    "sort": 172,
+    "provenance_state": "reference_only"
+  },
+  {
+    "city": "mount-laurel",
+    "kind": "local_legend",
+    "title": "The town name came from the mount",
+    "body": "Local history credits schoolteacher Hannah Gillingham with suggesting Mount Laurel's name because of the laurel around the mount. Treat it as documented local naming lore.",
+    "attribution": "Mount Laurel Historical Society",
+    "emoji": "🌿",
+    "links": {
+      "source": "https://www.mountlaurelhistoricalsociety.com/history"
+    },
+    "meta": {
+      "wave": "2026-08",
+      "profile": "local-expert-addons",
+      "confidence": "documented",
+      "rights": "original_lore_copy",
+      "review_state": "source_checked",
+      "accessed": "2026-08-02"
+    },
+    "source": "https://www.mountlaurelhistoricalsociety.com/history",
+    "license": "cc0",
+    "sort": 180,
+    "provenance_state": "reference_only"
+  },
+  {
+    "city": "mount-laurel",
+    "kind": "local_legend",
+    "title": "Rancocas Woods was once a trolley-era playground",
+    "body": "Local history records Masonville and Rancocas Woods as an amusement-park stop around a dammed lake in the 1920s. When you walk the shops, remember the older leisure landscape under it.",
+    "attribution": "Mount Laurel Historical Society",
+    "emoji": "🎡",
+    "links": {
+      "source": "https://www.mountlaurelhistoricalsociety.com/history"
+    },
+    "meta": {
+      "wave": "2026-08",
+      "profile": "local-expert-addons",
+      "confidence": "documented",
+      "neighborhood": "Rancocas Woods",
+      "rights": "original_lore_copy",
+      "review_state": "source_checked",
+      "accessed": "2026-08-02"
+    },
+    "source": "https://www.mountlaurelhistoricalsociety.com/history",
+    "license": "cc0",
+    "sort": 181,
+    "provenance_state": "reference_only"
+  },
+  {
+    "city": "mount-laurel",
+    "kind": "first_timer_mistake",
+    "title": "Assuming Paulsdale is always walk-in",
+    "body": "Paulsdale has specific public hours, tour options, school-program days, and admission rules. Check the visit page before you arrive so the house story does not become a parking-lot story.",
+    "attribution": "Alice Paul Center visit page",
+    "emoji": "⚠️",
+    "links": {
+      "source": "https://www.alicepaul.org/visit/"
+    },
+    "meta": {
+      "wave": "2026-08",
+      "profile": "local-expert-addons",
+      "confidence": "documented",
+      "neighborhood": "Paulsdale",
+      "rights": "original_lore_copy",
+      "review_state": "source_checked",
+      "accessed": "2026-08-02"
+    },
+    "source": "https://www.alicepaul.org/visit/",
+    "license": "cc0",
+    "sort": 190,
+    "provenance_state": "reference_only"
+  },
+  {
+    "city": "mount-laurel",
+    "kind": "first_timer_mistake",
+    "title": "Showing up to the Woods on the wrong rhythm",
+    "body": "Rancocas Woods feels different on quiet shop days, farmers market Sundays, and craft-show weekends. Check the calendar first, then choose the pace you actually want.",
+    "attribution": "Rancocas Woods event schedule",
+    "emoji": "🗓️",
+    "links": {
+      "source": "https://rancocaswoodseventsnshops.com/farmers-market"
+    },
+    "meta": {
+      "wave": "2026-08",
+      "profile": "local-expert-addons",
+      "confidence": "documented",
+      "neighborhood": "Rancocas Woods",
+      "rights": "original_lore_copy",
+      "review_state": "source_checked",
+      "accessed": "2026-08-02"
+    },
+    "source": "https://rancocaswoodseventsnshops.com/farmers-market",
+    "license": "cc0",
+    "sort": 191,
+    "provenance_state": "reference_only"
+  },
+  {
+    "city": "mount-laurel",
+    "kind": "neighborhood_decode",
+    "title": "Rancocas Woods is shops plus forest edge",
+    "body": "Read the Woods as a village of small shops beside state-park land, not a sealed mall. The useful local move is to pair a market stop with time outdoors.",
+    "attribution": "Rancocas Woods Business Association",
+    "emoji": "🧭",
+    "links": {
+      "source": "https://rancocaswoodseventsnshops.com/rw-business-association"
+    },
+    "meta": {
+      "wave": "2026-08",
+      "profile": "local-expert-addons",
+      "neighborhood": "Rancocas Woods",
+      "confidence": "documented",
+      "rights": "original_lore_copy",
+      "review_state": "source_checked",
+      "accessed": "2026-08-02"
+    },
+    "source": "https://rancocaswoodseventsnshops.com/rw-business-association",
+    "license": "cc0",
+    "sort": 200,
+    "provenance_state": "reference_only"
+  },
+  {
+    "city": "mount-laurel",
+    "kind": "neighborhood_decode",
+    "title": "Paulsdale is a house and a movement",
+    "body": "The site is Alice Paul's birthplace, but the current center also teaches leadership, gender justice, and civic engagement. Read the place through both preservation and action.",
+    "attribution": "Alice Paul Center mission",
+    "emoji": "🏛️",
+    "links": {
+      "source": "https://www.alicepaul.org/about-the-institute/"
+    },
+    "meta": {
+      "wave": "2026-08",
+      "profile": "local-expert-addons",
+      "neighborhood": "Paulsdale",
+      "confidence": "documented",
+      "rights": "original_lore_copy",
+      "review_state": "source_checked",
+      "accessed": "2026-08-02"
+    },
+    "source": "https://www.alicepaul.org/about-the-institute/",
+    "license": "cc0",
+    "sort": 201,
+    "provenance_state": "reference_only"
+  },
+  {
+    "city": "mount-laurel",
+    "kind": "photo_prompt",
+    "title": "Frame the Paulsdale porch as a classroom",
+    "body": "From public visitor space, photograph the porch and landscape as a leadership setting rather than just a pretty old house. Avoid faces from tours or programs unless you have consent.",
+    "attribution": "Paulsdale visit context",
+    "emoji": "📷",
+    "links": {
+      "source": "https://www.alicepaul.org/visit/"
+    },
+    "meta": {
+      "wave": "2026-08",
+      "profile": "local-expert-addons",
+      "prompt_type": "historic_site",
+      "neighborhood": "Paulsdale",
+      "confidence": "documented",
+      "rights": "original_lore_copy",
+      "review_state": "source_checked",
+      "accessed": "2026-08-02"
+    },
+    "source": "https://www.alicepaul.org/visit/",
+    "license": "cc0",
+    "sort": 210,
+    "provenance_state": "reference_only"
+  },
+  {
+    "city": "mount-laurel",
+    "kind": "photo_prompt",
+    "title": "Shoot the Woods at maker scale",
+    "body": "In Rancocas Woods, look for hand-painted signs, wood textures, and shop thresholds from public walkways. Ask before close-ups of vendors, shoppers, or handmade goods.",
+    "attribution": "Rancocas Woods shops guide",
+    "emoji": "📷",
+    "links": {
+      "source": "https://rancocaswoodseventsnshops.com/shops"
+    },
+    "meta": {
+      "wave": "2026-08",
+      "profile": "local-expert-addons",
+      "prompt_type": "maker_detail",
+      "neighborhood": "Rancocas Woods",
+      "confidence": "documented",
+      "rights": "original_lore_copy",
+      "review_state": "source_checked",
+      "accessed": "2026-08-02"
+    },
+    "source": "https://rancocaswoodseventsnshops.com/shops",
+    "license": "cc0",
+    "sort": 211,
+    "provenance_state": "reference_only"
+  },
+  {
+    "city": "mount-laurel",
+    "kind": "seasonal",
+    "title": "Women’s Equality Day belongs at Paulsdale",
+    "body": "Late August is the Paulsdale moment: the center hosts Women’s Equality Day programming around the birthplace of Alice Paul. Check the current event page for parking and schedule details.",
+    "attribution": "Alice Paul Center event listing",
+    "emoji": "📅",
+    "links": {
+      "source": "https://www.alicepaul.org/womens-equality-day-2026/"
+    },
+    "meta": {
+      "wave": "2026-08",
+      "profile": "local-expert-addons",
+      "best_season": "Late August",
+      "confidence": "documented",
+      "rights": "original_lore_copy",
+      "review_state": "source_checked",
+      "accessed": "2026-08-02"
+    },
+    "source": "https://www.alicepaul.org/womens-equality-day-2026/",
+    "license": "cc0",
+    "sort": 220,
+    "provenance_state": "reference_only"
+  }
+]

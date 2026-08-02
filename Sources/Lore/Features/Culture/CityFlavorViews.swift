@@ -66,6 +66,7 @@ private struct FlavorCard: View {
 
     private var isInteractive: Bool {
         entry.kind == "listen" || entry.kind == "field_note" ||
+            entry.primaryExternalAction != nil ||
             (entry.kind == "experience" && entry.placeID != nil)
     }
 
@@ -92,6 +93,10 @@ private struct FlavorCard: View {
                 .foregroundStyle(LoreColor.bone)
                 .fixedSize(horizontal: false, vertical: true)
 
+            if !entry.contextChips.isEmpty {
+                chipRow
+            }
+
             if isPhrase {
                 phraseTranslation
             } else {
@@ -108,7 +113,7 @@ private struct FlavorCard: View {
             }
             Spacer(minLength: 0)
             action
-            if let sourceURL = entry.sourceURL {
+            if let sourceURL = entry.sourceDisclosureURL {
                 Link(destination: sourceURL) {
                     Label("Editorial source", systemImage: "link")
                         .font(LoreType.micro)
@@ -193,6 +198,21 @@ private struct FlavorCard: View {
         }
     }
 
+    private var chipRow: some View {
+        HStack(spacing: 6) {
+            ForEach(entry.contextChips, id: \.self) { chip in
+                Text(chip)
+                    .font(LoreType.micro)
+                    .lineLimit(1)
+                    .foregroundStyle(LoreColor.bone.opacity(0.82))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(LoreColor.ink700.opacity(0.86), in: Capsule())
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+
     @ViewBuilder
     private var action: some View {
         switch entry.kind {
@@ -253,6 +273,20 @@ private struct FlavorCard: View {
             }
             .buttonStyle(.pressable)
             .disabled(completed)
+
+        case "watch", "hashtag":
+            if let url = entry.primaryExternalURL,
+               let action = entry.primaryExternalAction {
+                Link(destination: url) {
+                    Label(action.label, systemImage: action.systemImage)
+                        .font(LoreType.button)
+                        .foregroundStyle(LoreColor.ink900)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 11)
+                        .background(accent, in: Capsule())
+                }
+                .accessibilityHint("Opens an external source curated for this city")
+            }
 
         case "experience":
             if let placeID = entry.placeID {
@@ -462,12 +496,26 @@ private struct FlavorVisualIdentity {
             self = .init(symbol: "textformat.abc", eyebrow: "Origin", prompt: "Read the name", motif: .rays)
         case "phrase":
             self = .init(symbol: "quote.bubble.fill", eyebrow: language ?? "Local voice", prompt: "Say it aloud", motif: .wave)
+        case "watch":
+            self = .init(symbol: "play.rectangle.fill", eyebrow: "Watch list", prompt: "See the city", motif: .grid)
+        case "hashtag":
+            self = .init(symbol: "number", eyebrow: "Search trail", prompt: "Follow the tag", motif: .route)
         case "dish":
             self = .init(symbol: "fork.knife", eyebrow: "Local table", prompt: "Taste the city", motif: .rays)
         case "drink":
             self = .init(symbol: "wineglass.fill", eyebrow: "Local pour", prompt: "Know the order", motif: .rays)
         case "ritual":
             self = .init(symbol: "sparkles", eyebrow: "Ritual", prompt: "Join the rhythm", motif: .rays)
+        case "local_legend":
+            self = .init(symbol: "book.closed.fill", eyebrow: "Legend", prompt: "Ask around", motif: .rays)
+        case "first_timer_mistake":
+            self = .init(symbol: "exclamationmark.triangle.fill", eyebrow: "Avoid this", prompt: "Move smarter", motif: .route)
+        case "neighborhood_decode":
+            self = .init(symbol: "map.fill", eyebrow: "Neighborhood", prompt: "Read the map", motif: .grid)
+        case "photo_prompt":
+            self = .init(symbol: "camera.viewfinder", eyebrow: "Photo prompt", prompt: "Frame the detail", motif: .route)
+        case "seasonal":
+            self = .init(symbol: "calendar.badge.clock", eyebrow: "Seasonal", prompt: "Time it right", motif: .rays)
         case "soundmark", "sound":
             self = .init(symbol: "waveform", eyebrow: "Sound field", prompt: "Hear the place", motif: .wave)
         case "material":

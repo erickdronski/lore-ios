@@ -9,12 +9,31 @@ import json
 import sys
 from collections import Counter, defaultdict
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import Any, Iterable, Mapping, Sequence
 from urllib.parse import urlsplit
 
 
-REQUIRED_KINDS = ("phrase", "drink", "etiquette", "market")
-REQUIRED_KIND_COUNTS = {"phrase": 6, "drink": 2, "etiquette": 4, "market": 1}
+TRAVELER_KIND_COUNTS = {"phrase": 6, "drink": 2, "etiquette": 4, "market": 1}
+LOCAL_EXPERT_ADDON_KIND_COUNTS = {
+    "watch": 2,
+    "hashtag": 3,
+    "local_legend": 2,
+    "first_timer_mistake": 2,
+    "neighborhood_decode": 2,
+    "photo_prompt": 2,
+    "seasonal": 1,
+}
+LOCAL_EXPERT_KIND_COUNTS = {
+    **TRAVELER_KIND_COUNTS,
+    **LOCAL_EXPERT_ADDON_KIND_COUNTS,
+}
+PROFILES = {
+    "traveler-kit": TRAVELER_KIND_COUNTS,
+    "local-expert-addons": LOCAL_EXPERT_ADDON_KIND_COUNTS,
+    "local-expert-kit": LOCAL_EXPERT_KIND_COUNTS,
+}
+REQUIRED_KINDS = tuple(TRAVELER_KIND_COUNTS)
+REQUIRED_KIND_COUNTS = TRAVELER_KIND_COUNTS
 REQUIRED_FIELDS = {
     "city",
     "kind",
@@ -29,7 +48,19 @@ REQUIRED_FIELDS = {
     "sort",
     "provenance_state",
 }
-EXPECTED_SORTS = {"phrase": 120, "drink": 130, "etiquette": 140, "market": 150}
+EXPECTED_SORTS = {
+    "phrase": 120,
+    "drink": 130,
+    "etiquette": 140,
+    "market": 150,
+    "watch": 160,
+    "hashtag": 170,
+    "local_legend": 180,
+    "first_timer_mistake": 190,
+    "neighborhood_decode": 200,
+    "photo_prompt": 210,
+    "seasonal": 220,
+}
 FORBIDDEN_BODY_MARKERS = (
     "Traveler context:",
     "Travel context:",
@@ -43,6 +74,13 @@ FORBIDDEN_BODY_MARKERS = (
 
 class WaveError(RuntimeError):
     pass
+
+
+def required_kind_counts(profile: str = "traveler-kit") -> dict[str, int]:
+    try:
+        return dict(PROFILES[profile])
+    except KeyError as error:
+        raise WaveError(f"Unknown content profile {profile!r}") from error
 
 
 def _first_text(mapping: dict[str, Any], *keys: str) -> str | None:
@@ -129,11 +167,17 @@ def load_rows(paths: Iterable[Path]) -> list[dict[str, Any]]:
     return rows
 
 
-def validate_rows(rows: Sequence[dict[str, Any]], expected_city_count: int) -> dict[str, Any]:
+def validate_rows(
+    rows: Sequence[dict[str, Any]],
+    expected_city_count: int,
+    profile: str = "traveler-kit",
+) -> dict[str, Any]:
     if not rows:
         raise WaveError("The content wave is empty")
 
     errors: list[str] = []
+    required_counts = required_kind_counts(profile)
+    required_kinds = tuple(required_counts)
     city_kinds: dict[str, Counter[str]] = defaultdict(Counter)
     identities: set[tuple[str, str, str]] = set()
 
@@ -152,7 +196,7 @@ def validate_rows(rows: Sequence[dict[str, Any]], expected_city_count: int) -> d
         if not isinstance(city, str) or not city.strip():
             errors.append(f"row {index}: city must be a non-empty string")
             continue
-        if kind not in REQUIRED_KINDS:
+        if kind not in required_kinds:
             errors.append(f"row {index} ({city}): unsupported kind {kind!r}")
             continue
         city_kinds[city][kind] += 1
@@ -181,19 +225,18 @@ def validate_rows(rows: Sequence[dict[str, Any]], expected_city_count: int) -> d
             errors.append(f"row {index} ({city}/{kind}): license must be cc0")
         if row.get("provenance_state") != "reference_only":
             errors.append(f"row {index} ({city}/{kind}): provenance must be reference_only")
-        expected_sort_range = range(
-            EXPECTED_SORTS[kind],
-            EXPECTED_SORTS[kind] + REQUIRED_KIND_COUNTS[kind],
-        )
+        expected_sort_range = range(EXPECTED_SORTS[kind], EXPECTED_SORTS[kind] + required_counts[kind])
         if row.get("sort") not in expected_sort_range:
             errors.append(
                 f"row {index} ({city}/{kind}): sort must be in "
                 f"{expected_sort_range.start}-{expected_sort_range.stop - 1}"
             )
-        if not isinstance(row.get("links"), dict) or not isinstance(row.get("meta"), dict):
+        links = row.get("links")
+        meta = row.get("meta")
+        if not isinstance(links, dict) or not isinstance(meta, dict):
             errors.append(f"row {index} ({city}/{kind}): links and meta must be objects")
-        if kind == "drink" and isinstance(row.get("meta"), dict):
-            if row["meta"].get("nonalcoholic") is not True:
+        if kind == "drink" and isinstance(meta, dict):
+            if meta.get("nonalcoholic") is not True:
                 errors.append(
                     f"row {index} ({city}/drink): meta.nonalcoholic must be true"
                 )
@@ -203,7 +246,6 @@ def validate_rows(rows: Sequence[dict[str, Any]], expected_city_count: int) -> d
                 errors.append(
                     f"row {index} ({city}/phrase): attribution must contain pronunciation"
                 )
-            meta = row.get("meta")
             if isinstance(meta, dict):
                 for key in ("language", "english", "usage"):
                     if not isinstance(meta.get(key), str) or not meta[key].strip():
@@ -216,14 +258,31 @@ def validate_rows(rows: Sequence[dict[str, Any]], expected_city_count: int) -> d
                     errors.append(
                         f"row {index} ({city}/phrase): non-English phrases require pronunciation"
                     )
+        if kind == "watch" and isinstance(links, dict):
+            if not _first_https_link(links, "video_url", "youtube_url", "tiktok_url", "website"):
+                errors.append(
+                    f"row {index} ({city}/watch): links must include an HTTPS video URL"
+                )
+        if kind == "hashtag" and isinstance(links, dict) and isinstance(meta, dict):
+            hashtag = _first_text(meta, "hashtag") or (title.strip() if isinstance(title, str) else None)
+            if not isinstance(hashtag, str) or not hashtag.strip().startswith("#"):
+                errors.append(
+                    f"row {index} ({city}/hashtag): title or meta.hashtag must start with #"
+                )
+            if not _first_https_link(
+                links, "hashtag_url", "tiktok_url", "instagram_url", "website"
+            ):
+                errors.append(
+                    f"row {index} ({city}/hashtag): links must include an HTTPS hashtag URL"
+                )
 
     if len(city_kinds) != expected_city_count:
         errors.append(
             f"wave covers {len(city_kinds)} cities; expected {expected_city_count}"
         )
     for city, kinds in sorted(city_kinds.items()):
-        for kind in REQUIRED_KINDS:
-            expected = REQUIRED_KIND_COUNTS[kind]
+        for kind in required_kinds:
+            expected = required_counts[kind]
             if kinds[kind] != expected:
                 errors.append(
                     f"{city}: expected {expected} {kind} rows, found {kinds[kind]}"
@@ -238,8 +297,19 @@ def validate_rows(rows: Sequence[dict[str, Any]], expected_city_count: int) -> d
     return {
         "cities": len(city_kinds),
         "rows": len(rows),
+        "profile": profile,
         "kinds": dict(sorted(Counter(row["kind"] for row in rows).items())),
     }
+
+
+def _first_https_link(links: Mapping[str, Any], *keys: str) -> str | None:
+    for key in keys:
+        value = links.get(key)
+        if isinstance(value, str):
+            parsed = urlsplit(value.strip())
+            if parsed.scheme == "https" and parsed.netloc:
+                return value.strip()
+    return None
 
 
 def sql_text(value: str | None) -> str:
@@ -307,6 +377,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("inputs", nargs="+", type=Path)
     parser.add_argument("--expected-city-count", type=int, default=141)
+    parser.add_argument(
+        "--profile",
+        choices=sorted(PROFILES),
+        default="traveler-kit",
+        help="content completeness profile to validate before SQL generation",
+    )
     parser.add_argument("--sql-out", type=Path)
     return parser.parse_args(argv)
 
@@ -315,7 +391,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
     try:
         rows = normalize_rows(load_rows(args.inputs))
-        summary = validate_rows(rows, args.expected_city_count)
+        summary = validate_rows(rows, args.expected_city_count, profile=args.profile)
         sql = compile_sql(rows)
         if args.sql_out:
             args.sql_out.parent.mkdir(parents=True, exist_ok=True)

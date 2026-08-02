@@ -17,37 +17,179 @@ struct CitySection: Decodable, Identifiable, Hashable {
     let attribution: String?
     let emoji: String?
     let placeID: String?
-    /// Editorial provenance. HTTP(S) values become a source affordance in the
+    /// Editorial provenance. HTTPS values become a source affordance in the
     /// flavor card; internal `editorial:` markers remain intentionally hidden.
     let source: String?
     let provenanceState: String?
     let sort: Int?
+    let links: Links
     let meta: Meta?
+
+    struct Links: Decodable, Hashable {
+        let website: String?
+        let sourceURL: String?
+        let videoURL: String?
+        let youtubeURL: String?
+        let tiktokURL: String?
+        let instagramURL: String?
+        let hashtagURL: String?
+
+        enum CodingKeys: String, CodingKey {
+            case website
+            case sourceURL = "source_url"
+            case videoURL = "video_url"
+            case youtubeURL = "youtube_url"
+            case tiktokURL = "tiktok_url"
+            case instagramURL = "instagram_url"
+            case hashtagURL = "hashtag_url"
+        }
+
+        init(
+            website: String? = nil,
+            sourceURL: String? = nil,
+            videoURL: String? = nil,
+            youtubeURL: String? = nil,
+            tiktokURL: String? = nil,
+            instagramURL: String? = nil,
+            hashtagURL: String? = nil
+        ) {
+            self.website = website
+            self.sourceURL = sourceURL
+            self.videoURL = videoURL
+            self.youtubeURL = youtubeURL
+            self.tiktokURL = tiktokURL
+            self.instagramURL = instagramURL
+            self.hashtagURL = hashtagURL
+        }
+    }
 
     struct Meta: Decodable, Hashable {
         let language: String?
         let originalScript: String?
         let original: String?
+        let platform: String?
+        let creator: String?
+        let duration: String?
+        let hashtag: String?
+        let neighborhood: String?
+        let bestSeason: String?
+        let confidence: String?
+        let rights: String?
+        let promptType: String?
 
         enum CodingKeys: String, CodingKey {
             case language
             case originalScript = "original_script"
             case original
+            case platform
+            case creator
+            case duration
+            case hashtag
+            case neighborhood
+            case bestSeason = "best_season"
+            case confidence
+            case rights
+            case promptType = "prompt_type"
         }
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, city, kind, title, body, attribution, emoji, source, sort, meta
+        case id, city, kind, title, body, attribution, emoji, source, sort, links, meta
         case placeID = "place_id"
         case provenanceState = "provenance_state"
     }
 
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        city = try container.decode(String.self, forKey: .city)
+        kind = try container.decode(String.self, forKey: .kind)
+        title = try container.decode(String.self, forKey: .title)
+        body = try container.decode(String.self, forKey: .body)
+        attribution = try container.decodeIfPresent(String.self, forKey: .attribution)
+        emoji = try container.decodeIfPresent(String.self, forKey: .emoji)
+        placeID = try container.decodeIfPresent(String.self, forKey: .placeID)
+        source = try container.decodeIfPresent(String.self, forKey: .source)
+        provenanceState = try container.decodeIfPresent(String.self, forKey: .provenanceState)
+        sort = try container.decodeIfPresent(Int.self, forKey: .sort)
+        links = try container.decodeIfPresent(Links.self, forKey: .links) ?? Links()
+        meta = try container.decodeIfPresent(Meta.self, forKey: .meta)
+    }
+
     var sourceURL: URL? {
+        Self.validHTTPSURL(source)
+    }
+
+    var primaryExternalURL: URL? {
+        switch kind {
+        case "watch":
+            return Self.validHTTPSURL(links.videoURL)
+                ?? Self.validHTTPSURL(links.youtubeURL)
+                ?? Self.validHTTPSURL(links.tiktokURL)
+                ?? Self.validHTTPSURL(links.website)
+                ?? sourceURL
+        case "hashtag":
+            return Self.validHTTPSURL(links.hashtagURL)
+                ?? Self.validHTTPSURL(links.tiktokURL)
+                ?? Self.validHTTPSURL(links.instagramURL)
+                ?? Self.validHTTPSURL(links.website)
+                ?? sourceURL
+        default:
+            return Self.validHTTPSURL(links.website)
+                ?? Self.validHTTPSURL(links.sourceURL)
+                ?? sourceURL
+        }
+    }
+
+    var primaryExternalAction: (label: String, systemImage: String)? {
+        switch kind {
+        case "watch":
+            let platform = meta?.platform?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let name = platform?.isEmpty == false ? platform! : "video"
+            return ("Watch \(name)", "play.rectangle.fill")
+        case "hashtag":
+            return ("Open hashtag", "number")
+        default:
+            guard primaryExternalURL != nil else { return nil }
+            return ("Open link", "safari.fill")
+        }
+    }
+
+    var contextChips: [String] {
+        var chips: [String] = []
+        for value in [
+            meta?.platform,
+            meta?.duration,
+            meta?.creator,
+            meta?.neighborhood,
+            meta?.bestSeason,
+            meta?.confidence,
+            meta?.promptType,
+        ] {
+            guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !value.isEmpty
+            else { continue }
+            chips.append(value)
+        }
+        return Array(chips.prefix(3))
+    }
+
+    var sourceDisclosureURL: URL? {
+        guard let sourceURL else { return nil }
+        if let primaryExternalURL,
+           primaryExternalURL.absoluteString == sourceURL.absoluteString {
+            return nil
+        }
+        return sourceURL
+    }
+
+    private static func validHTTPSURL(_ raw: String?) -> URL? {
         guard
-            let source,
-            let url = URL(string: source),
+            let raw = raw?.trimmingCharacters(in: .whitespacesAndNewlines),
+            !raw.isEmpty,
+            let url = URL(string: raw),
             let scheme = url.scheme?.lowercased(),
-            ["http", "https"].contains(scheme),
+            scheme == "https",
             url.host != nil
         else { return nil }
 
@@ -75,9 +217,16 @@ enum SectionKindMeta {
         switch kind {
         case "name_origin": return ("First, the Name", "Why It's Called That")
         case "phrase": return ("Carry These Words", "Traveler Phrases")
+        case "watch": return ("Watch Before You Go", "City Video Trail")
+        case "hashtag": return ("Follow the Locals", "Hashtags & Searches")
         case "dish": return ("Eat Like a Local", "Taste of the City")
         case "drink": return ("Order Like a Local", "What to Drink")
         case "ritual": return ("Live Like a Local", "Rituals")
+        case "local_legend": return ("Local Legend", "Stories Locals Tell")
+        case "first_timer_mistake": return ("Avoid This", "First-Timer Mistakes")
+        case "neighborhood_decode": return ("Read the Map", "Neighborhood Decoder")
+        case "photo_prompt": return ("Look Again", "Photo Field Prompts")
+        case "seasonal": return ("When to Go", "Seasonal Lore")
         case "soundmark": return ("Eyes Closed", "The City's Sound")
         case "material": return ("Look Closer", "What It's Made Of")
         case "sound": return ("Turn It Up", "The City's Sound")
@@ -99,19 +248,26 @@ enum SectionKindMeta {
         switch kind {
         case "name_origin": return 0   // identity first
         case "phrase": return 1
-        case "dish": return 2
-        case "drink": return 3
-        case "ritual": return 4
-        case "soundmark": return 5
-        case "material": return 6
-        case "sound": return 7
-        case "screen": return 8
-        case "etiquette": return 9
-        case "market": return 10
-        case "number": return 11
-        case "experience": return 12
-        case "listen": return 13
-        case "field_note": return 14
+        case "watch": return 2
+        case "hashtag": return 3
+        case "dish": return 4
+        case "drink": return 5
+        case "ritual": return 6
+        case "local_legend": return 7
+        case "first_timer_mistake": return 8
+        case "neighborhood_decode": return 9
+        case "photo_prompt": return 10
+        case "seasonal": return 11
+        case "soundmark": return 12
+        case "material": return 13
+        case "sound": return 14
+        case "screen": return 15
+        case "etiquette": return 16
+        case "market": return 17
+        case "number": return 18
+        case "experience": return 19
+        case "listen": return 20
+        case "field_note": return 21
         default: return 50
         }
     }

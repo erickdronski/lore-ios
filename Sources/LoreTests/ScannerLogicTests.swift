@@ -207,6 +207,86 @@ final class ScannerLogicTests: XCTestCase {
         XCTAssertEqual(ScannerRanking.proximityScore(distance: 300), 0.3679, accuracy: 0.01)
     }
 
+    func testVisionTextCanOnlyCorroborateKnownNearbyPlace() throws {
+        let projected = ProjectedPlace(
+            place: Place(
+                id: "flatiron",
+                slug: "flatiron-building",
+                name: "Flatiron Building",
+                kind: "building",
+                lat: 0,
+                lng: 0,
+                heightM: nil,
+                city: "new-york",
+                layer1: nil,
+                tags: [],
+                emoji: nil
+            ),
+            bearing: 0,
+            delta: 0,
+            distance: 80,
+            screenFraction: 0.5,
+            isInView: true
+        )
+        let quality = ScannerRanking.PoseQuality(
+            horizontalAccuracyM: 12,
+            headingAccuracyDeg: 8,
+            hasVPS: false
+        )
+        var read = VisionRead.empty
+        read.readableText = ["FLATIRON"]
+
+        let ranked = try XCTUnwrap(ScannerRanking.rank(
+            [projected],
+            prefs: nil,
+            quality: quality,
+            visionRead: read
+        ).first)
+
+        XCTAssertEqual(ranked.tier, .a)
+        XCTAssertGreaterThanOrEqual(ranked.visionTextScore, 0.75)
+    }
+
+    func testGenericVisionTextDoesNotPromoteAmbiguousBearing() throws {
+        let projected = ProjectedPlace(
+            place: Place(
+                id: "tower",
+                slug: "north-tower",
+                name: "North Tower",
+                kind: "building",
+                lat: 0,
+                lng: 0,
+                heightM: nil,
+                city: "test",
+                layer1: nil,
+                tags: [],
+                emoji: nil
+            ),
+            bearing: 0,
+            delta: 0,
+            distance: 80,
+            screenFraction: 0.5,
+            isInView: true
+        )
+        let quality = ScannerRanking.PoseQuality(
+            horizontalAccuracyM: 12,
+            headingAccuracyDeg: 8,
+            hasVPS: false
+        )
+        var read = VisionRead.empty
+        read.readableText = ["TOWER"]
+
+        let ranked = try XCTUnwrap(ScannerRanking.rank(
+            [projected],
+            prefs: nil,
+            quality: quality,
+            visionRead: read
+        ).first)
+
+        XCTAssertEqual(ranked.tier, .b)
+        XCTAssertEqual(ranked.visionTextScore, 0, accuracy: 0.001)
+    }
+
     // MARK: - Footprint width (the honesty-math fix)
 
     func testFootprintWidthIsFullWidthNotDoubled() {
@@ -410,6 +490,128 @@ final class SpecialistJourneyRegressionTests: XCTestCase {
         XCTAssertEqual(nearby.accessibilityAnnouncement, "City Hall selected from the stack. 80 m ahead.")
         XCTAssertEqual(here.statusLine, "Confirmed Place")
         XCTAssertEqual(here.accessibilityAnnouncement, "Place selected from the stack. You're here.")
+    }
+
+    func testScannerPlaceInsightBuildsOnlyDatabaseBackedLabels() {
+        let place = Place(
+            id: "meeting-house",
+            slug: "meeting-house",
+            name: "Friends Meeting House",
+            kind: "building",
+            lat: 0,
+            lng: 0,
+            heightM: nil,
+            city: "mount-laurel",
+            layer1: Layer1(
+                hook: "A Quaker landmark with a long civic memory.",
+                yearBuilt: 1760,
+                architect: nil,
+                style: "Quaker meetinghouse",
+                nameMeaning: nil
+            ),
+            tags: [],
+            emoji: nil
+        )
+        let dive = Dive(
+            placeID: place.id,
+            narrative: "This meeting house anchored the local abolitionist network.",
+            timeline: [
+                TimelineEvent(year: 1760, title: "Built", detail: "The meeting house opens.", emoji: nil),
+                TimelineEvent(year: 1800, title: "Expanded", detail: nil, emoji: nil),
+            ],
+            links: DiveLinks(),
+            media: DiveMediaRef(),
+            source: "seed"
+        )
+        let facts = [
+            Fact(
+                id: "fact-1",
+                placeID: place.id,
+                key: "built_year",
+                value: .number(1760),
+                lang: "en",
+                source: "Wikidata",
+                sourceURL: "https://www.wikidata.org/wiki/Q1",
+                license: "CC0",
+                contributorID: nil,
+                confidence: 0.98,
+                verifyState: "approved",
+                createdAt: "2026-08-02T00:00:00Z"
+            ),
+            Fact(
+                id: "fact-2",
+                placeID: place.id,
+                key: "style",
+                value: .string("Quaker meetinghouse"),
+                lang: "en",
+                source: "Curator",
+                sourceURL: nil,
+                license: nil,
+                contributorID: nil,
+                confidence: nil,
+                verifyState: "draft",
+                createdAt: "2026-08-02T00:00:00Z"
+            ),
+        ]
+
+        let insight = ScannerPlaceInsight(
+            place: place,
+            source: .geometryLock,
+            distanceLabel: "80 m",
+            isAtLocation: false,
+            isLoading: false,
+            dive: dive,
+            facts: facts,
+            dealCount: 2
+        )
+
+        XCTAssertEqual(insight.leadLine, "A Quaker landmark with a long civic memory.")
+        XCTAssertTrue(insight.badges.contains("Built 1760"))
+        XCTAssertTrue(insight.badges.contains("2 timeline notes"))
+        XCTAssertTrue(insight.badges.contains("1 vetted fact"))
+        XCTAssertTrue(insight.badges.contains("2 offers"))
+        XCTAssertEqual(insight.footerLine, "Open history, timeline, sources, offers")
+    }
+
+    func testScannerPlaceInsightDoesNotCallDraftFactsVetted() {
+        let place = Place(
+            id: "draft-place",
+            slug: "draft-place",
+            name: "Draft Place",
+            kind: "building",
+            lat: 0,
+            lng: 0,
+            city: "test"
+        )
+        let facts = [
+            Fact(
+                id: "fact-1",
+                placeID: place.id,
+                key: "name",
+                value: .string("Draft Place"),
+                lang: "en",
+                source: "Wikidata",
+                sourceURL: "https://www.wikidata.org/wiki/Q2",
+                license: "CC0",
+                contributorID: nil,
+                confidence: nil,
+                verifyState: "draft",
+                createdAt: "2026-08-02T00:00:00Z"
+            ),
+        ]
+        let insight = ScannerPlaceInsight(
+            place: place,
+            source: .geometryLock,
+            distanceLabel: nil,
+            isAtLocation: false,
+            isLoading: false,
+            dive: nil,
+            facts: facts,
+            dealCount: 0
+        )
+
+        XCTAssertFalse(insight.badges.contains("1 vetted fact"))
+        XCTAssertTrue(insight.badges.contains("1 sourced fact"))
     }
 
     func testPostcardCaptureRequiresLockedPlace() {

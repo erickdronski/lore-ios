@@ -137,6 +137,10 @@ struct ScannerScreen: View {
                         .padding(.top, 6)
                     }
                     Spacer()
+                    if let insight = model.lockedInsight, !model.preciseMode {
+                        scannerInsightCard(insight)
+                            .padding(.bottom, 8)
+                    }
                     if let offered = model.narration.offered {
                         audioOffer(for: offered)
                             .padding(.bottom, 8)
@@ -351,6 +355,104 @@ struct ScannerScreen: View {
             )
             .transition(.opacity.combined(with: .scale(scale: 0.85)))
         }
+    }
+
+    // MARK: Database-backed scanner result
+
+    /// A compact AR result card for the locked Lore database row. This is the
+    /// bridge between "the scanner locked" and "here is the actual history,
+    /// timeline, facts, and offers Lore has for that place."
+    private func scannerInsightCard(_ insight: ScannerPlaceInsight) -> some View {
+        Button {
+            Haptics.play(.dossierOpen)
+            model.select(insight.place)
+        } label: {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 9) {
+                    Text(insight.place.displayEmoji)
+                        .font(.system(size: 18))
+                        .frame(width: 34, height: 34)
+                        .background(LoreColor.ink, in: Circle())
+                        .overlay(Circle().strokeBorder(LoreColor.amber.opacity(0.5), lineWidth: 1))
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 6) {
+                            Text("LORE PLACE")
+                                .loreLabelStyle()
+                                .foregroundStyle(LoreColor.amber)
+                            Text(insight.source.badge)
+                                .font(LoreType.micro)
+                                .foregroundStyle(LoreColor.bone.opacity(0.72))
+                                .lineLimit(1)
+                        }
+                        Text(insight.place.name)
+                            .font(LoreType.button)
+                            .foregroundStyle(LoreColor.bone)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 8)
+                    if insight.isLoading {
+                        ProgressView()
+                            .tint(LoreColor.amber)
+                            .controlSize(.small)
+                    } else {
+                        Image(systemName: "book.pages")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(LoreColor.amber)
+                    }
+                }
+
+                if let line = insight.leadLine {
+                    Text(line)
+                        .font(LoreType.caption)
+                        .foregroundStyle(LoreColor.bone.opacity(0.86))
+                        .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if !insight.badges.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            ForEach(insight.badges, id: \.self) { badge in
+                                Text(badge)
+                                    .font(LoreType.micro)
+                                    .foregroundStyle(LoreColor.bone)
+                                    .padding(.horizontal, 8)
+                                    .frame(height: 24)
+                                    .background(LoreColor.scrimFacade, in: Capsule())
+                                    .overlay(
+                                        Capsule().strokeBorder(LoreColor.amber.opacity(0.35), lineWidth: 1)
+                                    )
+                            }
+                        }
+                    }
+                    .scrollBounceBehavior(.basedOnSize)
+                }
+
+                HStack(spacing: 6) {
+                    Text(insight.footerLine)
+                        .font(LoreType.micro)
+                        .foregroundStyle(LoreColor.bone.opacity(0.68))
+                        .lineLimit(1)
+                    Spacer(minLength: 8)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(LoreColor.amber)
+                }
+            }
+            .padding(14)
+            .frame(maxWidth: 360, alignment: .leading)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .strokeBorder(LoreColor.amber.opacity(0.48), lineWidth: 1)
+            )
+            .shadow(color: LoreColor.ink.opacity(0.35), radius: 16, x: 0, y: 8)
+            .padding(.horizontal, 16)
+        }
+        .buttonStyle(.pressable)
+        .accessibilityLabel(Text(insight.accessibilityLabel))
+        .transition(.move(edge: .bottom).combined(with: .opacity))
     }
 
     // MARK: Recognition readout (the honest "what did I see" response)
@@ -1292,6 +1394,113 @@ enum IdentifyState: Equatable {
     case quotaReached  // authenticated daily quota exhausted
 }
 
+enum ScannerMatchSource: Equatable {
+    case geometryLock
+    case preciseAR
+    case marker
+    case cloud
+
+    var badge: String {
+        switch self {
+        case .geometryLock: return "geometry lock"
+        case .preciseAR: return "precise AR"
+        case .marker: return "Lore marker"
+        case .cloud: return "Google assisted"
+        }
+    }
+}
+
+struct ScannerPlaceInsight: Identifiable, Equatable {
+    let place: Place
+    let source: ScannerMatchSource
+    let distanceLabel: String?
+    let isAtLocation: Bool
+    let isLoading: Bool
+    let dive: Dive?
+    let facts: [Fact]
+    let dealCount: Int?
+
+    var id: String { place.id }
+
+    var leadLine: String? {
+        if let teaser = Self.clean(place.teaser) { return teaser }
+        if let narrative = Self.clean(dive?.narrative) { return Self.firstSentence(narrative) }
+        if let event = dive?.timeline.first {
+            let detail = Self.clean(event.detail)
+            return detail.map { "\(event.year): \($0)" } ?? "\(event.year): \(event.title)"
+        }
+        return nil
+    }
+
+    var badges: [String] {
+        var out: [String] = []
+        if let distanceLabel { out.append(distanceLabel) }
+        if let year = place.layer1?.yearBuilt { out.append("Built \(year)") }
+        if let style = Self.clean(place.layer1?.style) { out.append(style) }
+        if let timelineCount = dive?.timeline.count, timelineCount > 0 {
+            out.append(timelineCount == 1 ? "1 timeline note" : "\(timelineCount) timeline notes")
+        }
+        if vettedFactCount > 0 {
+            out.append(vettedFactCount == 1 ? "1 vetted fact" : "\(vettedFactCount) vetted facts")
+        } else if sourceBackedFactCount > 0 {
+            out.append(sourceBackedFactCount == 1 ? "1 sourced fact" : "\(sourceBackedFactCount) sourced facts")
+        }
+        if let dealCount, dealCount > 0 {
+            out.append(dealCount == 1 ? "1 offer" : "\(dealCount) offers")
+        }
+        if dive?.audioURL != nil { out.append("Narration") }
+        return Array(out.prefix(6))
+    }
+
+    var footerLine: String {
+        if isLoading { return "Loading dossier, timeline, and offers" }
+        var sections: [String] = []
+        if dive?.narrative?.isEmpty == false { sections.append("history") }
+        if dive?.timeline.isEmpty == false { sections.append("timeline") }
+        if sourceBackedFactCount > 0 { sections.append("sources") }
+        if (dealCount ?? 0) > 0 { sections.append("offers") }
+        if sections.isEmpty { return "Open the full place dossier" }
+        return "Open \(sections.joined(separator: ", "))"
+    }
+
+    var accessibilityLabel: String {
+        let distance = distanceLabel.map { ", \($0)" } ?? ""
+        return "\(place.name), Lore place, \(source.badge)\(distance). \(footerLine)."
+    }
+
+    private var sourceBackedFactCount: Int {
+        facts.filter {
+            Self.clean($0.source) != nil || Self.clean($0.sourceURL) != nil
+        }.count
+    }
+
+    private var vettedFactCount: Int {
+        facts.filter {
+            guard let state = Self.clean($0.verifyState)?.lowercased() else { return false }
+            return Self.acceptedVerifyStates.contains(state)
+        }.count
+    }
+
+    private static let acceptedVerifyStates: Set<String> = [
+        "approved", "verified", "reviewed", "promoted", "public", "accepted",
+    ]
+
+    private static func clean(_ value: String?) -> String? {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private static func firstSentence(_ value: String) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return trimmed }
+        if let end = trimmed.firstIndex(where: { ".!?".contains($0) }) {
+            let sentence = String(trimmed[...end])
+            return sentence.count <= 180 ? sentence : String(sentence.prefix(177)) + "..."
+        }
+        return trimmed.count <= 180 ? trimmed : String(trimmed.prefix(177)) + "..."
+    }
+}
+
 struct ScannerConfirmationFeedback: Equatable {
     let placeName: String
     let distanceLabel: String
@@ -1480,6 +1689,12 @@ final class ScannerModel {
     /// Durable verification remains server-owned; this only confirms selection.
     private(set) var stackConfirmationFeedback: ScannerConfirmationFeedback?
     private var stackConfirmationTask: Task<Void, Never>?
+    /// Compact database-backed card for the current lock. Hydrated from the
+    /// same PostgREST surfaces as the full dossier, and cleared the instant the
+    /// lock is lost so stale history never follows the camera.
+    private(set) var lockedInsight: ScannerPlaceInsight?
+    private var lockedInsightTask: Task<Void, Never>?
+    private var lockedInsightKey: String?
 
     /// Places the user has ever opened, the novelty signal (docs/12 §3 `w_fresh`).
     /// Persisted across launches so a repeat visitor stops re-scoring already-seen
@@ -1661,6 +1876,7 @@ final class ScannerModel {
             guard let self else { return }
             guard let place = self.places.first(where: { $0.slug == slug }) else { return }
             Haptics.play(.scannerLock)
+            self.hydrateInsight(for: place, source: .marker, distanceLabel: "You're here", isAtLocation: true)
             self.selectedPlace = place
         }
         // Surface permission dead-ends. Start optimistic; the callbacks re-raise
@@ -1756,6 +1972,7 @@ final class ScannerModel {
         stackConfirmationTask?.cancel()
         stackConfirmationTask = nil
         stackConfirmationFeedback = nil
+        clearLockedInsight()
         tierStabilizer.reset()
     }
 
@@ -1822,7 +2039,8 @@ final class ScannerModel {
             projected,
             prefs: prefs,
             quality: quality,
-            seenPlaceIDs: seenPlaceIDs
+            seenPlaceIDs: seenPlaceIDs,
+            visionRead: vision.latest
         )
         guard !ranked.isEmpty else { return }
 
@@ -1842,6 +2060,7 @@ final class ScannerModel {
         inViewClusters = []
         inViewStories = []
         directionalCandidates = []
+        clearLockedInsight()
         geoAR.start(candidates: ranked.map(\.place))
     }
 
@@ -1871,6 +2090,88 @@ final class ScannerModel {
             guard !Task.isCancelled else { return }
             self?.preciseFallbackNotice = nil
         }
+    }
+
+    // MARK: Scanner result hydration
+
+    private func hydrateInsight(
+        for ranked: ScannerRanking.Ranked,
+        source: ScannerMatchSource = .geometryLock
+    ) {
+        hydrateInsight(
+            for: ranked.place,
+            source: source,
+            distanceLabel: ranked.projected.distanceLabel,
+            isAtLocation: ranked.projected.isAtLocation
+        )
+    }
+
+    private func hydrateInsight(
+        for place: Place,
+        source: ScannerMatchSource,
+        distanceLabel: String? = nil,
+        isAtLocation: Bool = false
+    ) {
+        let key = "\(place.id)|\(source.badge)"
+        if lockedInsightKey == key {
+            if let current = lockedInsight,
+               current.distanceLabel != distanceLabel || current.isAtLocation != isAtLocation {
+                lockedInsight = ScannerPlaceInsight(
+                    place: current.place,
+                    source: current.source,
+                    distanceLabel: distanceLabel,
+                    isAtLocation: isAtLocation,
+                    isLoading: current.isLoading,
+                    dive: current.dive,
+                    facts: current.facts,
+                    dealCount: current.dealCount
+                )
+            }
+            return
+        }
+        lockedInsightTask?.cancel()
+        lockedInsightKey = key
+        lockedInsight = ScannerPlaceInsight(
+            place: place,
+            source: source,
+            distanceLabel: distanceLabel,
+            isAtLocation: isAtLocation,
+            isLoading: true,
+            dive: nil,
+            facts: [],
+            dealCount: nil
+        )
+
+        lockedInsightTask = Task { [weak self] in
+            async let diveFetch = LoreAPI.shared.dive(placeID: place.id)
+            async let factsFetch = LoreAPI.shared.facts(placeID: place.id)
+            async let dealsFetch = LoreAPI.shared.deals(placeID: place.id)
+
+            let loadedDive = try? await diveFetch
+            let loadedFacts = (try? await factsFetch) ?? []
+            let loadedDeals = (try? await dealsFetch) ?? []
+
+            guard !Task.isCancelled else { return }
+            let hydrated = ScannerPlaceInsight(
+                place: place,
+                source: source,
+                distanceLabel: distanceLabel,
+                isAtLocation: isAtLocation,
+                isLoading: false,
+                dive: loadedDive,
+                facts: loadedFacts,
+                dealCount: loadedDeals.count
+            )
+            guard self?.lockedInsightKey == key else { return }
+            self?.lockedInsight = hydrated
+        }
+    }
+
+    private func clearLockedInsight() {
+        lockedInsightTask?.cancel()
+        lockedInsightTask = nil
+        lockedInsightKey = nil
+        lockedInsight = nil
     }
 
     // MARK: Selection
@@ -1974,16 +2275,19 @@ final class ScannerModel {
     func openIdentified(_ identified: LandmarkID) async {
         if let placeID = identified.placeID,
            let place = places.first(where: { $0.id == placeID }) {
+            hydrateInsight(for: place, source: .cloud)
             select(place)
             return
         }
         if let slug = identified.slug,
            let place = places.first(where: { $0.slug == slug }) {
+            hydrateInsight(for: place, source: .cloud)
             select(place)
             return
         }
         if let placeID = identified.placeID,
            let place = try? await LoreAPI.shared.place(id: placeID) {
+            hydrateInsight(for: place, source: .cloud)
             select(place)
         }
     }
@@ -2181,6 +2485,7 @@ final class ScannerModel {
                 projected: candidate.projected,
                 tier: display,
                 score: candidate.score,
+                visionTextScore: candidate.visionTextScore,
                 matchedInterests: candidate.matchedInterests
             )
         }
@@ -2193,6 +2498,11 @@ final class ScannerModel {
         let tierA = stabilized.filter { $0.tier == .a && $0.projected.isInView }
         let newLock = tierA.first
         lockedRanked = newLock
+        if let newLock {
+            hydrateInsight(for: newLock)
+        } else {
+            clearLockedInsight()
+        }
 
         let tierB = stabilized.filter { $0.tier == .b && $0.projected.isInView }
         inViewClusters = Array(ScannerRanking.cluster(tierB).prefix(5))
@@ -2227,6 +2537,7 @@ final class ScannerModel {
         // the `.scanNothing` thunk fires once.
         let knownCount = (newLock != nil ? 1 : 0) + inViewClusters.count + directionalCandidates.count
         setScanState(knownCount > 0 ? .foundNearby(knownCount) : .nothingRecognized)
+        vision.setEnabled(newLock == nil || (newLock?.visionTextScore ?? 0) >= 0.75)
 
         // 7. Selection tick as a chip crosses the reticle center (docs/12 §3
         // "gaze"; brand/ELEVATION §4 `.scannerChipPass`). Fire once per chip as
@@ -2239,6 +2550,7 @@ final class ScannerModel {
         inViewClusters = []
         inViewStories = []
         directionalCandidates = []
+        clearLockedInsight()
     }
 
     private func ensureCityRosterLoaded(force: Bool = false) {

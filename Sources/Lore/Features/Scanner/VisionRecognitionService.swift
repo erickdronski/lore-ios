@@ -115,7 +115,10 @@ final class VisionRecognitionService {
     /// scanner calls this as its state changes so Vision never burns battery
     /// producing a read nothing will show.
     func setEnabled(_ on: Bool) {
-        if !on { advanceEpoch() }
+        if !on {
+            let epoch = advanceEpoch()
+            publish(.empty, epoch: epoch)
+        }
         queue.async { [weak self] in self?.enabled = on }
     }
 

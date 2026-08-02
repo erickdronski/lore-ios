@@ -10,9 +10,11 @@ HTTP item ranges. It counts live-city rows for `city`, `place_explore`, `dive`,
 Because dives carry `place_id` rather than `city`, they are linked through the
 public `place_explore` view. Orphan and out-of-scope dive rows are reported.
 When city sections are part of the requested minimums, the audit also enforces
-the traveler-kit mix independently: 6 phrases, 2 zero-proof drinks, 4 etiquette
-notes, and 1 market guide per live destination. A pile of one section kind can
-therefore never satisfy the total by accident.
+the traveler-kit and local-expert mix independently: 6 phrases, 2 zero-proof
+drinks, 4 etiquette notes, 1 market guide, 2 watch links, 3 hashtags, 2 local
+legends, 2 first-timer mistakes, 2 neighborhood decoders, 2 photo prompts, and
+1 seasonal hook per live destination. A pile of one section kind can therefore
+never satisfy the total by accident.
 
 ## Run
 
