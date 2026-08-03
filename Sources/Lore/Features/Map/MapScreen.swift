@@ -163,7 +163,12 @@ struct MapScreen: View {
                 // becoming a safe-area inset. Shrinking MapKit's safe area when
                 // the deck expands can make SwiftUI re-solve the visible camera
                 // and zoom the city out; the deck should not own camera policy.
+                // Because the map ignores safe area, this overlay anchors to the
+                // TRUE screen bottom — so it must clear the floating tab bar +
+                // home indicator itself, or the tab bar clips "I've been here"
+                // and the tour content (`bottomBarClearance`).
                 travelControls
+                    .padding(.bottom, bottomBarClearance)
             }
             .loreDossierPresentation(item: selectedPlaceBinding) { place in
                 // Detents are owned by PlaceCardView so opening the dossier can
@@ -256,6 +261,23 @@ struct MapScreen: View {
             theme: model.theme
         )
         .padding(.bottom, 8)
+    }
+
+    /// How far the bottom controls must lift to clear the floating tab bar and
+    /// the home indicator. The map ignores safe area (so it keeps its own
+    /// camera), which means this bottom overlay anchors to the TRUE screen
+    /// bottom rather than the safe area — without this, the tab bar clips the
+    /// bottom of the near-me cards ("I've been here" and the tour content). The
+    /// window inset supplies the home indicator (0 on non-notched devices); the
+    /// standard iPhone tab bar sits on top of it.
+    private var bottomBarClearance: CGFloat {
+        let homeIndicator = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+            .first(where: \.isKeyWindow)?
+            .safeAreaInsets.bottom ?? 0
+        let standardTabBarHeight: CGFloat = 49
+        return homeIndicator + standardTabBarHeight
     }
 
     /// Bridges Map's tag selection to a `.sheet(item:)` presentation.
