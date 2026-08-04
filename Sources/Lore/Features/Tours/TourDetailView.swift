@@ -78,6 +78,9 @@ struct TourDetailView: View {
     /// A completed walk opens as a keepsake until the traveler explicitly starts
     /// it again; merely browsing its stops must not erase the completion seal.
     @State private var wasCompleted = false
+    /// Whether the current stop's curator note is expanded to its full length.
+    /// Reset to collapsed whenever the stop changes.
+    @State private var noteExpanded = false
 
     /// A premium curated walk the current viewer hasn't unlocked.
     private var isLocked: Bool { tour.isPremium && !entitlements.isPlus }
@@ -853,6 +856,9 @@ struct TourDetailView: View {
                 }
 
                 if let note = currentStop?.note {
+                    // Long notes collapse to a few lines with a "Read more"
+                    // toggle so a full field note is always reachable in-line.
+                    let isLong = note.count > 220
                     HStack(alignment: .top, spacing: 10) {
                         Rectangle()
                             .fill(LoreColor.amber)
@@ -865,11 +871,27 @@ struct TourDetailView: View {
                             Text(note)
                                 .font(LoreType.body)
                                 .foregroundStyle(LoreColor.ink)
+                                .lineLimit(isLong && !noteExpanded ? 6 : nil)
                                 .fixedSize(horizontal: false, vertical: true)
+                            if isLong {
+                                Button {
+                                    withAnimation(reduceMotion ? nil : LoreMotion.tap) {
+                                        noteExpanded.toggle()
+                                    }
+                                } label: {
+                                    Text(noteExpanded ? "Read less" : "Read more")
+                                        .font(LoreType.button)
+                                        .foregroundStyle(LoreColor.brass700)
+                                }
+                                .buttonStyle(.plain)
+                                .frame(minHeight: 44, alignment: .leading)
+                                .accessibilityLabel(Text(noteExpanded ? "Read less of the field note" : "Read the full field note"))
+                            }
                         }
                     }
                     .padding(12)
                     .background(LoreColor.bone200.opacity(0.72), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                    .onChange(of: currentStop?.id) { _, _ in noteExpanded = false }
                 }
             }
             .padding(17)

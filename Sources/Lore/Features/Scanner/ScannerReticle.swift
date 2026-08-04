@@ -132,45 +132,128 @@ private struct ReticleCorners: Shape {
     }
 }
 
-/// The bottom compass ring, the second sanctioned ambient loop
-/// (`compass.breathe`, ELEVATION §3): a thin Amber heading ring that scales
-/// 1→1.04 on a 2.4s sine, with a north tick that rotates opposite the device
-/// heading so it always points at true north. Passive; not interactive.
+/// The scanner compass: a glassy heading dial in the top-right corner. A
+/// rotating bezel (tick marks + cardinal letters) keeps its North mark aimed at
+/// true north as you turn; a fixed amber arrow at the top marks the way you are
+/// facing; the centre reads the live heading. A soft amber halo confirms the
+/// heading is live. Passive; not interactive.
 struct CompassRing: View {
     /// Device heading, degrees clockwise from true north; negative = unknown.
     var headingDegrees: Double
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var breathe = false
 
-    private let diameter: CGFloat = 52
+    private let diameter: CGFloat = 66
+    private var known: Bool { headingDegrees >= 0 }
+    /// The bezel counter-rotates so its North mark always points at true north.
+    private var bezelRotation: Double { known ? -headingDegrees : 0 }
 
     var body: some View {
         ZStack {
+            // Glassy base disc with a gradient amber rim.
             Circle()
-                .strokeBorder(LoreColor.amber.opacity(0.6), lineWidth: 1.5)
-                .frame(width: diameter, height: diameter)
+                .fill(LoreColor.ink900.opacity(0.5))
+                .background(.ultraThinMaterial, in: Circle())
+            Circle()
+                .strokeBorder(
+                    AngularGradient(
+                        colors: [
+                            LoreColor.amber.opacity(0.9),
+                            LoreColor.amber.opacity(0.2),
+                            LoreColor.amber.opacity(0.9)
+                        ],
+                        center: .center
+                    ),
+                    lineWidth: 1.2
+                )
 
-            // North tick: rotates to keep pointing at true north as we turn.
-            Capsule()
-                .fill(LoreColor.amber)
-                .frame(width: 2, height: 10)
-                .offset(y: -diameter / 2 + 6)
-                .rotationEffect(.degrees(headingDegrees >= 0 ? -headingDegrees : 0))
-                .animation(LoreMotion.drift, value: headingDegrees)
+            bezel
+                .rotationEffect(.degrees(bezelRotation))
+                .animation(reduceMotion ? nil : LoreMotion.drift, value: bezelRotation)
+                .opacity(known ? 1 : 0.45)
 
-            Text("N")
-                .font(LoreType.micro)
-                .foregroundStyle(LoreColor.bone)
+            facingArrow
+            centreReadout
         }
-        .scaleEffect(breathe && !reduceMotion ? 1.04 : 1.0)
-        .shadow(color: LoreColor.ink.opacity(0.35), radius: 3, x: 0, y: 1)
-        .onAppear {
-            guard !reduceMotion else { return }
-            withAnimation(.easeInOut(duration: 2.4).repeatForever(autoreverses: true)) {
-                breathe = true
+        .frame(width: diameter, height: diameter)
+        .shadow(color: LoreColor.ink.opacity(0.45), radius: 6, x: 0, y: 2)
+        .overlay(
+            // Soft amber halo when the heading is live.
+            Circle()
+                .stroke(LoreColor.amber.opacity(known ? 0.28 : 0), lineWidth: 5)
+                .blur(radius: 6)
+                .allowsHitTesting(false)
+        )
+        .accessibilityLabel(Text("Compass"))
+        .accessibilityValue(Text(known ? "\(Int(headingDegrees.rounded())) degrees" : "Heading unavailable"))
+    }
+
+    /// Tick marks + cardinal letters, printed on the ring so they turn with it.
+    private var bezel: some View {
+        ZStack {
+            ForEach(0..<24, id: \.self) { i in
+                let major = i % 6 == 0
+                Capsule()
+                    .fill(major ? LoreColor.amber : LoreColor.bone.opacity(0.35))
+                    .frame(width: major ? 2 : 1, height: major ? 9 : 5)
+                    .offset(y: -diameter / 2 + (major ? 6.5 : 4.5))
+                    .rotationEffect(.degrees(Double(i) * 15))
+            }
+            ForEach(CompassRing.cardinals, id: \.angle) { cardinal in
+                Text(cardinal.label)
+                    .font(.system(size: cardinal.label == "N" ? 11 : 9,
+                                  weight: cardinal.label == "N" ? .bold : .semibold,
+                                  design: .rounded))
+                    .foregroundStyle(cardinal.label == "N" ? LoreColor.amber : LoreColor.bone.opacity(0.7))
+                    .offset(y: -diameter / 2 + 17)
+                    .rotationEffect(.degrees(cardinal.angle))
             }
         }
-        .accessibilityLabel(Text("Compass"))
+    }
+
+    /// Fixed at the very top, pointing down into the ring: the way you face.
+    private var facingArrow: some View {
+        CompassFacingArrow()
+            .fill(LoreColor.amber)
+            .frame(width: 10, height: 8)
+            .offset(y: -diameter / 2 - 2)
+            .shadow(color: LoreColor.amber.opacity(0.7), radius: 3)
+    }
+
+    private var centreReadout: some View {
+        VStack(spacing: 0) {
+            Text(known ? "\(Int(headingDegrees.rounded()))°" : "–")
+                .font(.system(size: 13, weight: .bold, design: .rounded))
+                .foregroundStyle(LoreColor.bone)
+                .monospacedDigit()
+            if known {
+                Text(CompassRing.cardinalName(for: headingDegrees))
+                    .font(.system(size: 7, weight: .semibold, design: .rounded))
+                    .tracking(1.5)
+                    .foregroundStyle(LoreColor.amber.opacity(0.9))
+            }
+        }
+    }
+
+    private static let cardinals: [(label: String, angle: Double)] =
+        [("N", 0), ("E", 90), ("S", 180), ("W", 270)]
+
+    private static func cardinalName(for deg: Double) -> String {
+        let names = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
+        let normalized = (deg.truncatingRemainder(dividingBy: 360) + 360)
+            .truncatingRemainder(dividingBy: 360)
+        return names[Int((normalized / 45).rounded()) % 8]
+    }
+}
+
+/// A small downward-pointing triangle — the compass's fixed "facing" mark.
+private struct CompassFacingArrow: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.midX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+        path.closeSubpath()
+        return path
     }
 }

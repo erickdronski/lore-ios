@@ -26,6 +26,11 @@ struct ToursScreen: View {
     /// Pushes tour detail without using a visible `NavigationLink` row accessory,
     /// so the card remains the full visual tap target.
     @State private var tourPath: [Tour] = []
+    /// City-wide deals, loaded here rather than inside `CityDealsSection` so the
+    /// section is emitted into the `List` only when it has real offers. A
+    /// self-hiding row still formed a phantom inset-grouped section, doubling
+    /// the gap under the hero for every city with no deals.
+    @State private var cityDeals: [Deal] = []
 
     var body: some View {
         NavigationStack(path: $tourPath) {
@@ -45,8 +50,11 @@ struct ToursScreen: View {
                 }
 
                 // City passes & standing deals (Lore+): the day-planner's
-                // money section. Self-hides for cities with nothing real.
-                CityDealsSection(city: router.selectedCity)
+                // money section. Emitted only when the city has real offers, so
+                // cities with none show no empty band under the hero.
+                if !cityDeals.isEmpty {
+                    CityDealsSection(city: router.selectedCity, deals: cityDeals)
+                }
 
                 switch model.state {
                 case .loading:
@@ -114,6 +122,9 @@ struct ToursScreen: View {
             // Load (and reload) the selected city's tours; switching cities in
             // the sheet re-scopes the list without leaving Tours.
             .task(id: router.selectedCity) { await model.load(city: router.selectedCity) }
+            .task(id: router.selectedCity) {
+                cityDeals = (try? await LoreAPI.shared.cityDeals(city: router.selectedCity)) ?? []
+            }
             .alert("Walk unavailable", isPresented: oneHourErrorBinding) {
                 Button("OK", role: .cancel) {}
             } message: {
@@ -304,6 +315,10 @@ struct OneHourHero: View {
                 .padding(18)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+            // Clip the route artwork (it uses a negative trailing padding to sit
+            // at the edge) to the card's rounded rect so it can't bleed past the
+            // corner.
+            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
             .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         }
         .buttonStyle(.pressable)

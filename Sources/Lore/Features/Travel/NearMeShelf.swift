@@ -284,12 +284,17 @@ enum NearMeCardLayout {
         isAccessibilitySize ? 248 : 204
     }
 
-    static func minimumHeight(isAccessibilitySize: Bool) -> CGFloat {
-        isAccessibilitySize ? 238 : 188
+    /// Every tile is this EXACT height so the shelf reads as one uniform row,
+    /// not a ragged skyline. Sized to fit the worst case (a 2-line title + a
+    /// 2-line teaser + medallion, category, proximity, and the visit toggle)
+    /// WITHOUT clipping the "I've been here" button; shorter cards pin their
+    /// toggle to the bottom with a spacer.
+    static func uniformHeight(isAccessibilitySize: Bool) -> CGFloat {
+        isAccessibilitySize ? 340 : 268
     }
 
     static func shelfMaxHeight(isAccessibilitySize: Bool) -> CGFloat {
-        minimumHeight(isAccessibilitySize: isAccessibilitySize) + (isAccessibilitySize ? 26 : 18)
+        uniformHeight(isAccessibilitySize: isAccessibilitySize) + 10
     }
 
     static func teaserLineLimit(isAccessibilitySize: Bool) -> Int {
@@ -319,9 +324,8 @@ struct NearMeCard: View {
     private var accent: Color { theme?.accentColor ?? LoreColor.brass300 }
     private var isAccessibilitySize: Bool { dynamicTypeSize.isAccessibilitySize }
     private var cardWidth: CGFloat { NearMeCardLayout.cardWidth(isAccessibilitySize: isAccessibilitySize) }
-    /// A floor, not a target. Each tile sizes to its own content; the shelf no
-    /// longer makes every card inherit the tallest card's height.
-    private var cardMinimumHeight: CGFloat { NearMeCardLayout.minimumHeight(isAccessibilitySize: isAccessibilitySize) }
+    /// One fixed height every tile shares, so the shelf is a uniform row.
+    private var cardUniformHeight: CGFloat { NearMeCardLayout.uniformHeight(isAccessibilitySize: isAccessibilitySize) }
     private var teaserLineLimit: Int { NearMeCardLayout.teaserLineLimit(isAccessibilitySize: isAccessibilitySize) }
 
     /// Resolved place photo. Nil until it loads, or permanently when the place
@@ -381,6 +385,10 @@ struct NearMeCard: View {
             .accessibilityLabel(Text(cardAccessibilityLabel))
             .accessibilityHint(Text("Opens this field note"))
 
+            // Push the toggle to the bottom so every fixed-height card aligns
+            // its "been here" control on the same line — uniform across the shelf.
+            Spacer(minLength: 8)
+
             // Marking visited here flows straight into the place, where the
             // "your lore" editor lives — so adding a lore is one gesture from
             // the shelf, not a scavenger hunt.
@@ -388,9 +396,7 @@ struct NearMeCard: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(12)
-        .frame(width: cardWidth, alignment: .topLeading)
-        .frame(minHeight: cardMinimumHeight, alignment: .topLeading)
-        .fixedSize(horizontal: false, vertical: true)
+        .frame(width: cardWidth, height: cardUniformHeight, alignment: .topLeading)
         // Resolve from the title the read view now carries, so a shelf of cards
         // costs zero extra dive fetches. WikipediaService is an actor with a
         // cache that also remembers misses, so scrolling back does not refetch.

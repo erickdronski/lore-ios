@@ -263,22 +263,14 @@ struct MapScreen: View {
         .padding(.bottom, 8)
     }
 
-    /// How far the bottom controls must lift to clear the floating tab bar and
-    /// the home indicator. The map ignores safe area (so it keeps its own
-    /// camera), which means this bottom overlay anchors to the TRUE screen
-    /// bottom rather than the safe area — without this, the tab bar clips the
-    /// bottom of the near-me cards ("I've been here" and the tour content). The
-    /// window inset supplies the home indicator (0 on non-notched devices); the
-    /// standard iPhone tab bar sits on top of it.
-    private var bottomBarClearance: CGFloat {
-        let homeIndicator = UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .flatMap(\.windows)
-            .first(where: \.isKeyWindow)?
-            .safeAreaInsets.bottom ?? 0
-        let standardTabBarHeight: CGFloat = 49
-        return homeIndicator + standardTabBarHeight
-    }
+    /// A small breathing gap above the floating tab bar. Even though the map
+    /// ignores safe area (to keep its own camera), this bottom overlay's CONTENT
+    /// is still laid out inside the safe area, which already reserves the
+    /// floating tab bar + home indicator — so the deck naturally clears the
+    /// dock and we only add a few points of air. (An earlier version added the
+    /// full tab-bar height here too, which double-counted and left the collapsed
+    /// pill floating far above the dock; verified in the iOS 26 simulator.)
+    private var bottomBarClearance: CGFloat { 6 }
 
     /// Bridges Map's tag selection to a `.sheet(item:)` presentation.
     private var selectedPlaceBinding: Binding<Place?> {

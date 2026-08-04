@@ -119,6 +119,15 @@ struct ScannerScreen: View {
                     storyMarkers(size: proxy.size)
                 }
 
+                // Compass in the top-right corner, so the whole footer is free
+                // for the directional rail of location pills that populate as you
+                // scan and look around.
+                CompassRing(headingDegrees: model.pose.headingDegrees)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                    .padding(.top, 54)
+                    .padding(.trailing, 16)
+                    .allowsHitTesting(false)
+
                 VStack(spacing: 0) {
                     StatusChip(text: model.statusLine)
                         .padding(.top, 8)
@@ -552,24 +561,23 @@ struct ScannerScreen: View {
         .padding(.bottom, 8)
     }
 
-    // MARK: Bottom bar, compass + shutter + mode
+    // MARK: Bottom bar, shutter + mode
 
+    // The compass moved to the top-right corner (see `body`), leaving the whole
+    // footer free for the directional rail of location pills. Only the shutter
+    // (centered) and the lock-on toggle (trailing) live down here now.
     private var bottomBar: some View {
         ZStack {
             if model.canCaptureMoment {
                 shutterButton
             }
             HStack {
-                CompassRing(headingDegrees: model.pose.headingDegrees)
                 Spacer()
                 if model.canLockOn
                     || model.preciseMode
                     || model.isTransitioningToPreciseMode
                     || model.isCheckingPreciseCoverage {
                     lockOnToggle
-                } else {
-                    // Balance the compass so the row reads symmetric.
-                    Color.clear.frame(width: 52, height: 52)
                 }
             }
         }

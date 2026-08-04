@@ -15,12 +15,16 @@ import SwiftUI
 /// place card instead.
 struct CityDealsSection: View {
     let city: String
+    /// Loaded + owned by the parent (`ToursScreen`) and only rendered when
+    /// non-empty. A self-loading view that hid to a zero-size row still formed
+    /// an implicit `List` section, which doubled the inset-grouped section
+    /// spacing into a visible empty band between the hero and the tour list.
+    let deals: [Deal]
 
     @Environment(EntitlementStore.self) private var entitlements
     @Environment(StoreKitService.self) private var store
     @Environment(AuthService.self) private var auth
 
-    @State private var deals: [Deal] = []
     @State private var showPaywall = false
 
     /// "austin" → "Austin", "washington-dc" → "Washington Dc" is wrong, so
@@ -32,27 +36,18 @@ struct CityDealsSection: View {
 
     var body: some View {
         Group {
-            if deals.isEmpty {
-                // Zero-size anchor: `.task` must fire while empty or the rail
-                // could never learn the city has offers (the empty-Group trap).
-                Color.clear.frame(width: 0, height: TourBrowseLayout.hiddenInterstitialHeight)
-            } else if entitlements.isPlus {
+            if entitlements.isPlus {
                 section
             } else {
                 lockedTeaser
             }
         }
-        .task(id: city) { await load() }
         .sheet(isPresented: $showPaywall) {
             PaywallView(entitlements: entitlements, store: store, auth: auth, context: .general)
         }
         .listRowBackground(Color.clear)
         .listRowSeparator(.hidden)
-        .listRowInsets(deals.isEmpty ? EdgeInsets() : TourBrowseLayout.interstitialRowInsets)
-    }
-
-    private func load() async {
-        deals = (try? await LoreAPI.shared.cityDeals(city: city)) ?? []
+        .listRowInsets(TourBrowseLayout.interstitialRowInsets)
     }
 
     // MARK: Plus
