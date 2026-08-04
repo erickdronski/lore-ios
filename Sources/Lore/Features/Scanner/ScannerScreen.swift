@@ -348,8 +348,11 @@ struct ScannerScreen: View {
                 }
             }
             .position(
+                // Populate the LOWER half as you scan (keeps the x by bearing so a
+                // chip still leans toward its place), clear of the top-right
+                // compass, and clamped above the directional rail + bottom bar.
                 x: chipX(fraction: cluster.screenFraction, width: size.width),
-                y: size.height * 0.24 + CGFloat(index) * 56
+                y: min(size.height * 0.56 + CGFloat(index) * 54, size.height - 220)
             )
             // Track the bearing on an interruptible spring, a chip slides to its
             // new position rather than teleporting each reprojection frame.

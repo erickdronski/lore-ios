@@ -228,9 +228,9 @@ struct CompassRing: View {
                 .monospacedDigit()
             if known {
                 Text(CompassRing.cardinalName(for: headingDegrees))
-                    .font(.system(size: 7, weight: .semibold, design: .rounded))
-                    .tracking(1.5)
-                    .foregroundStyle(LoreColor.amber.opacity(0.9))
+                    .font(.system(size: 9, weight: .semibold, design: .rounded))
+                    .tracking(1.2)
+                    .foregroundStyle(LoreColor.amber.opacity(0.95))
             }
         }
     }

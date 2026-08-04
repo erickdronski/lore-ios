@@ -525,7 +525,9 @@ private struct SerendipityToast: View {
                     .foregroundStyle(theme?.accentColor ?? LoreColor.brass700)
                 Text(place.name)
                     .font(LoreType.button)
-                    .foregroundStyle(LoreColor.ink)
+                    // Bone (not ink) so the surprise place name reads on the
+                    // dark night map as well as the light day map.
+                    .foregroundStyle(LoreColor.bone)
                     .lineLimit(1)
             }
             HStack(spacing: 3) {
@@ -539,7 +541,9 @@ private struct SerendipityToast: View {
         }
         .padding(.horizontal, 15)
         .frame(height: 58)
-        .background(.ultraThinMaterial, in: Capsule())
+        // Solid dark capsule (was .ultraThinMaterial) so the toast is legible on
+        // both appearances — the material went muddy on the forced-dark map.
+        .background(LoreColor.ink900.opacity(0.92), in: Capsule())
         .overlay(
             Capsule().strokeBorder(
                 (theme?.accentColor ?? LoreColor.brass700).opacity(0.65),
@@ -935,10 +939,15 @@ struct StatusChip: View {
     var body: some View {
         Text(text)
             .font(LoreType.caption)
-            .foregroundStyle(LoreColor.ink)
+            // Appearance-stable: a solid dark pill with bone text so loading /
+            // empty / offline messages stay legible on BOTH the light day map
+            // and the forced-dark night map (the old ink-on-material vanished at
+            // night). Used by Map and Scanner.
+            .foregroundStyle(LoreColor.bone)
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
-            .background(.ultraThinMaterial, in: Capsule())
+            .background(LoreColor.ink900.opacity(0.92), in: Capsule())
+            .overlay(Capsule().strokeBorder(LoreColor.bone.opacity(0.12), lineWidth: 0.5))
     }
 }
 
