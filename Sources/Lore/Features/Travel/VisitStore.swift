@@ -195,6 +195,45 @@ final class VisitStore {
         }
     }
 
+    /// Remove one journal photo (array + storage) and refresh.
+    @discardableResult
+    func removePhoto(placeID: String, path: String) async -> Bool {
+        guard let creds = credentials() else {
+            lastError = "Sign in to manage journal photos."
+            return false
+        }
+        do {
+            lastError = nil
+            try await TravelReads.removeVisitPhoto(placeID: placeID, path: path, accessToken: creds.accessToken)
+            await loadHistory(force: true)
+            return true
+        } catch {
+            lastError = "Couldn't remove that photo."
+            return false
+        }
+    }
+
+    /// Delete a whole memory — the visit row and its private photos — and
+    /// refresh both the visited set and the history.
+    @discardableResult
+    func deleteVisit(placeID: String, photoPaths: [String]) async -> Bool {
+        guard let creds = credentials() else {
+            lastError = "Sign in to manage your memories."
+            return false
+        }
+        do {
+            lastError = nil
+            try await TravelReads.deleteVisit(placeID: placeID, photoPaths: photoPaths, accessToken: creds.accessToken)
+            visitedPlaceIDs.remove(placeID)
+            await settleAchievements(for: creds)
+            await loadHistory(force: true)
+            return true
+        } catch {
+            lastError = "Couldn't remove that memory."
+            return false
+        }
+    }
+
     /// A short-lived signed URL to display a private journal photo path.
     func signedPhotoURL(path: String, forceRefresh: Bool = false) async -> URL? {
         guard let creds = credentials() else { return nil }

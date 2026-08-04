@@ -558,6 +558,9 @@ struct NoteEditorSheet: View {
     @State private var showDiscardConfirmation = false
     @State private var showClearConfirmation = false
     @State private var editingUserID: String?
+    @State private var photoToDelete: String?
+    @State private var showDeleteMemoryConfirmation = false
+    @State private var deleting = false
 
     private let maximumCharacters = JournalDraftPolicy.maximumCharacters
     private let maximumPhotos = 12
@@ -655,6 +658,22 @@ struct NoteEditorSheet: View {
                             HStack(spacing: 10) {
                                 ForEach(photos, id: \.self) { path in
                                     JournalPhotoThumb(path: path, size: 96)
+                                        .overlay(alignment: .topTrailing) {
+                                            Button {
+                                                photoToDelete = path
+                                            } label: {
+                                                Image(systemName: "xmark.circle.fill")
+                                                    .font(.system(size: 20))
+                                                    .symbolRenderingMode(.palette)
+                                                    .foregroundStyle(LoreColor.bone, LoreColor.ink900.opacity(0.72))
+                                                    .padding(4)
+                                            }
+                                            .buttonStyle(.plain)
+                                            .frame(width: 44, height: 44, alignment: .topTrailing)
+                                            .contentShape(Rectangle())
+                                            .accessibilityLabel("Remove this photo")
+                                            .disabled(saving || uploading || deleting)
+                                        }
                                 }
                             }
                         }
@@ -682,6 +701,23 @@ struct NoteEditorSheet: View {
                             .foregroundStyle(LoreColor.error)
                             .fixedSize(horizontal: false, vertical: true)
                     }
+
+                    // Remove the whole memory — the visit, its note, and its photos.
+                    Divider().padding(.vertical, 4)
+                    Button(role: .destructive) {
+                        showDeleteMemoryConfirmation = true
+                    } label: {
+                        HStack(spacing: 8) {
+                            if deleting { ProgressView() } else { Image(systemName: "trash") }
+                            Text("Remove this memory")
+                        }
+                        .font(LoreType.button)
+                        .foregroundStyle(LoreColor.error)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(saving || uploading || deleting)
+                    .accessibilityHint("Deletes this visit, its note, and its photos.")
 
                     Spacer(minLength: 0)
                 }
@@ -727,6 +763,37 @@ struct NoteEditorSheet: View {
                 Button("Cancel", role: .cancel) {}
             } message: {
                 Text("The note is removed when you tap Save.")
+            }
+            .alert(
+                "Remove this photo?",
+                isPresented: Binding(get: { photoToDelete != nil }, set: { if !$0 { photoToDelete = nil } })
+            ) {
+                Button("Remove photo", role: .destructive) {
+                    if let path = photoToDelete {
+                        Task {
+                            if !(await visits.removePhoto(placeID: entry.placeID, path: path)) {
+                                sheetError = visits.lastError ?? "Couldn't remove that photo."
+                            }
+                            photoToDelete = nil
+                        }
+                    }
+                }
+                Button("Keep", role: .cancel) { photoToDelete = nil }
+            } message: {
+                Text("This private photo is deleted right away.")
+            }
+            .alert("Remove this memory?", isPresented: $showDeleteMemoryConfirmation) {
+                Button("Remove memory", role: .destructive) {
+                    deleting = true
+                    Task {
+                        let ok = await visits.deleteVisit(placeID: entry.placeID, photoPaths: photos)
+                        deleting = false
+                        if ok { dismiss() } else { sheetError = visits.lastError ?? "Couldn't remove that memory." }
+                    }
+                }
+                Button("Keep", role: .cancel) {}
+            } message: {
+                Text("This deletes your note and \(photos.count) photo\(photos.count == 1 ? "" : "s") for this place. It can't be undone.")
             }
             .onChange(of: picked) { _, item in
                 guard let item else { return }

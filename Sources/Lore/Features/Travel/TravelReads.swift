@@ -222,6 +222,54 @@ enum TravelReads {
         try ensureOK(response, data: data)
     }
 
+    /// Remove one private photo from a visit atomically (array + storage). The
+    /// RPC is owner-scoped; the storage delete is limited to the caller's folder.
+    /// `POST /rest/v1/rpc/remove_visit_photo`
+    static func removeVisitPhoto(
+        placeID: String,
+        path: String,
+        accessToken: String,
+        session: URLSession = .shared
+    ) async throws {
+        let url = Config.restURL.appending(path: "rpc/remove_visit_photo")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        apply(&request, accessToken: accessToken)
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("return=minimal", forHTTPHeaderField: "Prefer")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: [
+            "p_place_id": placeID,
+            "p_path": path,
+        ])
+        let (data, response) = try await session.data(for: request)
+        try ensureOK(response, data: data)
+        // Best-effort storage cleanup; the visit.photos array drives display.
+        try? await removeJournalPhoto(path: path, accessToken: accessToken, session: session)
+    }
+
+    /// Delete a whole memory — the visit row and its private photos. RLS scopes
+    /// the DELETE to the caller's own row. `DELETE /rest/v1/visit?place_id=eq.X`
+    static func deleteVisit(
+        placeID: String,
+        photoPaths: [String],
+        accessToken: String,
+        session: URLSession = .shared
+    ) async throws {
+        var components = URLComponents(url: Config.restURL.appending(path: "visit"), resolvingAgainstBaseURL: false)
+        components?.queryItems = [URLQueryItem(name: "place_id", value: "eq.\(placeID)")]
+        guard let url = components?.url else { throw TravelError.badURL }
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        apply(&request, accessToken: accessToken)
+        request.setValue("return=minimal", forHTTPHeaderField: "Prefer")
+        let (data, response) = try await session.data(for: request)
+        try ensureOK(response, data: data)
+        // Clean up the entry's private photos (best-effort; the row is gone).
+        for path in photoPaths {
+            try? await removeJournalPhoto(path: path, accessToken: accessToken, session: session)
+        }
+    }
+
     /// Clear a stale public flag left by a pre-launch client. This deliberately
     /// exposes no inverse operation: journals are private in the shipping app.
     static func makeVisitPrivate(
