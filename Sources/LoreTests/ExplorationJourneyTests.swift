@@ -132,17 +132,28 @@ final class ExplorationJourneyTests: XCTestCase {
         XCTAssertLessThan(ranked[0].meters, ranked[1].meters)
     }
 
-    func testNearbyCardLayoutStaysCompactForDiscoveryDeck() {
+    func testNearbyCardLayoutIsUniformForDiscoveryDeck() {
         XCTAssertEqual(NearMeCardLayout.cardWidth(isAccessibilitySize: false), 204)
-        XCTAssertLessThanOrEqual(NearMeCardLayout.minimumHeight(isAccessibilitySize: false), 190)
-        XCTAssertLessThanOrEqual(NearMeCardLayout.shelfMaxHeight(isAccessibilitySize: false), 210)
+        // Every tile shares one fixed height so the shelf reads as a uniform row,
+        // bounded (not bloated) yet tall enough to fit the "I've been here" toggle.
+        XCTAssertEqual(NearMeCardLayout.uniformHeight(isAccessibilitySize: false), 268)
+        XCTAssertLessThanOrEqual(NearMeCardLayout.uniformHeight(isAccessibilitySize: false), 300)
+        // The shelf frame must be >= the card height, or the toggle gets clipped.
+        XCTAssertGreaterThanOrEqual(
+            NearMeCardLayout.shelfMaxHeight(isAccessibilitySize: false),
+            NearMeCardLayout.uniformHeight(isAccessibilitySize: false)
+        )
         XCTAssertEqual(NearMeCardLayout.teaserLineLimit(isAccessibilitySize: false), 2)
 
+        // Accessibility sizes scale the tile up, and the shelf still contains it.
         XCTAssertGreaterThan(
-            NearMeCardLayout.minimumHeight(isAccessibilitySize: true),
-            NearMeCardLayout.minimumHeight(isAccessibilitySize: false)
+            NearMeCardLayout.uniformHeight(isAccessibilitySize: true),
+            NearMeCardLayout.uniformHeight(isAccessibilitySize: false)
         )
-        XCTAssertLessThanOrEqual(NearMeCardLayout.shelfMaxHeight(isAccessibilitySize: true), 270)
+        XCTAssertGreaterThanOrEqual(
+            NearMeCardLayout.shelfMaxHeight(isAccessibilitySize: true),
+            NearMeCardLayout.uniformHeight(isAccessibilitySize: true)
+        )
         XCTAssertEqual(NearMeCardLayout.teaserLineLimit(isAccessibilitySize: true), 3)
     }
 
