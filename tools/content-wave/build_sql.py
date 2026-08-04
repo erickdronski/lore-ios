@@ -70,6 +70,12 @@ FORBIDDEN_BODY_MARKERS = (
     "Market context:",
     "System context:",
 )
+FORBIDDEN_TITLE_MARKERS = (
+    " is the story to ask about",
+    " gives the city a second layer",
+    " like a backdrop",
+    " as the second map",
+)
 
 
 class WaveError(RuntimeError):
@@ -203,6 +209,12 @@ def validate_rows(
 
         if not isinstance(title, str) or not 2 <= len(title.strip()) <= 80:
             errors.append(f"row {index} ({city}/{kind}): title must be 2-80 characters")
+        elif any(marker in title for marker in FORBIDDEN_TITLE_MARKERS):
+            errors.append(
+                f"row {index} ({city}/{kind}): title contains generated scaffolding"
+            )
+        elif kind != "hashtag" and title.strip()[0].islower():
+            errors.append(f"row {index} ({city}/{kind}): title must start polished")
         if not isinstance(body, str) or not 15 <= len(body.strip()) <= 500:
             errors.append(f"row {index} ({city}/{kind}): body must be 15-500 characters")
         elif any(marker in body for marker in FORBIDDEN_BODY_MARKERS):
@@ -263,6 +275,8 @@ def validate_rows(
                 errors.append(
                     f"row {index} ({city}/watch): links must include an HTTPS video URL"
                 )
+            if not isinstance(meta, dict) or not _first_text(meta, "platform"):
+                errors.append(f"row {index} ({city}/watch): meta.platform is required")
         if kind == "hashtag" and isinstance(links, dict) and isinstance(meta, dict):
             hashtag = _first_text(meta, "hashtag") or (title.strip() if isinstance(title, str) else None)
             if not isinstance(hashtag, str) or not hashtag.strip().startswith("#"):
@@ -274,6 +288,12 @@ def validate_rows(
             ):
                 errors.append(
                     f"row {index} ({city}/hashtag): links must include an HTTPS hashtag URL"
+                )
+        if kind == "local_legend" and isinstance(meta, dict):
+            confidence = str(meta.get("confidence") or "").strip().casefold()
+            if confidence not in {"legend", "oral tradition", "disputed", "documented"}:
+                errors.append(
+                    f"row {index} ({city}/local_legend): meta.confidence is required"
                 )
 
     if len(city_kinds) != expected_city_count:

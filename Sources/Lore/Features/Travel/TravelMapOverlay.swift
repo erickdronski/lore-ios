@@ -63,6 +63,12 @@ struct TravelMapControls: View {
         return "\(filteredPlaces.count) places to wander"
     }
 
+    private var bottomClearance: CGFloat {
+        collapsed
+            ? TravelMapControlsLayout.collapsedBottomClearance
+            : TravelMapControlsLayout.expandedBottomDockClearance
+    }
+
     var body: some View {
         VStack(spacing: 8) {
             handle
@@ -90,7 +96,7 @@ struct TravelMapControls: View {
             }
         }
         .padding(.top, 6)
-        .padding(.bottom, 10)
+        .padding(.bottom, bottomClearance)
         .background(
             // The ink fade only exists to keep the shelf text legible over the
             // map. When collapsed there is nothing to protect, so it disappears
@@ -208,6 +214,16 @@ struct TravelMapControls: View {
         .padding(.horizontal, 16)
         .accessibilityElement(children: .contain)
     }
+}
+
+enum TravelMapControlsLayout {
+    /// Collapsed still needs a little lift so the pill clears the floating tab
+    /// bar glow and remains tappable near the bottom edge.
+    static let collapsedBottomClearance: CGFloat = 18
+    /// The expanded Discovery Deck owns a horizontal shelf with visit CTAs.
+    /// Keep the shelf above Lore's translucent tab dock; otherwise the cards
+    /// look unfinished and the "I've been here" action lands under the dock.
+    static let expandedBottomDockClearance: CGFloat = 136
 }
 
 /// One owner for the Travel stores + the unlock bridge. The integrator creates a

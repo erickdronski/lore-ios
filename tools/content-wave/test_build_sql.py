@@ -17,7 +17,7 @@ SPEC.loader.exec_module(wave)
 def row(city: str, kind: str, sequence: int = 0) -> dict:
     links = {}
     meta = {}
-    title = f"{city} {kind} {sequence}"
+    title = f"{city.title()} {kind} {sequence}"
     if kind == "phrase":
         meta = {
             "language": "English",
@@ -34,6 +34,8 @@ def row(city: str, kind: str, sequence: int = 0) -> dict:
         title = f"#{city.title()}Lore{sequence}"
         links = {"hashtag_url": "https://www.tiktok.com/tag/example"}
         meta = {"hashtag": title}
+    elif kind == "local_legend":
+        meta = {"confidence": "documented"}
 
     return {
         "city": city,
@@ -116,6 +118,19 @@ class ContentWaveTests(unittest.TestCase):
                 profile="local-expert-kit",
             )
 
+    def test_rejects_watch_without_platform(self) -> None:
+        rows = self.city_rows("alpha", profile="local-expert-addons")
+        rows = [dict(item) for item in rows]
+        watch = next(item for item in rows if item["kind"] == "watch")
+        watch["meta"] = {}
+
+        with self.assertRaises(wave.WaveError):
+            wave.validate_rows(
+                rows,
+                expected_city_count=1,
+                profile="local-expert-addons",
+            )
+
     def test_rejects_rich_profile_without_hashtag_link(self) -> None:
         rows = self.city_rows("alpha", profile="local-expert-kit")
         rows = [dict(item) for item in rows]
@@ -131,6 +146,19 @@ class ContentWaveTests(unittest.TestCase):
                 profile="local-expert-kit",
             )
 
+    def test_rejects_local_legend_without_confidence(self) -> None:
+        rows = self.city_rows("alpha", profile="local-expert-addons")
+        rows = [dict(item) for item in rows]
+        legend = next(item for item in rows if item["kind"] == "local_legend")
+        legend["meta"] = {}
+
+        with self.assertRaises(wave.WaveError):
+            wave.validate_rows(
+                rows,
+                expected_city_count=1,
+                profile="local-expert-addons",
+            )
+
     def test_rejects_non_https_source(self) -> None:
         rows = self.city_rows("alpha")
         rows[0]["source"] = "editorial:generated"
@@ -144,6 +172,28 @@ class ContentWaveTests(unittest.TestCase):
 
         with self.assertRaises(wave.WaveError):
             wave.validate_rows(rows, expected_city_count=1)
+
+    def test_rejects_generated_title_scaffolding(self) -> None:
+        rows = self.city_rows("alpha", profile="local-expert-addons")
+        rows[0]["title"] = "River Market is the story to ask about"
+
+        with self.assertRaises(wave.WaveError):
+            wave.validate_rows(
+                rows,
+                expected_city_count=1,
+                profile="local-expert-addons",
+            )
+
+    def test_rejects_unpolished_lowercase_title(self) -> None:
+        rows = self.city_rows("alpha", profile="local-expert-addons")
+        rows[0]["title"] = "river market starts here"
+
+        with self.assertRaises(wave.WaveError):
+            wave.validate_rows(
+                rows,
+                expected_city_count=1,
+                profile="local-expert-addons",
+            )
 
     def test_normalizes_phrase_schema_variants(self) -> None:
         phrase = row("alpha", "phrase")
@@ -195,7 +245,7 @@ class ContentWaveTests(unittest.TestCase):
 
         normalized = wave.normalize_row(phrase)
 
-        self.assertEqual(normalized["attribution"], "Pronunciation: alpha phrase 0")
+        self.assertEqual(normalized["attribution"], "Pronunciation: Alpha phrase 0")
         wave.validate_rows(
             [normalized]
             + [row("alpha", "phrase", sequence) for sequence in range(1, 6)]

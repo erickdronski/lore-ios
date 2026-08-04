@@ -285,15 +285,19 @@ enum NearMeCardLayout {
     }
 
     static func minimumHeight(isAccessibilitySize: Bool) -> CGFloat {
-        isAccessibilitySize ? 238 : 188
+        cardHeight(isAccessibilitySize: isAccessibilitySize)
+    }
+
+    static func cardHeight(isAccessibilitySize: Bool) -> CGFloat {
+        isAccessibilitySize ? 286 : 222
     }
 
     static func shelfMaxHeight(isAccessibilitySize: Bool) -> CGFloat {
-        minimumHeight(isAccessibilitySize: isAccessibilitySize) + (isAccessibilitySize ? 26 : 18)
+        cardHeight(isAccessibilitySize: isAccessibilitySize) + (isAccessibilitySize ? 20 : 14)
     }
 
     static func teaserLineLimit(isAccessibilitySize: Bool) -> Int {
-        isAccessibilitySize ? 3 : 2
+        isAccessibilitySize ? 2 : 0
     }
 }
 
@@ -319,9 +323,7 @@ struct NearMeCard: View {
     private var accent: Color { theme?.accentColor ?? LoreColor.brass300 }
     private var isAccessibilitySize: Bool { dynamicTypeSize.isAccessibilitySize }
     private var cardWidth: CGFloat { NearMeCardLayout.cardWidth(isAccessibilitySize: isAccessibilitySize) }
-    /// A floor, not a target. Each tile sizes to its own content; the shelf no
-    /// longer makes every card inherit the tallest card's height.
-    private var cardMinimumHeight: CGFloat { NearMeCardLayout.minimumHeight(isAccessibilitySize: isAccessibilitySize) }
+    private var cardHeight: CGFloat { NearMeCardLayout.cardHeight(isAccessibilitySize: isAccessibilitySize) }
     private var teaserLineLimit: Int { NearMeCardLayout.teaserLineLimit(isAccessibilitySize: isAccessibilitySize) }
 
     /// Resolved place photo. Nil until it loads, or permanently when the place
@@ -331,9 +333,9 @@ struct NearMeCard: View {
     @State private var photoResolved = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
+        VStack(alignment: .leading, spacing: 6) {
             Button(action: onSelect) {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 5) {
                     HStack(alignment: .top) {
                         medallion
                         Spacer()
@@ -356,28 +358,31 @@ struct NearMeCard: View {
                         .foregroundStyle(accent)
 
                     Text(place.name)
-                        .font(LoreType.display(size: 17, weight: .semibold))
+                        .font(LoreType.display(size: 16, weight: .semibold))
                         .foregroundStyle(LoreColor.bone)
                         .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 2)
                         .multilineTextAlignment(.leading)
+                        .minimumScaleFactor(0.9)
 
                     // `teaser`, not `layer1?.hook`: the curated hook is often
                     // empty, while the server fallback keeps the card useful.
                     // Cap it tightly so a single long note cannot stretch the
                     // whole discovery shelf.
-                    if let teaser = place.teaser, !teaser.isEmpty {
+                    if teaserLineLimit > 0, let teaser = place.teaser, !teaser.isEmpty {
                         Text(teaser)
                             .font(LoreType.caption)
                             .foregroundStyle(LoreColor.bone.opacity(0.7))
                             .lineLimit(teaserLineLimit)
                             .multilineTextAlignment(.leading)
-                            .fixedSize(horizontal: false, vertical: true)
+                            .truncationMode(.tail)
                     }
 
                     proximityRow
                 }
+                .frame(maxHeight: .infinity, alignment: .topLeading)
             }
             .buttonStyle(.plain)
+            .frame(maxHeight: .infinity, alignment: .topLeading)
             .accessibilityLabel(Text(cardAccessibilityLabel))
             .accessibilityHint(Text("Opens this field note"))
 
@@ -385,12 +390,12 @@ struct NearMeCard: View {
             // "your lore" editor lives — so adding a lore is one gesture from
             // the shelf, not a scavenger hunt.
             VisitToggle(place: place, source: .map, onNeedsSignIn: onNeedsSignIn, onLogged: onSelect)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .center)
         }
-        .padding(12)
-        .frame(width: cardWidth, alignment: .topLeading)
-        .frame(minHeight: cardMinimumHeight, alignment: .topLeading)
-        .fixedSize(horizontal: false, vertical: true)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .frame(width: cardWidth, height: cardHeight, alignment: .topLeading)
+        .clipped()
         // Resolve from the title the read view now carries, so a shelf of cards
         // costs zero extra dive fetches. WikipediaService is an actor with a
         // cache that also remembers misses, so scrolling back does not refetch.
@@ -484,22 +489,17 @@ struct NearMeCard: View {
                 Text(proximityLabel)
                     .font(LoreType.button)
                     .foregroundStyle(LoreColor.bone)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
                 Text(ranked.distanceLabel)
                     .font(LoreType.caption)
                     .foregroundStyle(LoreColor.amber)
                     .contentTransition(.numericText())
             }
             Spacer(minLength: 6)
-            HStack(spacing: 3) {
-                ForEach(0..<3, id: \.self) { index in
-                    Circle()
-                        .fill(index == 2 ? accent : LoreColor.bone.opacity(0.28))
-                        .frame(width: index == 2 ? 6 : 4, height: index == 2 ? 6 : 4)
-                }
-                Image(systemName: "mappin.circle.fill")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(accent)
-            }
+            Image(systemName: "mappin.circle.fill")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(accent)
             .accessibilityHidden(true)
         }
     }
@@ -526,8 +526,8 @@ struct NearMeCard: View {
         switch ranked.meters {
         case ..<250: return "Steps away"
         case ..<900: return "Easy walk"
-        case ..<2_000: return "A short wander"
-        default: return "Worth the detour"
+        case ..<2_000: return "Short wander"
+        default: return "Worth a stop"
         }
     }
 
