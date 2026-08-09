@@ -25,6 +25,9 @@ Lore only. Do not mix Nalee, Tapt, Scout, or other portfolio projects into this 
    - fast traveler context
    - responsive accessibility layout
    - optional source-backed external action from the row's existing URL
+   - the brief now promotes hashtag/search and seasonal timing rows too, and
+     uses a compact grid so seven local-context chips do not squeeze into one
+     phone-width row
 
 3. Tour stops can now open the full Lore place dossier:
    - stop card button: `Open full dossier`
@@ -100,7 +103,8 @@ Passed:
 xcodebuild test -project Lore.xcodeproj -scheme Lore -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:LoreTests/CitySectionTests
 ```
 
-Result: `** TEST SUCCEEDED **`
+Result: `** TEST SUCCEEDED **` with 8 tests, including the richer
+watch/hashtag/seasonal field-brief synthesis path.
 
 Passed:
 
@@ -143,6 +147,8 @@ git diff --check
   `docs/34-CONTENT-RICHNESS-AUDIT-2026-08-09.md`
 - Repeatable public audit command:
   `node scripts/content-wave/audit-public-surface.mjs`
+- Detailed takeover audit command:
+  `node scripts/content-wave/audit-public-surface.mjs --city-details`
 
 Recent content work already on `lore/main` includes:
 
@@ -158,6 +164,9 @@ Live read-only public Supabase check on 2026-08-09 against project `uiuwzymvyrgf
 - 4,982 visible `city_section` rows
 - 1,974 rich city-section rows
 - 113 visible `dive.audio_path` rows
+- all 141 live cities have every current rich city-section kind
+- 4,593 dives have an external link, but only 44 expose an external HTTPS
+  `source` link
 
 Known content gaps still needing follow-up:
 
@@ -165,11 +174,12 @@ Known content gaps still needing follow-up:
   Nairobi (29), Nashville (29), Santiago (29), Seoul (29), and Wellington (29).
 - Premium/studio audio is partially live in app-visible data: the native app
   reads `dive.audio_path`, and the public surface currently has 113 rows with a
-  path. Most dives still fall back to on-device narration until audio coverage
-  expands.
+  path across only 3 cities. Most dives still fall back to on-device narration
+  until audio coverage expands.
 - The richer content kinds are visible publicly across every live city, but the
-  next content pass should keep proving app-visible promotion rather than only
-  candidate/import state.
+  current watch/hashtag rows are broad city-level context, not place-linked
+  density. The next content pass should prioritize the six-city place floor and
+  a small studio-audio sampler before another generic rich-section wave.
 
 ## Release State Caveat
 
@@ -184,3 +194,7 @@ Historical docs say build 27 was submitted to Apple App Review on 2026-08-03 and
    dock when expanded.
 4. Verify App Store Connect status and whether the latest code has actually reached TestFlight.
 5. Continue content depth waves, prioritizing thin cities and the richer section kinds that now power the Meet City field brief.
+6. Use the backend `low-place-floor-001` canary recommendation before claiming
+   that the empty-city feeling is fixed: +1 place each for Nashville, Seoul,
+   Santiago, Nairobi, and Wellington, and +9 places for Stone Town, staged
+   through the reviewed content lane rather than direct public writes.

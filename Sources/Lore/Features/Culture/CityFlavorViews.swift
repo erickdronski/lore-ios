@@ -58,10 +58,14 @@ struct CityFieldBriefCard: View {
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
-    private var layout: AnyLayout {
-        dynamicTypeSize.isAccessibilitySize
-            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12))
-            : AnyLayout(HStackLayout(alignment: .top, spacing: 12))
+    private var columns: [GridItem] {
+        if dynamicTypeSize.isAccessibilitySize {
+            return [GridItem(.flexible(), spacing: 12)]
+        }
+        return [
+            GridItem(.flexible(minimum: 132), spacing: 12),
+            GridItem(.flexible(minimum: 132), spacing: 12),
+        ]
     }
 
     var body: some View {
@@ -90,7 +94,7 @@ struct CityFieldBriefCard: View {
                 Spacer(minLength: 0)
             }
 
-            layout {
+            LazyVGrid(columns: columns, alignment: .leading, spacing: 12) {
                 ForEach(brief.items) { item in
                     CityFieldBriefItem(item: item, accent: accent)
                 }
@@ -156,11 +160,11 @@ private struct CityFieldBriefItem: View {
             Text(item.detail)
                 .font(LoreType.micro)
                 .foregroundStyle(LoreColor.bone.opacity(0.68))
-                .lineLimit(3)
+                .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(12)
-        .frame(maxWidth: .infinity, minHeight: 142, alignment: .topLeading)
+        .frame(maxWidth: .infinity, minHeight: 118, alignment: .topLeading)
         .background(LoreColor.ink700.opacity(0.56), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 }

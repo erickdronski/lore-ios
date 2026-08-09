@@ -115,6 +115,16 @@ struct CitySectionTests {
                 sort: 160
             ),
             decode(
+                id: "hashtag",
+                kind: "hashtag",
+                title: "#BackstreetCity",
+                body: "Search the tag before the obvious monument shots.",
+                links: ##"{"hashtag_url":"https://www.tiktok.com/tag/backstreetcity"}"##,
+                meta: ##"{"hashtag":"#BackstreetCity"}"##,
+                source: "https://example.org/city-social",
+                sort: 170
+            ),
+            decode(
                 id: "legend",
                 kind: "local_legend",
                 title: "Ask about the old gate",
@@ -135,12 +145,21 @@ struct CitySectionTests {
                 body: "Use signs, public edges, and materials instead of faces.",
                 sort: 210
             ),
+            decode(
+                id: "seasonal",
+                kind: "seasonal",
+                title: "Come back at dusk",
+                body: "The route feels different once the shopfronts switch on.",
+                sort: 220
+            ),
         ]
 
         let brief = try #require(CityFieldBrief(sections: sections))
 
-        #expect(brief.items.map(\.label) == ["Prime the lens", "Ask about", "Avoid", "Decode", "Frame"])
+        #expect(brief.items.map(\.label) == ["Prime the lens", "Search", "Ask about", "Avoid", "Decode", "Frame", "Time it"])
         #expect(brief.items.first?.title == "Watch the waterfront first")
+        #expect(brief.items.map(\.title).contains("#BackstreetCity"))
+        #expect(brief.items.last?.title == "Come back at dusk")
         #expect(brief.action?.label == "Watch YouTube")
         #expect(brief.action?.url.absoluteString == "https://www.youtube.com/watch?v=city")
     }

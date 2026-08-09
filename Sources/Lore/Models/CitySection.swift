@@ -311,6 +311,9 @@ struct CityFieldBrief: Equatable {
         if let section = first("watch") {
             nextItems.append(Self.item(from: section, label: "Prime the lens", systemImage: "play.rectangle.fill"))
         }
+        if let section = first("hashtag") {
+            nextItems.append(Self.item(from: section, label: "Search", systemImage: "number"))
+        }
         if let section = first("local_legend") {
             nextItems.append(Self.item(from: section, label: "Ask about", systemImage: "book.closed.fill"))
         }
@@ -328,7 +331,7 @@ struct CityFieldBrief: Equatable {
         }
 
         guard nextItems.count >= 3 else { return nil }
-        items = Array(nextItems.prefix(5))
+        items = Array(nextItems.prefix(7))
 
         if let actionable = orderedSections.first(where: {
             ($0.kind == "watch" || $0.kind == "hashtag") && $0.primaryExternalURL != nil
