@@ -170,6 +170,28 @@ final class ExplorationJourneyTests: XCTestCase {
         )
     }
 
+    func testMapPresentationResolvesOnlyLoadedPlaces() {
+        let place = place(id: "found", kind: "building")
+
+        let presented = MapPlacePresentationPolicy.presentablePlace(
+            selectedID: "found",
+            places: [place]
+        )
+
+        XCTAssertEqual(presented?.id, "found")
+        XCTAssertTrue(MapPlacePresentationPolicy.shouldRecedeMap(presentedPlace: presented))
+    }
+
+    func testMapRecedeClearsForStaleSelectedPlaceID() {
+        let presented = MapPlacePresentationPolicy.presentablePlace(
+            selectedID: "stale",
+            places: [place(id: "current", kind: "building")]
+        )
+
+        XCTAssertNil(presented)
+        XCTAssertFalse(MapPlacePresentationPolicy.shouldRecedeMap(presentedPlace: presented))
+    }
+
     func testPlaceTeaserPrefersServerDerivedHookText() {
         let place = place(
             id: "place",

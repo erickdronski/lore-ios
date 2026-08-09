@@ -66,6 +66,10 @@ Lore only. Do not mix Nalee, Tapt, Scout, or other portfolio projects into this 
     - the map overlay remains an overlay, not a bottom safe-area inset, so the
       deck should not force MapKit to re-solve the camera and zoom out
 
+11. Place dossier dismissal now clears the actual presentation state instead of
+    relying on MapKit's retained selected pin id. This fixes the reported bug
+    where closing a place card could leave the entire map dimmed/blurred.
+
 ## Files Changed
 
 - `Sources/Lore/App/LoreApp.swift`
@@ -104,8 +108,9 @@ Passed:
 xcodebuild test -project Lore.xcodeproj -scheme Lore -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:LoreTests/ExplorationJourneyTests
 ```
 
-Result: `** TEST SUCCEEDED **` with 16 tests, including the compact near-me
-card layout and expanded dock-clearance regression checks.
+Result: `** TEST SUCCEEDED **` with 18 tests, including the compact near-me
+card layout, expanded dock-clearance regression checks, and map blur dismissal
+coverage.
 
 Passed:
 
