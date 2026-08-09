@@ -58,6 +58,39 @@ final class LoreAPITests: XCTestCase {
         XCTAssertNil(cityFact(source: nil).sourceURL)
     }
 
+    func testDiveLinksExposeOnlyHTTPSDossierSources() throws {
+        let data = Data("""
+        {
+          "place_id": "place-1",
+          "narrative": "A sourced dossier.",
+          "timeline": [],
+          "links": {
+            "website": "https://example.org/place",
+            "source_url": "https://archive.example.org/source-record",
+            "wikipedia_title": "Example Place"
+          },
+          "media": {},
+          "source": "seed:dev"
+        }
+        """.utf8)
+        let dive = try JSONDecoder().decode(Dive.self, from: data)
+
+        XCTAssertEqual(dive.links.websiteURL?.absoluteString, "https://example.org/place")
+        XCTAssertEqual(dive.links.sourceRecordURL?.absoluteString, "https://archive.example.org/source-record")
+        XCTAssertEqual(dive.links.wikipediaURL?.absoluteString, "https://en.wikipedia.org/wiki/Example_Place")
+    }
+
+    func testDiveLinksRejectNonHTTPSSourceURLs() {
+        let links = DiveLinks(
+            website: "http://example.org/place",
+            sourceURLString: "ftp://example.org/source",
+            wikipediaTitle: nil
+        )
+
+        XCTAssertNil(links.websiteURL)
+        XCTAssertNil(links.sourceRecordURL)
+    }
+
     private func cityFact(source: String?) -> CityFact {
         CityFact(
             id: "fact",

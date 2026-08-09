@@ -16,7 +16,7 @@ struct Dive: Codable, Hashable {
     /// Horizontal timeline events, oldest first.
     let timeline: [TimelineEvent]
     /// Source / read-more links, a jsonb OBJECT
-    /// ({"website": "...", "wikipedia_title": "..."}).
+    /// ({"website": "...", "source_url": "...", "wikipedia_title": "..."}).
     let links: DiveLinks
     /// The dossier's lead image reference, resolved from
     /// `media.wikipedia_title` via the Wikipedia summary API (the same source
@@ -89,20 +89,38 @@ struct TimelineEvent: Codable, Hashable, Identifiable {
     var id: String { "\(year)-\(title)" }
 }
 
-/// `dive.links`, a jsonb object. Both fields optional; a link row only renders
-/// when its value is present.
+/// `dive.links`, a jsonb object. Values render only when they are valid,
+/// external citation/read-more links; malformed source rows stay hidden.
 struct DiveLinks: Codable, Hashable {
     let website: String?
+    let sourceURLString: String?
     let wikipediaTitle: String?
 
     enum CodingKeys: String, CodingKey {
         case website
+        case sourceURLString = "source_url"
         case wikipediaTitle = "wikipedia_title"
     }
 
-    init(website: String? = nil, wikipediaTitle: String? = nil) {
+    init(
+        website: String? = nil,
+        sourceURLString: String? = nil,
+        wikipediaTitle: String? = nil
+    ) {
         self.website = website
+        self.sourceURLString = sourceURLString
         self.wikipediaTitle = wikipediaTitle
+    }
+
+    /// Official or place-owned website URL when the dossier carries one.
+    var websiteURL: URL? {
+        Self.validHTTPSURL(website)
+    }
+
+    /// Explicit source-record URL from `links.source_url`, separate from the
+    /// older `dive.source` label field.
+    var sourceRecordURL: URL? {
+        Self.validHTTPSURL(sourceURLString)
     }
 
     /// The read-more Wikipedia article URL for this dive, if it names one.
@@ -112,6 +130,17 @@ struct DiveLinks: Codable, Hashable {
                 .addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)
         else { return nil }
         return URL(string: "https://en.wikipedia.org/wiki/\(encoded)")
+    }
+
+    private static func validHTTPSURL(_ raw: String?) -> URL? {
+        guard
+            let raw = raw?.trimmingCharacters(in: .whitespacesAndNewlines),
+            !raw.isEmpty,
+            let url = URL(string: raw),
+            url.scheme?.lowercased() == "https",
+            url.host != nil
+        else { return nil }
+        return url
     }
 }
 

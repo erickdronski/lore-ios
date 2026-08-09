@@ -305,13 +305,18 @@ struct DiveView: View {
     private var citationLinks: [(icon: String, title: String, subtitle: String?, url: URL)] {
         guard case .loaded(let dive) = model.state else { return [] }
         var rows: [(icon: String, title: String, subtitle: String?, url: URL)] = []
-        if let website = dive.links.website,
-           let url = URL(string: website),
-           ["http", "https"].contains(url.scheme?.lowercased() ?? "") {
-            rows.append(("link", "Official site", url.host(), url))
+        func appendUnique(icon: String, title: String, subtitle: String?, url: URL) {
+            guard !rows.contains(where: { $0.url.absoluteString == url.absoluteString }) else { return }
+            rows.append((icon, title, subtitle, url))
+        }
+        if let url = dive.links.websiteURL {
+            appendUnique(icon: "link", title: "Official site", subtitle: url.host(), url: url)
+        }
+        if let url = dive.links.sourceRecordURL {
+            appendUnique(icon: "link.badge.plus", title: "Source record", subtitle: url.host(), url: url)
         }
         if let url = dive.links.wikipediaURL {
-            rows.append(("book", "Wikipedia", "en.wikipedia.org", url))
+            appendUnique(icon: "book", title: "Wikipedia", subtitle: "en.wikipedia.org", url: url)
         }
         return rows
     }

@@ -105,6 +105,12 @@ Lore only. Do not mix Nalee, Tapt, Scout, or other portfolio projects into this 
     - the first walking leg from the traveler to stop one now counts against
       both route distance and time budget
 
+14. Place dossiers now render `dive.links.source_url` as a first-class source
+    record row in `Sources & links`, alongside the existing official-site and
+    Wikipedia links. The model accepts only HTTPS link values and dedupes repeated
+    URLs before rendering, so internal provenance labels and malformed links do
+    not become user-facing citation buttons.
+
 ## Files Changed
 
 - `Sources/Lore/App/LoreApp.swift`
@@ -133,6 +139,7 @@ Lore only. Do not mix Nalee, Tapt, Scout, or other portfolio projects into this 
 - `Sources/LoreTests/ScannerLogicTests.swift`
 - `Sources/LoreTests/ProfileAccountTests.swift`
 - `Sources/LoreTests/TravelReadsTests.swift`
+- `Sources/LoreTests/LoreAPITests.swift`
 
 ## Validation
 
@@ -203,6 +210,22 @@ Also passed after the saved-place patch:
 git diff --check
 ```
 
+Dossier citation-link continuation validation:
+
+```sh
+xcodebuild test -project Lore.xcodeproj -scheme Lore -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:LoreTests/LoreAPITests
+```
+
+Result: `** TEST SUCCEEDED **` with 5 tests, including decoding/rendering support
+for HTTPS `dive.links.source_url` and rejection of non-HTTPS dossier source
+links.
+
+Also passed after the citation-link patch:
+
+```sh
+git diff --check
+```
+
 Post-backup investigation note:
 
 - An attempted `AtlasCache` in-flight request coalescing change was intentionally
@@ -217,8 +240,8 @@ Post-backup investigation note:
 
 - Repo: `/Users/dron/Projects/lore`
 - Branch: `main`
-- Current synced feature head before this docs-only Claude handoff update:
-  `b3d1f71018c4c44e3c117952de29410667547267` (`Add Nairobi Wellington content canary`)
+- Current synced feature head before the latest backend audit clarification:
+  `e2fc77cf8fb6bce9516bb3a8ef502e753abe0528` (`Refresh thin city depth wave gate`)
 - Backend/content repo handoff doc added separately:
   `docs/34-CONTENT-RICHNESS-AUDIT-2026-08-09.md`
 - Repeatable public audit command:
@@ -241,8 +264,10 @@ Live read-only public Supabase check on 2026-08-09 against project `uiuwzymvyrgf
 - 1,974 rich city-section rows
 - 113 visible `dive.audio_path` rows
 - all 141 live cities have every current rich city-section kind
-- 4,593 dives have an external link, but only 44 expose an external HTTPS
-  `source` link
+- 4,593 dives have an external link; the v3 backend audit shows 4,592 dives
+  (75.55%) with app-visible citation/read-more links
+- 44 dives expose an external HTTPS `source` field, so strict source-field
+  provenance cleanup remains separate from user-visible link coverage
 
 Known content gaps still needing follow-up:
 
