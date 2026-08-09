@@ -8,10 +8,12 @@ Lore only. Do not mix Nalee, Tapt, Scout, or other portfolio projects into this 
 
 - Repo: `/Users/dron/Projects/lore-ios`
 - Branch: `codex/lore-next-level-20260809`
-- Claude takeover backup: this branch and `/Users/dron/Projects/lore` were
-  checked clean and pushed on August 9, 2026. The latest verified native
-  feature head before this docs-only handoff update was
-  `c31bc874c3cdee287be223edd648fede8105e272` (`Use live origin for generated walks`).
+- Claude takeover backup refresh: this branch and `/Users/dron/Projects/lore`
+  were checked clean against GitHub on August 9, 2026 after a live
+  `git fetch --prune`. The latest verified native feature head before this
+  docs-only handoff refresh was
+  `0f096c77fa68a7ebbef93a0887d6e57f97920d69` (`Expose dossier source record links`),
+  matching `origin/codex/lore-next-level-20260809`.
 - Current branch head: verify with `git rev-parse HEAD`; this file is updated on
   the branch as the takeover log evolves, so the final handoff commit will be a
   docs-only commit above the feature state listed here.
@@ -110,6 +112,10 @@ Lore only. Do not mix Nalee, Tapt, Scout, or other portfolio projects into this 
     Wikipedia links. The model accepts only HTTPS link values and dedupes repeated
     URLs before rendering, so internal provenance labels and malformed links do
     not become user-facing citation buttons.
+
+15. Final Claude handoff refresh is docs-only. No runtime app code changed after
+    the dossier source-link feature head above; this file exists so Claude can
+    verify the branch and repo state without relying on chat context.
 
 ## Files Changed
 
@@ -240,8 +246,9 @@ Post-backup investigation note:
 
 - Repo: `/Users/dron/Projects/lore`
 - Branch: `main`
-- Current synced feature head before the latest backend audit clarification:
-  `e2fc77cf8fb6bce9516bb3a8ef502e753abe0528` (`Refresh thin city depth wave gate`)
+- Current synced feature head before the latest docs-only Claude handoff refresh:
+  `16bee657b159ef1e71d88bfa4ee0c56368b3c084` (`Add low-place lore_ops staging package`),
+  matching `origin/main`
 - Backend/content repo handoff doc added separately:
   `docs/34-CONTENT-RICHNESS-AUDIT-2026-08-09.md`
 - Repeatable public audit command:
