@@ -35,6 +35,14 @@ Lore only. Do not mix Nalee, Tapt, Scout, or other portfolio projects into this 
    - field brief synthesis from rich local-expert rows
    - hidden field brief when there is not enough real content
 
+5. Place cards now use the server-derived `place.teaser` fallback instead of
+   only `layer1.hook`, so places with a published dive excerpt but no curated
+   Layer-1 hook still feel written and useful.
+
+6. The Layer-1 story teaser now has an explicit `Read full story` action that
+   opens the full dossier. This fixes the visual dead end where truncated teaser
+   text showed ellipses but did not clearly explain where to continue.
+
 ## Files Changed
 
 - `Sources/Lore/App/LoreApp.swift`
@@ -42,8 +50,10 @@ Lore only. Do not mix Nalee, Tapt, Scout, or other portfolio projects into this 
 - `Sources/Lore/Features/Culture/CultureView.swift`
 - `Sources/Lore/Features/Tours/TourDetailView.swift`
 - `Sources/Lore/Features/Tours/ToursScreen.swift`
+- `Sources/Lore/Models/Place.swift`
 - `Sources/Lore/Models/CitySection.swift`
 - `Sources/LoreTests/CitySectionTests.swift`
+- `Sources/LoreTests/ExplorationJourneyTests.swift`
 
 ## Validation
 
@@ -54,6 +64,14 @@ xcodebuild test -project Lore.xcodeproj -scheme Lore -destination 'platform=iOS 
 ```
 
 Result: `** TEST SUCCEEDED **`
+
+Passed:
+
+```sh
+xcodebuild test -project Lore.xcodeproj -scheme Lore -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:LoreTests/ExplorationJourneyTests
+```
+
+Result: `** TEST SUCCEEDED **` with 15 tests.
 
 Also passed:
 
@@ -74,9 +92,18 @@ Recent content work already on `lore/main` includes:
 - OSM geographic-feature ingest
 - content pipeline docs under `scripts/content-ingest/README.md`
 
+Live read-only Supabase check on 2026-08-09 against project `uiuwzymvyrgfyiugqlkp`:
+
+- 141 live cities
+- 6,078 visible `place_explore` rows
+- 6,259 `dive` rows
+- 5,297 `city_section` rows
+- 7,261 raw `fact` rows visible to the connected service role check
+
 Known content gaps still needing follow-up:
 
 - Stone Town is still thin in visible place count.
+- Nairobi, Nashville, Santiago, Seoul, and Wellington also showed only 29 visible places.
 - San Antonio has place rows but needs the city-row/orphan wiring checked.
 - Some accepted content waves are not proven live/promoted yet.
 - Public `fact` rows are still not visibly powering the app in current read-only checks.

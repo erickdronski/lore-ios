@@ -157,6 +157,40 @@ final class ExplorationJourneyTests: XCTestCase {
         XCTAssertEqual(NearMeCardLayout.teaserLineLimit(isAccessibilitySize: true), 3)
     }
 
+    func testPlaceTeaserPrefersServerDerivedHookText() {
+        let place = place(
+            id: "place",
+            kind: "building",
+            layer1: Layer1(
+                hook: "A shorter legacy hook.",
+                yearBuilt: nil,
+                architect: nil,
+                style: nil,
+                nameMeaning: nil
+            ),
+            hookText: "  A richer first sentence from the published dossier.  "
+        )
+
+        XCTAssertEqual(place.teaser, "A richer first sentence from the published dossier.")
+    }
+
+    func testPlaceTeaserFallsBackToTrimmedLayerOneHook() {
+        let place = place(
+            id: "place",
+            kind: "building",
+            layer1: Layer1(
+                hook: "  A legacy curated hook.  ",
+                yearBuilt: nil,
+                architect: nil,
+                style: nil,
+                nameMeaning: nil
+            ),
+            hookText: "   "
+        )
+
+        XCTAssertEqual(place.teaser, "A legacy curated hook.")
+    }
+
     func testMapFallbackCameraIgnoresFarOutlierCoordinates() throws {
         let close = place(id: "close", kind: "building", lat: 41.882, lng: -87.629)
         let farther = place(id: "farther", kind: "park", lat: 41.89, lng: -87.629)
@@ -196,7 +230,9 @@ final class ExplorationJourneyTests: XCTestCase {
         id: String,
         kind: String,
         lat: Double = 41.881,
-        lng: Double = -87.629
+        lng: Double = -87.629,
+        layer1: Layer1? = nil,
+        hookText: String? = nil
     ) -> Place {
         Place(
             id: id,
@@ -205,7 +241,9 @@ final class ExplorationJourneyTests: XCTestCase {
             kind: kind,
             lat: lat,
             lng: lng,
-            city: "chicago"
+            city: "chicago",
+            layer1: layer1,
+            hookText: hookText
         )
     }
 }

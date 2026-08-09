@@ -217,11 +217,12 @@ struct PlaceCardView: View {
 
                     header
 
-                    if let hook = place.layer1?.hook {
+                    if let hook = place.teaser {
                         Text(hook)
                             .font(LoreType.hook)
                             .foregroundStyle(LoreColor.ink)
                             .fixedSize(horizontal: false, vertical: true)
+                            .padding(.horizontal, 1)
                     }
 
                     factChips
@@ -348,6 +349,23 @@ struct PlaceCardView: View {
                     .foregroundStyle(LoreColor.ink)
                     .lineLimit(4)
                     .fixedSize(horizontal: false, vertical: true)
+
+                Button {
+                    Haptics.play(.dossierOpen)
+                    showDive = true
+                } label: {
+                    HStack(spacing: 6) {
+                        Text("Read full story")
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 11, weight: .bold))
+                    }
+                    .font(LoreType.button)
+                    .foregroundStyle(accent)
+                    .frame(minHeight: 36)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("Opens the complete dossier for this place")
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(14)

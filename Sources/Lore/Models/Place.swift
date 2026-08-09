@@ -86,10 +86,14 @@ struct Place: Codable, Identifiable, Hashable {
     /// the narrative's first sentence) falling back to the raw curated hook for
     /// any payload predating the derived column.
     var teaser: String? {
-        if let hookText, !hookText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return hookText
+        if let hookText {
+            let trimmed = hookText.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { return trimmed }
         }
-        if let hook = layer1?.hook, !hook.isEmpty { return hook }
+        if let hook = layer1?.hook {
+            let trimmed = hook.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { return trimmed }
+        }
         return nil
     }
 
