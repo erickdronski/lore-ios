@@ -43,6 +43,15 @@ Lore only. Do not mix Nalee, Tapt, Scout, or other portfolio projects into this 
    opens the full dossier. This fixes the visual dead end where truncated teaser
    text showed ellipses but did not clearly explain where to continue.
 
+7. Scanner narration now uses the same server-derived `place.teaser` fallback
+   as the place dossier, so the AR scanner speaks the best real published line
+   available instead of dropping to a generic hook when Layer-1 is sparse.
+
+8. Scanner audio offers now distinguish studio narration from generated scanner
+   narration. When the locked scan has a dossier with `audio_url`, Lore+ users
+   play the studio-backed story; otherwise the scanner falls back to the local
+   premium system voice pipeline.
+
 ## Files Changed
 
 - `Sources/Lore/App/LoreApp.swift`
@@ -50,10 +59,14 @@ Lore only. Do not mix Nalee, Tapt, Scout, or other portfolio projects into this 
 - `Sources/Lore/Features/Culture/CultureView.swift`
 - `Sources/Lore/Features/Tours/TourDetailView.swift`
 - `Sources/Lore/Features/Tours/ToursScreen.swift`
+- `Sources/Lore/Features/Scanner/NarrationService.swift`
+- `Sources/Lore/Features/Scanner/ScannerRanking.swift`
+- `Sources/Lore/Features/Scanner/ScannerScreen.swift`
 - `Sources/Lore/Models/Place.swift`
 - `Sources/Lore/Models/CitySection.swift`
 - `Sources/LoreTests/CitySectionTests.swift`
 - `Sources/LoreTests/ExplorationJourneyTests.swift`
+- `Sources/LoreTests/ScannerLogicTests.swift`
 
 ## Validation
 
@@ -72,6 +85,14 @@ xcodebuild test -project Lore.xcodeproj -scheme Lore -destination 'platform=iOS 
 ```
 
 Result: `** TEST SUCCEEDED **` with 15 tests.
+
+Passed:
+
+```sh
+xcodebuild test -project Lore.xcodeproj -scheme Lore -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:LoreTests/ScannerLogicTests
+```
+
+Result: `** TEST SUCCEEDED **` with 24 tests.
 
 Also passed:
 

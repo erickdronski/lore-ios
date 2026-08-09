@@ -23,6 +23,26 @@ final class ScannerLogicTests: XCTestCase {
         )
     }
 
+    @MainActor
+    func testNarrationHookUsesDerivedPlaceTeaser() {
+        let line = NarrationService.hookText(
+            for: place(
+                kind: "building",
+                layer1: Layer1(
+                    hook: "A shorter curated hook.",
+                    yearBuilt: nil,
+                    architect: nil,
+                    style: nil,
+                    nameMeaning: nil
+                ),
+                hookText: "The richer published dossier line."
+            ),
+            register: "You're standing in front of"
+        )
+
+        XCTAssertEqual(line, "The richer published dossier line.")
+    }
+
     // MARK: - BearingProjector
 
     func testBearingDueNorthAndEast() {
@@ -336,11 +356,27 @@ final class ScannerLogicTests: XCTestCase {
         XCTAssertEqual(line, "You're standing in front of Test.")
     }
 
+    func testScannerProminenceTreatsDerivedTeaserAsDossierPayoff() {
+        let empty = ScannerRanking.prominenceScore(for: place(kind: "building"))
+        let withTeaser = ScannerRanking.prominenceScore(for: place(
+            kind: "building",
+            hookText: "A published story line from the dossier."
+        ))
+
+        XCTAssertEqual(empty, 0, accuracy: 0.001)
+        XCTAssertEqual(withTeaser, 0.15, accuracy: 0.001)
+    }
+
     // MARK: - Helpers
 
-    private func place(kind: String, height: Double? = nil) -> Place {
+    private func place(
+        kind: String,
+        height: Double? = nil,
+        layer1: Layer1? = nil,
+        hookText: String? = nil
+    ) -> Place {
         Place(id: "t", slug: "t", name: "Test", kind: kind, lat: 0, lng: 0,
-              heightM: height, city: "test", layer1: nil, tags: [], emoji: nil)
+              heightM: height, city: "test", layer1: layer1, tags: [], emoji: nil, hookText: hookText)
     }
 
     private func city(slug: String, lat: Double, lng: Double, status: String = "live") -> City {

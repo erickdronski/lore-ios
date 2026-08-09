@@ -59,11 +59,12 @@ final class NarrationService {
     }
 
     /// The ~20-second hook line for a place, docent voice. Prefers the authored
-    /// Layer-1 hook; falls back to a persona-flavored orienting line built from
-    /// the place's own facts (never invents history, only reads what's there).
+    /// public teaser; falls back to a persona-flavored orienting line built
+    /// from the place's own facts (never invents history, only reads what's
+    /// there).
     static func hookText(for place: Place, register: String) -> String {
-        if let hook = place.layer1?.hook, !hook.isEmpty {
-            return hook
+        if let teaser = place.teaser {
+            return teaser
         }
         var line = "\(register) \(place.name)."
         if let year = place.layer1?.yearBuilt {
