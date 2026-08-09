@@ -139,6 +139,15 @@ Lore only. Do not mix Nalee, Tapt, Scout, or other portfolio projects into this 
     - focused scanner tests cover quality ordering, natural exact-locale
       preference, and novelty-voice penalty
 
+18. Generated "Build my walk" routes now carry a deterministic ordered-stop
+    fingerprint in the generated tour id/slug:
+    - same-city and same-duration generated walks keep the friendly
+      `1 Hour In {City}` title
+    - progress/resume/completion keys no longer collide when a fresh traveler
+      origin produces a different ordered route from the same city catalog
+    - focused journey tests cover route identity, stop tour ids, and
+      `TourProgressStore` isolation between two generated Chicago walks
+
 ## Files Changed
 
 - `Sources/Lore/App/LoreApp.swift`
@@ -291,6 +300,21 @@ Result: `** TEST SUCCEEDED **` with 9 tests after wiring the same compact city
 field kit into `DiveView`.
 
 Also passed after the dossier field-kit patch:
+
+```sh
+git diff --check
+```
+
+Generated route fingerprint continuation validation:
+
+```sh
+xcodebuild test -project Lore.xcodeproj -scheme Lore -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:LoreTests/ExplorationJourneyTests -only-testing:LoreTests/TourProgressStoreTests
+```
+
+Result: `** TEST SUCCEEDED **` with 27 tests, including generated-walk route
+identity and progress isolation coverage.
+
+Also passed after the route fingerprint patch:
 
 ```sh
 git diff --check

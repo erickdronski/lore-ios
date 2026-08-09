@@ -57,7 +57,7 @@ enum OneHourTour {
 
         guard ordered.count >= 2 else { return nil }
 
-        let tourID = "\(durationMin)-minute-\(city)"
+        let tourID = "\(durationMin)-minute-\(city)-\(routeFingerprint(for: ordered))"
         let stops = ordered.enumerated().map { index, place in
             TourStop(tourID: tourID, placeID: place.id, seq: index + 1, note: place.layer1?.hook)
         }
@@ -115,5 +115,18 @@ enum OneHourTour {
         case 60: return "1 Hour"
         default: return "\(minutes) Minutes"
         }
+    }
+
+    private static func routeFingerprint(for ordered: [Place]) -> String {
+        let routeKey = ordered.map(\.id).joined(separator: "|")
+        var hash: UInt64 = 0xcbf29ce484222325
+        for byte in routeKey.utf8 {
+            hash ^= UInt64(byte)
+            hash &*= 0x100000001b3
+        }
+        return String(hash, radix: 16)
+            .padding(toLength: 16, withPad: "0", startingAt: 0)
+            .prefix(12)
+            .lowercased()
     }
 }

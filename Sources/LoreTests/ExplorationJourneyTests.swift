@@ -369,6 +369,56 @@ final class ExplorationJourneyTests: XCTestCase {
         XCTAssertEqual(remoteBrowseWalk.distanceKm ?? -1, cityWalk.distanceKm ?? -2, accuracy: 0.001)
     }
 
+    func testGeneratedWalkIdentityIncludesOrderedRouteStops() throws {
+        let northOrigin = CLLocationCoordinate2D(latitude: 41.8970, longitude: -87.6200)
+        let southOrigin = CLLocationCoordinate2D(latitude: 41.8700, longitude: -87.6500)
+        let places = [
+            place(id: "south-anchor", kind: "building", lat: 41.8700, lng: -87.6500),
+            place(id: "south-next", kind: "park", lat: 41.8710, lng: -87.6500),
+            place(id: "north-anchor", kind: "museum", lat: 41.8970, lng: -87.6200),
+            place(id: "north-next", kind: "monument", lat: 41.8980, lng: -87.6200),
+        ]
+
+        let northWalk = try XCTUnwrap(OneHourTour.generate(
+            city: "chicago",
+            places: places,
+            from: northOrigin,
+            durationMin: 60
+        ))
+        let southWalk = try XCTUnwrap(OneHourTour.generate(
+            city: "chicago",
+            places: places,
+            from: southOrigin,
+            durationMin: 60
+        ))
+
+        XCTAssertNotEqual(northWalk.stops.map(\.placeID), southWalk.stops.map(\.placeID))
+        XCTAssertNotEqual(northWalk.slug, southWalk.slug)
+        XCTAssertEqual(northWalk.title, "1 Hour In Chicago")
+        XCTAssertEqual(southWalk.title, "1 Hour In Chicago")
+        XCTAssertTrue(northWalk.stops.allSatisfy { $0.tourID == northWalk.id })
+        XCTAssertTrue(southWalk.stops.allSatisfy { $0.tourID == southWalk.id })
+
+        TourProgressStore.complete(
+            tourSlug: northWalk.slug,
+            userID: "traveler",
+            defaults: defaults
+        )
+
+        XCTAssertTrue(TourProgressStore.progress(
+            for: northWalk.slug,
+            userID: "traveler",
+            stopCount: northWalk.stops.count,
+            defaults: defaults
+        ).isCompleted)
+        XCTAssertEqual(TourProgressStore.progress(
+            for: southWalk.slug,
+            userID: "traveler",
+            stopCount: southWalk.stops.count,
+            defaults: defaults
+        ), .empty)
+    }
+
     func testCityRegionHandlesHomeAndInternationalMarkets() {
         XCTAssertEqual(CityRegion.region(forCountry: "US"), .unitedStates)
         XCTAssertEqual(CityRegion.region(forCountry: "JP"), .asia)
