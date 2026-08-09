@@ -3,6 +3,7 @@ import SwiftUI
 /// Curated walking tours, listed by city, each opening a stop-by-stop
 /// stepper detail.
 struct ToursScreen: View {
+    var onMeetCity: (String) -> Void = { _ in }
     /// The shared active city (same source the map reads). Switching it here
     /// re-scopes the whole Tours surface, the 1-Hour hero and the curated list.
     @Environment(AppRouter.self) private var router
@@ -107,10 +108,10 @@ struct ToursScreen: View {
             .background(LoreColor.bone100)
             .navigationTitle("Tours")
             .navigationDestination(for: Tour.self) { tour in
-                TourDetailView(tour: tour)
+                TourDetailView(tour: tour, onMeetCity: onMeetCity)
             }
             .sheet(item: $generatedTour) { tour in
-                TourSheet(tour: tour)
+                TourSheet(tour: tour, onMeetCity: onMeetCity)
             }
             .sheet(isPresented: $showCitySwitcher) {
                 CitySwitcherView(router: router)

@@ -272,3 +272,86 @@ enum SectionKindMeta {
         }
     }
 }
+
+/// A compact action plan synthesized from the richer city-section rows. It does
+/// not invent new facts; it only elevates already-loaded Lore notes into a
+/// first screen brief so "Meet City" feels guided instead of just full.
+struct CityFieldBrief: Equatable {
+    struct Item: Identifiable, Equatable {
+        let id: String
+        let label: String
+        let title: String
+        let detail: String
+        let systemImage: String
+    }
+
+    struct ExternalAction: Equatable {
+        let label: String
+        let systemImage: String
+        let url: URL
+    }
+
+    let items: [Item]
+    let action: ExternalAction?
+
+    init?(sections: [CitySection]) {
+        let orderedSections = sections.sorted {
+            let leftSort = $0.sort ?? 100
+            let rightSort = $1.sort ?? 100
+            return leftSort == rightSort
+                ? $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
+                : leftSort < rightSort
+        }
+
+        func first(_ kind: String) -> CitySection? {
+            orderedSections.first { $0.kind == kind }
+        }
+
+        var nextItems: [Item] = []
+        if let section = first("watch") {
+            nextItems.append(Self.item(from: section, label: "Prime the lens", systemImage: "play.rectangle.fill"))
+        }
+        if let section = first("local_legend") {
+            nextItems.append(Self.item(from: section, label: "Ask about", systemImage: "book.closed.fill"))
+        }
+        if let section = first("first_timer_mistake") {
+            nextItems.append(Self.item(from: section, label: "Avoid", systemImage: "exclamationmark.triangle.fill"))
+        }
+        if let section = first("neighborhood_decode") {
+            nextItems.append(Self.item(from: section, label: "Decode", systemImage: "map.fill"))
+        }
+        if let section = first("photo_prompt") {
+            nextItems.append(Self.item(from: section, label: "Frame", systemImage: "camera.viewfinder"))
+        }
+        if let section = first("seasonal") {
+            nextItems.append(Self.item(from: section, label: "Time it", systemImage: "calendar.badge.clock"))
+        }
+
+        guard nextItems.count >= 3 else { return nil }
+        items = Array(nextItems.prefix(5))
+
+        if let actionable = orderedSections.first(where: {
+            ($0.kind == "watch" || $0.kind == "hashtag") && $0.primaryExternalURL != nil
+        }),
+           let url = actionable.primaryExternalURL,
+           let action = actionable.primaryExternalAction {
+            self.action = ExternalAction(
+                label: action.label,
+                systemImage: action.systemImage,
+                url: url
+            )
+        } else {
+            action = nil
+        }
+    }
+
+    private static func item(from section: CitySection, label: String, systemImage: String) -> Item {
+        Item(
+            id: section.id,
+            label: label,
+            title: section.title,
+            detail: section.body,
+            systemImage: systemImage
+        )
+    }
+}

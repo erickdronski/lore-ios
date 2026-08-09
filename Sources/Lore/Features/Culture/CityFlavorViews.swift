@@ -49,6 +49,122 @@ struct CityFlavorShelf: View {
     }
 }
 
+/// First-screen synthesis for the rich local-expert rows. The long shelves are
+/// still below; this gives travelers the immediate "what should I notice?"
+/// briefing that makes a city page feel curated instead of encyclopedic.
+struct CityFieldBriefCard: View {
+    let brief: CityFieldBrief
+    let accent: Color
+
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    private var layout: AnyLayout {
+        dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12))
+            : AnyLayout(HStackLayout(alignment: .top, spacing: 12))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .top, spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(accent.opacity(0.16))
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(accent)
+                }
+                .frame(width: 42, height: 42)
+                .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("FIELD BRIEF")
+                        .loreLabelStyle()
+                        .foregroundStyle(accent)
+                    Text("Walk in with local context")
+                        .font(LoreType.display(size: 25, weight: .semibold))
+                        .foregroundStyle(LoreColor.bone)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 0)
+            }
+
+            layout {
+                ForEach(brief.items) { item in
+                    CityFieldBriefItem(item: item, accent: accent)
+                }
+            }
+
+            if let action = brief.action {
+                Link(destination: action.url) {
+                    Label(action.label, systemImage: action.systemImage)
+                        .font(LoreType.button)
+                        .foregroundStyle(LoreColor.ink900)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(accent, in: Capsule())
+                }
+                .accessibilityHint("Opens the curated external source for this city")
+            }
+        }
+        .padding(16)
+        .background(
+            LinearGradient(
+                colors: [
+                    LoreColor.ink800.opacity(0.98),
+                    LoreColor.ink900,
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            ),
+            in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .strokeBorder(accent.opacity(0.42), lineWidth: 1)
+        }
+        .accessibilityElement(children: .contain)
+    }
+}
+
+private struct CityFieldBriefItem: View {
+    let item: CityFieldBrief.Item
+    let accent: Color
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 7) {
+                Image(systemName: item.systemImage)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(accent)
+                    .frame(width: 16)
+                Text(item.label.uppercased())
+                    .font(LoreType.micro)
+                    .tracking(0.8)
+                    .foregroundStyle(accent)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.86)
+            }
+
+            Text(item.title)
+                .font(LoreType.button)
+                .foregroundStyle(LoreColor.bone)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text(item.detail)
+                .font(LoreType.micro)
+                .foregroundStyle(LoreColor.bone.opacity(0.68))
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, minHeight: 142, alignment: .topLeading)
+        .background(LoreColor.ink700.opacity(0.56), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+}
+
 private struct FlavorCard: View {
     let entry: CitySection
     let accent: Color

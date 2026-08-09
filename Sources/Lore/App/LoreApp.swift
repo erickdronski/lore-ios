@@ -270,7 +270,7 @@ struct RootTabView: View {
                 .presentationDetents([.medium, .large])
         }
         .sheet(item: $routedTour) { tour in
-            TourSheet(tour: tour)
+            TourSheet(tour: tour, onMeetCity: { routedTour = nil; meetCity = $0 })
         }
         // Meet-the-City, the culture surface, raised from the map header, the
         // PlaceCard, or a culture search hit.
@@ -546,7 +546,7 @@ struct RootTabView: View {
                 }
             )
         case .tours:
-            ToursScreen()
+            ToursScreen(onMeetCity: { meetCity = $0 })
         case .passport:
             PassportView()
         case .profile:

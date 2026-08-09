@@ -165,6 +165,12 @@ struct CultureView: View {
                         .staggerChild(index: 1)
                 }
 
+                if let fieldBrief = model.fieldBrief {
+                    CityFieldBriefCard(brief: fieldBrief, accent: accent ?? LoreColor.brass300)
+                        .padding(.horizontal, 16)
+                        .staggerChild(index: 1)
+                }
+
                 if !model.quotes.isEmpty {
                     CultureQuoteCard(quotes: model.quotes)
                         .padding(.horizontal, 16)
@@ -499,6 +505,9 @@ final class CultureModel {
     /// Flavor sections grouped by kind, in `SectionKindMeta` order. Any kind
     /// the server sends renders; old kinds never break.
     private(set) var flavor: [(kind: String, entries: [CitySection])] = []
+    /// The first-screen traveler brief, synthesized from the richest loaded
+    /// section kinds when enough of them exist.
+    private(set) var fieldBrief: CityFieldBrief?
 
     /// Human-friendly city name. Falls back to a title-cased slug when the
     /// `city` table hasn't been consulted (this surface only needs the slug).
@@ -532,6 +541,7 @@ final class CultureModel {
         stats = []
         theme = nil
         flavor = []
+        fieldBrief = nil
 
         async let citiesTask = try? LoreAPI.shared.cities()
         async let cultureTask = try? LoreAPI.shared.culture(city: city)
@@ -566,7 +576,10 @@ final class CultureModel {
         stats = facts.filter(\.hasStat)
         theme = loadedTheme
 
-        flavor = Dictionary(grouping: sections ?? [], by: \.kind)
+        let loadedSections = sections ?? []
+        fieldBrief = CityFieldBrief(sections: loadedSections)
+
+        flavor = Dictionary(grouping: loadedSections, by: \.kind)
             .map {
                 (kind: $0.key, entries: $0.value.sorted {
                     let leftSort = $0.sort ?? 100

@@ -7,11 +7,12 @@ import SwiftUI
 /// unavailable or undiscoverable.
 struct TourSheet: View {
     let tour: Tour
+    var onMeetCity: (String) -> Void = { _ in }
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
-            TourDetailView(tour: tour)
+            TourDetailView(tour: tour, onMeetCity: onMeetCity)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
                         Button {
@@ -32,6 +33,7 @@ struct TourSheet: View {
 /// content + curator note, previous/next controls.
 struct TourDetailView: View {
     let tour: Tour
+    var onMeetCity: (String) -> Void = { _ in }
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -81,6 +83,8 @@ struct TourDetailView: View {
     /// Whether the current stop's curator note is expanded to its full length.
     /// Reset to collapsed whenever the stop changes.
     @State private var noteExpanded = false
+    /// The tour stop whose full place dossier is open.
+    @State private var selectedStopPlace: Place?
 
     /// A premium curated walk the current viewer hasn't unlocked.
     private var isLocked: Bool { tour.isPremium && !entitlements.isPlus }
@@ -163,6 +167,15 @@ struct TourDetailView: View {
         .onDisappear { liveActivity.end(); narration.stop(); walkGuide.stop() }
         .sheet(isPresented: $showPaywall) {
             PaywallView(entitlements: entitlements, store: store, auth: auth, context: .tours)
+        }
+        .loreDossierPresentation(item: $selectedStopPlace) { place in
+            PlaceCardView(
+                place: place,
+                onMeetCity: {
+                    selectedStopPlace = nil
+                    onMeetCity($0)
+                }
+            )
         }
         .overlay {
             if showCompletion {
@@ -842,6 +855,20 @@ struct TourDetailView: View {
                             .foregroundStyle(LoreColor.ink)
                             .fixedSize(horizontal: false, vertical: true)
                     }
+
+                    Button {
+                        Haptics.play(.dossierOpen)
+                        selectedStopPlace = place
+                    } label: {
+                        Label("Open full dossier", systemImage: "books.vertical.fill")
+                            .font(LoreType.button)
+                            .foregroundStyle(LoreColor.bone)
+                            .frame(maxWidth: .infinity)
+                            .frame(minHeight: 44)
+                            .background(LoreColor.ink, in: Capsule())
+                    }
+                    .buttonStyle(.pressable)
+                    .accessibilityHint("Opens this stop's history, timeline, sources, offers, and visit controls")
                 } else if model.isLoading {
                     SkeletonRow()
                 } else if model.loadFailed {
