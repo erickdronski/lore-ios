@@ -16,6 +16,7 @@ struct ProfileScreen: View {
     @State private var editingProfile: UserProfile?
     @State private var showSignOutConfirmation = false
     @State private var signingOut = false
+    @State private var journey = ProfileJourneyModel()
     /// True when a signed-in profile load failed, so the row offers a retry
     /// instead of spinning "Loading your profile…" forever.
     @State private var profileLoadFailed = false
@@ -70,9 +71,11 @@ struct ProfileScreen: View {
                     signedOutHeader
                 }
 
+                journeySection
+
                 membershipSection
 
-                settingsSection
+                fieldKitSection
 
                 aboutSection
 
@@ -116,19 +119,36 @@ struct ProfileScreen: View {
             } message: {
                 Text("Your private account data stays safely synced. Any choices stored only on this device remain here until you remove Lore.")
             }
-            .task { await loadProfile() }
+            .task(id: auth.session?.user.id) { await reloadProfileSurface() }
             .refreshable {
                 guard auth.isSignedIn else { return }
-                profileLoadFailed = false
-                await auth.refreshProfile()
-                profileLoadFailed = auth.profile == nil
+                await reloadProfileSurface(force: true)
             }
             .onChange(of: auth.isSignedIn) { _, signedIn in
                 profileLoadFailed = false
-                if signedIn { Task { await loadProfile() } }
+                if signedIn {
+                    Task { await reloadProfileSurface(force: true) }
+                } else {
+                    journey.reset()
+                }
             }
         }
         .background(LoreColor.bone100.ignoresSafeArea())
+    }
+
+    private func reloadProfileSurface(force: Bool = false) async {
+        if auth.isSignedIn {
+            if force {
+                profileLoadFailed = false
+                await auth.refreshProfile()
+                profileLoadFailed = auth.profile == nil
+            } else {
+                await loadProfile()
+            }
+        } else {
+            profileLoadFailed = false
+        }
+        await journey.load(auth: auth)
     }
 
     /// Load the signed-in user's profile, flagging a failure so the row can
@@ -258,6 +278,21 @@ struct ProfileScreen: View {
         }
     }
 
+    // MARK: Journey
+
+    private var journeySection: some View {
+        Section {
+            ProfileJourneyCard(
+                state: journey.state,
+                isPlus: entitlements.isPlus,
+                onRetry: { Task { await journey.load(auth: auth) } }
+            )
+            .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 8, trailing: 16))
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+        }
+    }
+
     // MARK: Membership (Lore+ is live, not a "coming" stub)
 
     /// Lore+ is a real, purchasable membership, so this opens the live paywall
@@ -311,19 +346,79 @@ struct ProfileScreen: View {
         }
     }
 
-    /// Settings entry: preferences, permissions, subscription (TestFlight
-    /// feedback #13). Available signed in or out, permissions + haptics apply
-    /// to everyone.
-    private var settingsSection: some View {
-        Section {
+    /// One-stop-shop entries: Profile should be more than an account page.
+    /// These are real in-app surfaces, not placeholders.
+    private var fieldKitSection: some View {
+        Section("Field kit") {
+            NavigationLink {
+                JournalView()
+            } label: {
+                profileActionRow(
+                    "Journal",
+                    detail: auth.isSignedIn ? "Visits, notes, and private photos" : "Sign in to keep private memories",
+                    icon: "book.closed.fill"
+                )
+            }
+
+            NavigationLink {
+                PassportView()
+            } label: {
+                profileActionRow(
+                    "Passport",
+                    detail: "Badges, milestones, and explorer stats",
+                    icon: "seal.fill"
+                )
+            }
+
+            NavigationLink {
+                TravelPreferencesView()
+            } label: {
+                profileActionRow(
+                    "Travel preferences",
+                    detail: "Tune your lens, interests, and discovery mix",
+                    icon: "slider.horizontal.3"
+                )
+            }
+
+            NavigationLink {
+                PrivacyDataView()
+            } label: {
+                profileActionRow(
+                    "Privacy & data",
+                    detail: "Camera, location, journal, and account controls",
+                    icon: "hand.raised.fill"
+                )
+            }
+
             NavigationLink {
                 SettingsView()
             } label: {
-                Label("Settings", systemImage: "gearshape")
-                    .font(LoreType.body)
-                    .foregroundStyle(LoreColor.ink)
+                profileActionRow(
+                    "Settings",
+                    detail: "Permissions, haptics, subscriptions, and legal",
+                    icon: "gearshape.fill"
+                )
             }
         }
+    }
+
+    private func profileActionRow(_ title: String, detail: String, icon: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: icon)
+                .foregroundStyle(LoreColor.brass700)
+                .frame(width: 24)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(LoreType.body)
+                    .foregroundStyle(LoreColor.ink)
+                Text(detail)
+                    .font(LoreType.caption)
+                    .foregroundStyle(LoreColor.ink600)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.vertical, 3)
+        .accessibilityElement(children: .combine)
     }
 
     private var aboutSection: some View {
@@ -345,4 +440,254 @@ struct ProfileScreen: View {
         }
     }
 
+}
+
+// MARK: - Journey card
+
+private struct ProfileJourneyCard: View {
+    let state: ProfileJourneyModel.State
+    let isPlus: Bool
+    let onRetry: () -> Void
+
+    var body: some View {
+        Group {
+            switch state {
+            case .signedOut:
+                signedOutCard
+            case .loading:
+                loadingCard
+            case .loaded(let stats):
+                loadedCard(ProfileJourneySnapshot(stats: stats))
+            case .failed(let message):
+                failedCard(message)
+            }
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    private func loadedCard(_ snapshot: ProfileJourneySnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 18) {
+            cardHeader(
+                eyebrow: isPlus ? "LORE+ FIELD RECORD" : "FIELD RECORD",
+                title: snapshot.headline,
+                subtitle: snapshot.subhead,
+                symbol: "map.circle.fill"
+            )
+
+            LazyVGrid(
+                columns: [
+                    GridItem(.flexible(minimum: 92), spacing: 10),
+                    GridItem(.flexible(minimum: 92), spacing: 10),
+                ],
+                spacing: 10
+            ) {
+                ForEach(snapshot.primaryMetrics) { metric in
+                    ProfileMetricTile(metric: metric, prominence: .primary)
+                }
+            }
+
+            HStack(spacing: 10) {
+                ForEach(snapshot.secondaryMetrics) { metric in
+                    ProfileMetricTile(metric: metric, prominence: .compact)
+                }
+            }
+        }
+        .padding(18)
+        .profileJourneySurface()
+    }
+
+    private var signedOutCard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            cardHeader(
+                eyebrow: "PRIVATE FIELD RECORD",
+                title: "Make Lore yours",
+                subtitle: "Save visits, notes, photos, badges, preferences, and Lore+ access in one account.",
+                symbol: "person.crop.circle.badge.plus"
+            )
+
+            HStack(spacing: 10) {
+                ProfileValuePill(symbol: "lock.shield.fill", text: "Private journal")
+                ProfileValuePill(symbol: "seal.fill", text: "Earned badges")
+            }
+        }
+        .padding(18)
+        .profileJourneySurface()
+    }
+
+    private var loadingCard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .top, spacing: 12) {
+                Circle()
+                    .fill(LoreColor.ink800)
+                    .frame(width: 48, height: 48)
+                    .shimmer()
+                VStack(alignment: .leading, spacing: 8) {
+                    ShimmerBlock(width: 120, height: 12, cornerRadius: 5, fill: LoreColor.ink800)
+                    ShimmerBlock(width: 210, height: 24, cornerRadius: 7, fill: LoreColor.ink800)
+                    ShimmerBlock(width: 250, height: 14, cornerRadius: 5, fill: LoreColor.ink800)
+                }
+            }
+
+            LazyVGrid(
+                columns: [
+                    GridItem(.flexible(minimum: 92), spacing: 10),
+                    GridItem(.flexible(minimum: 92), spacing: 10),
+                ],
+                spacing: 10
+            ) {
+                ForEach(0..<4, id: \.self) { _ in
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(LoreColor.ink800)
+                        .frame(height: 78)
+                        .shimmer()
+                }
+            }
+        }
+        .padding(18)
+        .profileJourneySurface()
+        .accessibilityLabel("Loading your field record")
+    }
+
+    private func failedCard(_ message: String) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            cardHeader(
+                eyebrow: "SYNC NEEDED",
+                title: "Field record unavailable",
+                subtitle: message,
+                symbol: "icloud.slash.fill"
+            )
+
+            Button(action: onRetry) {
+                Label("Try again", systemImage: "arrow.clockwise")
+                    .font(LoreType.button)
+                    .foregroundStyle(LoreColor.ink900)
+                    .frame(maxWidth: .infinity)
+                    .frame(minHeight: 46)
+                    .background(LoreColor.amber, in: Capsule())
+            }
+            .buttonStyle(.pressable)
+        }
+        .padding(18)
+        .profileJourneySurface()
+    }
+
+    private func cardHeader(
+        eyebrow: String,
+        title: String,
+        subtitle: String,
+        symbol: String
+    ) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(LoreColor.amber.opacity(0.14))
+                Circle()
+                    .strokeBorder(LoreColor.brass300.opacity(0.5), lineWidth: 1)
+                Image(systemName: symbol)
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(LoreColor.amber)
+            }
+            .frame(width: 50, height: 50)
+            .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(eyebrow)
+                    .font(LoreType.label)
+                    .tracking(1)
+                    .foregroundStyle(LoreColor.brass300)
+                Text(title)
+                    .font(LoreType.displayM)
+                    .foregroundStyle(LoreColor.bone)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(subtitle)
+                    .font(LoreType.caption)
+                    .foregroundStyle(LoreColor.bone.opacity(0.72))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+    }
+}
+
+private struct ProfileMetricTile: View {
+    enum Prominence {
+        case primary
+        case compact
+    }
+
+    let metric: ProfileJourneyMetric
+    let prominence: Prominence
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: prominence == .primary ? 8 : 5) {
+            HStack {
+                Image(systemName: metric.symbol)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(LoreColor.amber)
+                Spacer(minLength: 0)
+            }
+            Text(metric.value)
+                .font(LoreType.display(size: prominence == .primary ? 25 : 19, weight: .semibold))
+                .foregroundStyle(prominence == .primary ? LoreColor.bone : LoreColor.brass300)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            Text(metric.label.uppercased())
+                .font(LoreType.label)
+                .tracking(0.8)
+                .foregroundStyle(LoreColor.bone.opacity(0.64))
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(minHeight: prominence == .primary ? 78 : 70, alignment: .topLeading)
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(LoreColor.ink800.opacity(prominence == .primary ? 0.95 : 0.7))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(LoreColor.brass300.opacity(0.16), lineWidth: 1)
+        )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(metric.label): \(metric.value)")
+    }
+}
+
+private struct ProfileValuePill: View {
+    let symbol: String
+    let text: String
+
+    var body: some View {
+        Label(text, systemImage: symbol)
+            .font(LoreType.caption.weight(.semibold))
+            .foregroundStyle(LoreColor.bone)
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
+            .padding(.horizontal, 12)
+            .frame(height: 34)
+            .background(LoreColor.ink800, in: Capsule())
+            .overlay(Capsule().strokeBorder(LoreColor.brass300.opacity(0.18), lineWidth: 1))
+    }
+}
+
+private extension View {
+    func profileJourneySurface() -> some View {
+        frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [LoreColor.ink900, LoreColor.ink950],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .strokeBorder(LoreColor.brass300.opacity(0.25), lineWidth: 1)
+            )
+            .loreElevation(.elev1)
+    }
 }

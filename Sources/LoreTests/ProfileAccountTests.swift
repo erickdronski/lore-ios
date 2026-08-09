@@ -54,6 +54,41 @@ final class ProfileAccountTests: XCTestCase {
         XCTAssertNil(insecure.secureAvatarURL)
     }
 
+    func testProfileJourneySnapshotUsesServerStats() {
+        let stats = UserStats(
+            places: 14,
+            cities: 3,
+            countries: 2,
+            continents: 1,
+            continentsList: ["North America"],
+            divesRead: 9,
+            notes: 4,
+            photos: 6,
+            scannerVisits: 5,
+            badges: 7,
+            badgesTotal: 425,
+            insightPoints: 140,
+            currentStreak: 2,
+            longestStreak: 5,
+            topCategories: [],
+            firstVisit: nil
+        )
+
+        let snapshot = ProfileJourneySnapshot(stats: stats)
+
+        XCTAssertEqual(snapshot.headline, "3 cities in your atlas")
+        XCTAssertEqual(snapshot.primaryMetrics.map(\.value), ["14", "3", "9", "6"])
+        XCTAssertEqual(snapshot.secondaryMetrics.map(\.value), ["7/425", "140", "2d"])
+    }
+
+    func testProfileJourneySnapshotHasHonestZeroState() {
+        let snapshot = ProfileJourneySnapshot(stats: .zero)
+
+        XCTAssertEqual(snapshot.headline, "Your field record is ready")
+        XCTAssertTrue(snapshot.subhead.contains("Visits, dives, notes, photos, and badges"))
+        XCTAssertEqual(snapshot.secondaryMetrics.first?.value, "0")
+    }
+
     func testPreferencesDecodeForwardCompatiblyAndDeduplicate() throws {
         let data = Data(#"{"user_id":"u1","persona":"future_lens","interests":["history","history",""],"hidden_kinds":["museum","museum"],"onboarded":true}"#.utf8)
 

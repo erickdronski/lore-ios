@@ -52,6 +52,11 @@ Lore only. Do not mix Nalee, Tapt, Scout, or other portfolio projects into this 
    play the studio-backed story; otherwise the scanner falls back to the local
    premium system voice pipeline.
 
+9. Profile is no longer just a utility list. It now has a real field-record
+   dashboard powered by the server-computed `user_stats` RPC, plus one-stop
+   links into Journal, Passport, Travel Preferences, Privacy & Data, Settings,
+   and the live Lore+ membership surface.
+
 ## Files Changed
 
 - `Sources/Lore/App/LoreApp.swift`
@@ -62,11 +67,14 @@ Lore only. Do not mix Nalee, Tapt, Scout, or other portfolio projects into this 
 - `Sources/Lore/Features/Scanner/NarrationService.swift`
 - `Sources/Lore/Features/Scanner/ScannerRanking.swift`
 - `Sources/Lore/Features/Scanner/ScannerScreen.swift`
+- `Sources/Lore/Features/Profile/ProfileJourneyModel.swift`
+- `Sources/Lore/Features/Profile/ProfileScreen.swift`
 - `Sources/Lore/Models/Place.swift`
 - `Sources/Lore/Models/CitySection.swift`
 - `Sources/LoreTests/CitySectionTests.swift`
 - `Sources/LoreTests/ExplorationJourneyTests.swift`
 - `Sources/LoreTests/ScannerLogicTests.swift`
+- `Sources/LoreTests/ProfileAccountTests.swift`
 
 ## Validation
 
@@ -93,6 +101,14 @@ xcodebuild test -project Lore.xcodeproj -scheme Lore -destination 'platform=iOS 
 ```
 
 Result: `** TEST SUCCEEDED **` with 24 tests.
+
+Passed:
+
+```sh
+xcodebuild test -project Lore.xcodeproj -scheme Lore -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:LoreTests/ProfileAccountTests
+```
+
+Result: `** TEST SUCCEEDED **` with 13 tests.
 
 Also passed:
 
