@@ -133,9 +133,11 @@ git diff --check
 
 - Repo: `/Users/dron/Projects/lore`
 - Branch: `main`
-- Current synced head: `fed2a34` (`Add OSM geographic-feature ingest engine (+838 real places; app now 5,486 places / 38.6 avg)`)
+- Current synced head: `ceaaa3d` (`Add public content surface audit`)
 - Backend/content repo handoff doc added separately:
   `docs/34-CONTENT-RICHNESS-AUDIT-2026-08-09.md`
+- Repeatable public audit command:
+  `node scripts/content-wave/audit-public-surface.mjs`
 
 Recent content work already on `lore/main` includes:
 
@@ -150,14 +152,16 @@ Live read-only public Supabase check on 2026-08-09 against project `uiuwzymvyrgf
 - 6,078 visible `dive` rows
 - 4,982 visible `city_section` rows
 - 1,974 rich city-section rows
-- 0 visible `dive.audio_url` rows
+- 113 visible `dive.audio_path` rows
 
 Known content gaps still needing follow-up:
 
 - Six cities are still below the 30-place public-content bar: Stone Town (21),
   Nairobi (29), Nashville (29), Santiago (29), Seoul (29), and Wellington (29).
-- Premium/studio audio is not live in the app-visible data yet because
-  `dive.audio_url` is still empty.
+- Premium/studio audio is partially live in app-visible data: the native app
+  reads `dive.audio_path`, and the public surface currently has 113 rows with a
+  path. Most dives still fall back to on-device narration until audio coverage
+  expands.
 - The richer content kinds are visible publicly across every live city, but the
   next content pass should keep proving app-visible promotion rather than only
   candidate/import state.
