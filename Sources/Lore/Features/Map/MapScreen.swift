@@ -163,12 +163,11 @@ struct MapScreen: View {
                 // becoming a safe-area inset. Shrinking MapKit's safe area when
                 // the deck expands can make SwiftUI re-solve the visible camera
                 // and zoom the city out; the deck should not own camera policy.
-                // Because the map ignores safe area, this overlay anchors to the
-                // TRUE screen bottom — so it must clear the floating tab bar +
-                // home indicator itself, or the tab bar clips "I've been here"
-                // and the tour content (`bottomBarClearance`).
+                // Because the map ignores safe area, `TravelMapDeckLayout`
+                // clears the floating tab bar from inside the deck. This outer
+                // nudge only keeps the gradient from kissing the dock chrome.
                 travelControls
-                    .padding(.bottom, bottomBarClearance)
+                    .padding(.bottom, deckChromeBreathingRoom)
             }
             .loreDossierPresentation(item: selectedPlaceBinding) { place in
                 // Detents are owned by PlaceCardView so opening the dossier can
@@ -263,14 +262,9 @@ struct MapScreen: View {
         .padding(.bottom, 8)
     }
 
-    /// A small breathing gap above the floating tab bar. Even though the map
-    /// ignores safe area (to keep its own camera), this bottom overlay's CONTENT
-    /// is still laid out inside the safe area, which already reserves the
-    /// floating tab bar + home indicator — so the deck naturally clears the
-    /// dock and we only add a few points of air. (An earlier version added the
-    /// full tab-bar height here too, which double-counted and left the collapsed
-    /// pill floating far above the dock; verified in the iOS 26 simulator.)
-    private var bottomBarClearance: CGFloat { 6 }
+    /// A small final gap after `TravelMapDeckLayout` performs the actual
+    /// expanded/collapsed dock clearance.
+    private var deckChromeBreathingRoom: CGFloat { 6 }
 
     /// Bridges Map's tag selection to a `.sheet(item:)` presentation.
     private var selectedPlaceBinding: Binding<Place?> {

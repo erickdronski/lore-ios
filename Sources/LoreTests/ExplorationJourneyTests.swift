@@ -135,15 +135,15 @@ final class ExplorationJourneyTests: XCTestCase {
     func testNearbyCardLayoutIsUniformForDiscoveryDeck() {
         XCTAssertEqual(NearMeCardLayout.cardWidth(isAccessibilitySize: false), 204)
         // Every tile shares one fixed height so the shelf reads as a uniform row,
-        // bounded (not bloated) yet tall enough to fit the "I've been here" toggle.
-        XCTAssertEqual(NearMeCardLayout.uniformHeight(isAccessibilitySize: false), 268)
-        XCTAssertLessThanOrEqual(NearMeCardLayout.uniformHeight(isAccessibilitySize: false), 300)
+        // bounded (not bloated) yet tall enough to fit the visit toggle.
+        XCTAssertEqual(NearMeCardLayout.uniformHeight(isAccessibilitySize: false), 244)
+        XCTAssertLessThanOrEqual(NearMeCardLayout.uniformHeight(isAccessibilitySize: false), 260)
         // The shelf frame must be >= the card height, or the toggle gets clipped.
         XCTAssertGreaterThanOrEqual(
             NearMeCardLayout.shelfMaxHeight(isAccessibilitySize: false),
             NearMeCardLayout.uniformHeight(isAccessibilitySize: false)
         )
-        XCTAssertEqual(NearMeCardLayout.teaserLineLimit(isAccessibilitySize: false), 2)
+        XCTAssertEqual(NearMeCardLayout.teaserLineLimit(isAccessibilitySize: false), 1)
 
         // Accessibility sizes scale the tile up, and the shelf still contains it.
         XCTAssertGreaterThan(
@@ -155,6 +155,19 @@ final class ExplorationJourneyTests: XCTestCase {
             NearMeCardLayout.uniformHeight(isAccessibilitySize: true)
         )
         XCTAssertEqual(NearMeCardLayout.teaserLineLimit(isAccessibilitySize: true), 3)
+    }
+
+    func testExpandedDiscoveryDeckClearsFloatingTabDock() {
+        XCTAssertEqual(TravelMapDeckLayout.collapsedBottomClearance, 16)
+        XCTAssertEqual(TravelMapDeckLayout.expandedBottomClearance, 78)
+        XCTAssertLessThan(
+            TravelMapDeckLayout.bottomClearance(collapsed: true),
+            TravelMapDeckLayout.bottomClearance(collapsed: false)
+        )
+        XCTAssertGreaterThanOrEqual(
+            TravelMapDeckLayout.bottomClearance(collapsed: false),
+            72
+        )
     }
 
     func testPlaceTeaserPrefersServerDerivedHookText() {

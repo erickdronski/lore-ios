@@ -91,6 +91,7 @@ struct TravelMapControls: View {
         }
         .padding(.top, 6)
         .padding(.bottom, 10)
+        .padding(.bottom, TravelMapDeckLayout.bottomClearance(collapsed: collapsed))
         .background(
             // The ink fade only exists to keep the shelf text legible over the
             // map. When collapsed there is nothing to protect, so it disappears
@@ -207,6 +208,18 @@ struct TravelMapControls: View {
         .overlay(Capsule().strokeBorder(LoreColor.amber.opacity(0.35), lineWidth: 1))
         .padding(.horizontal, 16)
         .accessibilityElement(children: .contain)
+    }
+}
+
+enum TravelMapDeckLayout {
+    /// The collapsed pill should sit close to the dock; it is a launcher, not a
+    /// panel. The expanded deck needs a real landing zone so card footers and
+    /// visit toggles do not disappear beneath the floating tab bar.
+    static let collapsedBottomClearance: CGFloat = 16
+    static let expandedBottomClearance: CGFloat = 78
+
+    static func bottomClearance(collapsed: Bool) -> CGFloat {
+        collapsed ? collapsedBottomClearance : expandedBottomClearance
     }
 }
 
