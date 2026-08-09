@@ -121,7 +121,8 @@ git diff --check
 - Repo: `/Users/dron/Projects/lore`
 - Branch: `main`
 - Current synced head: `fed2a34` (`Add OSM geographic-feature ingest engine (+838 real places; app now 5,486 places / 38.6 avg)`)
-- No backend/content repo changes were made in this branch.
+- Backend/content repo handoff doc added separately:
+  `docs/34-CONTENT-RICHNESS-AUDIT-2026-08-09.md`
 
 Recent content work already on `lore/main` includes:
 
@@ -129,21 +130,24 @@ Recent content work already on `lore/main` includes:
 - OSM geographic-feature ingest
 - content pipeline docs under `scripts/content-ingest/README.md`
 
-Live read-only Supabase check on 2026-08-09 against project `uiuwzymvyrgfyiugqlkp`:
+Live read-only public Supabase check on 2026-08-09 against project `uiuwzymvyrgfyiugqlkp`:
 
 - 141 live cities
 - 6,078 visible `place_explore` rows
-- 6,259 `dive` rows
-- 5,297 `city_section` rows
-- 7,261 raw `fact` rows visible to the connected service role check
+- 6,078 visible `dive` rows
+- 4,982 visible `city_section` rows
+- 1,974 rich city-section rows
+- 0 visible `dive.audio_url` rows
 
 Known content gaps still needing follow-up:
 
-- Stone Town is still thin in visible place count.
-- Nairobi, Nashville, Santiago, Seoul, and Wellington also showed only 29 visible places.
-- San Antonio has place rows but needs the city-row/orphan wiring checked.
-- Some accepted content waves are not proven live/promoted yet.
-- Public `fact` rows are still not visibly powering the app in current read-only checks.
+- Six cities are still below the 30-place public-content bar: Stone Town (21),
+  Nairobi (29), Nashville (29), Santiago (29), Seoul (29), and Wellington (29).
+- Premium/studio audio is not live in the app-visible data yet because
+  `dive.audio_url` is still empty.
+- The richer content kinds are visible publicly across every live city, but the
+  next content pass should keep proving app-visible promotion rather than only
+  candidate/import state.
 
 ## Release State Caveat
 
