@@ -1304,8 +1304,8 @@ enum IdentifyFailure: Equatable {
     var message: String {
         switch self {
         case .capture: return "Lore couldn't grab that frame. Aim again and retry."
-        case .network: return "Landmark ID needs a connection. Check your signal and retry."
-        case .service: return "Google landmark matching is temporarily unavailable. Try again in a moment."
+        case .network: return "Image match needs a connection. Check your signal and retry."
+        case .service: return "Image matching is temporarily unavailable. Try again in a moment."
         case .invalidResponse: return "The match came back incomplete, so Lore didn't guess. Try another angle."
         case .membership: return "Lore+ couldn't be verified for cloud identification. Sign in and restore purchases, then try again."
         }
@@ -1333,7 +1333,7 @@ enum ScannerMatchSource: Equatable {
         case .geometryLock: return "geometry lock"
         case .preciseAR: return "precise AR"
         case .marker: return "Lore marker"
-        case .cloud: return "Google assisted"
+        case .cloud: return "image match"
         }
     }
 }
@@ -1474,7 +1474,7 @@ enum ScannerAccessibilityAnnouncement {
         case .idle:
             return nil
         case .loading:
-            return "Identifying one camera frame with Google Cloud Vision."
+            return "Checking one camera frame for a landmark match."
         case .result(let landmark):
             let prefix = landmark.isAmbiguous ? "Possible landmark" : "Landmark identified"
             if landmark.slug != nil || landmark.placeID != nil {

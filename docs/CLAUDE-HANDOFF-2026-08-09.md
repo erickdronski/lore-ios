@@ -159,6 +159,14 @@ Lore only. Do not mix Nalee, Tapt, Scout, or other portfolio projects into this 
     - signed-out and sync-failed states are explicit, so the companion remains a
       useful guide surface even before a full field record is available
 
+20. Scanner cloud-match copy is now provider-agnostic in traveler-facing states:
+    - cloud-backed matches show as `image match`, not a Google-branded result
+      badge
+    - loading/error accessibility copy says Lore is checking one frame for a
+      landmark match without surfacing backend vendor language
+    - this preserves the existing one-photo cloud disclosure path while keeping
+      the active AR scanning experience quieter
+
 ## Files Changed
 
 - `Sources/Lore/App/LoreApp.swift`
@@ -345,6 +353,14 @@ Also passed after the Profile companion patch:
 ```sh
 git diff --check
 ```
+
+Scanner provider-copy continuation validation:
+
+```sh
+xcodebuild test -quiet -project Lore.xcodeproj -scheme Lore -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:LoreTests/ScannerLogicTests
+```
+
+Result: exited `0`, including provider-agnostic image-match copy coverage.
 
 Post-backup investigation note:
 

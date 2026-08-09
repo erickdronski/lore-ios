@@ -530,7 +530,7 @@ final class SpecialistJourneyRegressionTests: XCTestCase {
         )
         XCTAssertEqual(
             ScannerAccessibilityAnnouncement.identification(.loading),
-            "Identifying one camera frame with Google Cloud Vision."
+            "Checking one camera frame for a landmark match."
         )
         XCTAssertEqual(
             ScannerAccessibilityAnnouncement.identification(.result(certain)),
@@ -548,7 +548,19 @@ final class SpecialistJourneyRegressionTests: XCTestCase {
             ScannerAccessibilityAnnouncement.identification(.quotaReached),
             "Today's landmark limit has been reached. Try again tomorrow."
         )
+        XCTAssertFalse(
+            ScannerAccessibilityAnnouncement.identification(.loading)?
+                .localizedCaseInsensitiveContains("Google") ?? true
+        )
         XCTAssertNil(ScannerAccessibilityAnnouncement.identification(.idle))
+    }
+
+    func testCloudScannerCopyIsProviderAgnostic() {
+        XCTAssertEqual(ScannerMatchSource.cloud.badge, "image match")
+        XCTAssertFalse(ScannerMatchSource.cloud.badge.localizedCaseInsensitiveContains("Google"))
+        XCTAssertFalse(IdentifyFailure.service.message.localizedCaseInsensitiveContains("Google"))
+        XCTAssertTrue(IdentifyFailure.service.message.localizedCaseInsensitiveContains("Image matching"))
+        XCTAssertTrue(IdentifyFailure.network.message.localizedCaseInsensitiveContains("Image match"))
     }
 
     func testScannerGuidanceToastStaysCompactAndProviderAgnostic() {
