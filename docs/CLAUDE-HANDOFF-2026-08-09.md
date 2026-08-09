@@ -8,6 +8,8 @@ Lore only. Do not mix Nalee, Tapt, Scout, or other portfolio projects into this 
 
 - Repo: `/Users/dron/Projects/lore-ios`
 - Branch: `codex/lore-next-level-20260809`
+- Current head: `d729cef21865737f5ee52c5dcc6f362689222731` (`Promote richer city field briefs`)
+- GitHub PR: `https://github.com/erickdronski/lore-ios/pull/40`
 - Base: `origin/main` at `466fd05` (`Journal: per-photo delete, remove-memory, server-enforced 12-photo cap`)
 
 ## What Changed In This Branch
@@ -142,7 +144,7 @@ git diff --check
 
 - Repo: `/Users/dron/Projects/lore`
 - Branch: `main`
-- Current synced head: `ceaaa3d` (`Add public content surface audit`)
+- Current synced head: `014b5d11c2ccc47b7dc8a650b0ca0482ffabedf0` (`Expand public content surface audit`)
 - Backend/content repo handoff doc added separately:
   `docs/34-CONTENT-RICHNESS-AUDIT-2026-08-09.md`
 - Repeatable public audit command:
@@ -184,6 +186,12 @@ Known content gaps still needing follow-up:
 ## Release State Caveat
 
 Historical docs say build 27 was submitted to Apple App Review on 2026-08-03 and was waiting for review at that time. That is not the same as a current live App Store Connect verification. Before claiming TestFlight/App Store completion, verify current App Store Connect status and selected build directly.
+
+## Tooling Caveat
+
+Local `gh auth status` reported an invalid GitHub CLI token on August 9, 2026.
+Use the connected GitHub app or re-authenticate `gh` before depending on GitHub
+CLI PR/check commands.
 
 ## Recommended Next Steps
 
