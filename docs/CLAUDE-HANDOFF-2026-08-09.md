@@ -129,6 +129,16 @@ Lore only. Do not mix Nalee, Tapt, Scout, or other portfolio projects into this 
     - the loader caches hits and confirmed misses per city so repeated place
       taps do not refetch the same field-kit context
 
+17. On-device fallback narration now sounds more intentional while studio audio
+    coverage is still sparse:
+    - `NarrationService` scores installed voices by quality, exact locale,
+      natural Siri/Ava/Samantha-style names, and novelty-voice penalties instead
+      of mostly sorting ties alphabetically
+    - scanner hooks and dossier TTS use a slower docent cadence with a small
+      pre-roll so the fallback does not feel like raw default system speech
+    - focused scanner tests cover quality ordering, natural exact-locale
+      preference, and novelty-voice penalty
+
 ## Files Changed
 
 - `Sources/Lore/App/LoreApp.swift`
@@ -200,6 +210,15 @@ xcodebuild test -project Lore.xcodeproj -scheme Lore -destination 'platform=iOS 
 ```
 
 Result: `** TEST SUCCEEDED **` with 24 tests.
+
+Premium fallback narration continuation validation:
+
+```sh
+xcodebuild test -project Lore.xcodeproj -scheme Lore -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:LoreTests/ScannerLogicTests
+```
+
+Result: `** TEST SUCCEEDED **` with 26 tests, including the fallback
+voice-scoring checks.
 
 Passed:
 

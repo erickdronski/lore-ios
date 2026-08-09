@@ -23,6 +23,47 @@ final class ScannerLogicTests: XCTestCase {
         )
     }
 
+    func testNarrationFallbackPrefersNaturalExactLocaleVoices() {
+        let exactSiri = NarrationService.voiceSelectionScore(
+            quality: .premium,
+            name: "Siri Voice 4",
+            language: "en-US",
+            exactLanguages: ["en-US"]
+        )
+        let genericPremium = NarrationService.voiceSelectionScore(
+            quality: .premium,
+            name: "Generic",
+            language: "en-ZA",
+            exactLanguages: ["en-US"]
+        )
+        let enhancedAva = NarrationService.voiceSelectionScore(
+            quality: .enhanced,
+            name: "Ava",
+            language: "en-US",
+            exactLanguages: ["en-US"]
+        )
+
+        XCTAssertGreaterThan(exactSiri, genericPremium)
+        XCTAssertGreaterThan(genericPremium, enhancedAva)
+    }
+
+    func testNarrationFallbackPenalizesNoveltyVoices() {
+        let natural = NarrationService.voiceSelectionScore(
+            quality: .enhanced,
+            name: "Samantha",
+            language: "en-US",
+            exactLanguages: ["en-US"]
+        )
+        let novelty = NarrationService.voiceSelectionScore(
+            quality: .enhanced,
+            name: "Zarvox",
+            language: "en-US",
+            exactLanguages: ["en-US"]
+        )
+
+        XCTAssertGreaterThan(natural, novelty)
+    }
+
     @MainActor
     func testNarrationHookUsesDerivedPlaceTeaser() {
         let line = NarrationService.hookText(
