@@ -17,6 +17,8 @@ Lore only. Do not mix Nalee, Tapt, Scout, or other portfolio projects into this 
 - Current branch head: verify with `git rev-parse HEAD`; this file is updated on
   the branch as the takeover log evolves, so the final handoff commit will be a
   docs-only commit above the feature state listed here.
+- Place-card field-kit continuation started from handoff-only head
+  `d8ee06c34cde4048e1996ec0b77bb28cfa9d27e3`.
 - Saved-place continuation started from handoff-only head
   `a411de655602828dc0f101fd6ed76531f99e7c0e`.
 - Last feature head before the saved-place continuation:
@@ -113,9 +115,18 @@ Lore only. Do not mix Nalee, Tapt, Scout, or other portfolio projects into this 
     URLs before rendering, so internal provenance labels and malformed links do
     not become user-facing citation buttons.
 
-15. Final Claude handoff refresh is docs-only. No runtime app code changed after
-    the dossier source-link feature head above; this file exists so Claude can
-    verify the branch and repo state without relying on chat context.
+15. The Claude handoff refresh after item 14 was docs-only. Runtime app work
+    resumed after that checkpoint in the place-card field-kit continuation.
+
+16. Place cards now surface a compact `City field kit` after the story teaser:
+    - it reuses the existing source-backed `CityFieldBrief` synthesis from
+      reviewed `city_section` rows
+    - it self-hides unless the city has at least three real rich-context rows
+    - it caps the place-card card to three cues so the dossier stays compact
+    - it preserves the existing HTTPS watch/hashtag action and links straight
+      into `Meet city`
+    - the loader caches hits and confirmed misses per city so repeated place
+      taps do not refetch the same field-kit context
 
 ## Files Changed
 
@@ -138,6 +149,8 @@ Lore only. Do not mix Nalee, Tapt, Scout, or other portfolio projects into this 
 - `Sources/Lore/Models/Place.swift`
 - `Sources/Lore/Models/SavedPlace.swift`
 - `Sources/Lore/Models/CitySection.swift`
+- `Sources/Lore/Features/PlaceCard/PlaceCardView.swift`
+- `Sources/Lore/Features/PlaceCard/PlaceCityFieldKit.swift`
 - `Sources/Lore/Features/Travel/SavePlaceButton.swift`
 - `Sources/Lore/Features/Travel/SavedPlaceStore.swift`
 - `Sources/LoreTests/CitySectionTests.swift`
@@ -227,6 +240,21 @@ for HTTPS `dive.links.source_url` and rejection of non-HTTPS dossier source
 links.
 
 Also passed after the citation-link patch:
+
+```sh
+git diff --check
+```
+
+Place-card field-kit continuation validation:
+
+```sh
+xcodebuild test -project Lore.xcodeproj -scheme Lore -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:LoreTests/CitySectionTests
+```
+
+Result: `** TEST SUCCEEDED **` with 9 tests, including compact place-card
+field-kit synthesis and preservation of source-backed external actions.
+
+Also passed after the field-kit patch:
 
 ```sh
 git diff --check

@@ -49,6 +49,9 @@ struct PlaceCardView: View {
     /// estate, fill the white space below with more fun").
     @State private var dive: Dive?
     @State private var loadedTheme: CityTheme?
+    /// A compact, source-backed city brief rendered inside the place card so
+    /// city-level context is not hidden behind a second tap.
+    @State private var cityKit = PlaceCityFieldKitModel()
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -103,6 +106,9 @@ struct PlaceCardView: View {
         .task(id: place.city) {
             guard cityTheme == nil else { return }
             loadedTheme = (try? await LoreAPI.shared.cityTheme(city: place.city)) ?? nil
+        }
+        .task(id: place.city) {
+            await cityKit.load(city: place.city)
         }
         .sheet(item: $loreEditorEntry) { entry in
             NoteEditorSheet(entry: entry) { note in
@@ -229,6 +235,8 @@ struct PlaceCardView: View {
 
                     storyTeaser
 
+                    cityFieldKit
+
                     // Log-the-visit + the reader's own lore, together: the
                     // toggle records "I was here", and once logged the note +
                     // photos render as part of the place itself.
@@ -321,6 +329,15 @@ struct PlaceCardView: View {
             .accessibilityLabel("Close place details")
             .padding(.top, 8)
             .padding(.trailing, 12)
+        }
+    }
+
+    // MARK: City field kit
+
+    @ViewBuilder
+    private var cityFieldKit: some View {
+        if let kit = cityKit.kit {
+            PlaceCityFieldKitCard(city: place.city, kit: kit, accent: accent, onMeetCity: onMeetCity)
         }
     }
 

@@ -174,6 +174,31 @@ struct CitySectionTests {
         #expect(CityFieldBrief(sections: sections) == nil)
     }
 
+    @Test("Place card field kit stays compact while preserving source-backed actions")
+    func placeCityFieldKitCapsBriefForPlaceCards() throws {
+        let sections = try [
+            decode(
+                id: "watch",
+                kind: "watch",
+                title: "Watch the waterfront first",
+                links: #"{"youtube_url":"https://www.youtube.com/watch?v=city"}"#,
+                meta: #"{"platform":"YouTube"}"#,
+                source: "https://www.youtube.com/watch?v=city",
+                sort: 160
+            ),
+            decode(id: "hashtag", kind: "hashtag", title: "#BackstreetCity", sort: 170),
+            decode(id: "legend", kind: "local_legend", title: "Ask about the old gate", sort: 180),
+            decode(id: "mistake", kind: "first_timer_mistake", title: "Do not sprint the market", sort: 190),
+        ]
+        let brief = try #require(CityFieldBrief(sections: sections))
+        let kit = try #require(PlaceCityFieldKit(brief: brief))
+
+        #expect(kit.items.map(\.label) == ["Prime the lens", "Search", "Ask about"])
+        #expect(kit.items.map(\.title).contains("Do not sprint the market") == false)
+        #expect(kit.action?.label == "Watch YouTube")
+        #expect(kit.action?.url.absoluteString == "https://www.youtube.com/watch?v=city")
+    }
+
     private func decode(source: String) throws -> CitySection {
         try decode(kind: "phrase", title: "Bonjour", links: "{}", meta: """
         {
