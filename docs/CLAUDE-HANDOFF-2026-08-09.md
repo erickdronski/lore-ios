@@ -9,9 +9,9 @@ Lore only. Do not mix Nalee, Tapt, Scout, or other portfolio projects into this 
 - Repo: `/Users/dron/Projects/lore-ios`
 - Branch: `codex/lore-next-level-20260809`
 - Claude takeover backup: this branch and `/Users/dron/Projects/lore` were
-  checked clean and pushed on August 9, 2026. The native feature state
-  immediately before this docs-only backup was
-  `ae21573070a5cf046f9f15e9bea794b3087e31ad` (`Add server-backed saved places`).
+  checked clean and pushed on August 9, 2026. The latest verified native
+  feature head before this docs-only handoff update was
+  `c31bc874c3cdee287be223edd648fede8105e272` (`Use live origin for generated walks`).
 - Current branch head: verify with `git rev-parse HEAD`; this file is updated on
   the branch as the takeover log evolves, so the final handoff commit will be a
   docs-only commit above the feature state listed here.
@@ -203,12 +203,22 @@ Also passed after the saved-place patch:
 git diff --check
 ```
 
+Post-backup investigation note:
+
+- An attempted `AtlasCache` in-flight request coalescing change was intentionally
+  not shipped. It reduced duplicate cold anonymous reads in theory, but the
+  focused cancellation path around
+  `LoreNetworkResilienceTests.testCancellationDoesNotReturnAStaleAtlasPayload`
+  did not exit cleanly under the URLProtocol test harness, and later simulator
+  runs reported service-hub instability after interruption. Reattempt this only
+  with a cancellation-first design and this regression test passing cleanly.
+
 ## Related Backend / Content Repo State
 
 - Repo: `/Users/dron/Projects/lore`
 - Branch: `main`
-- Current synced feature head before the August 9 docs-only Claude backup:
-  `677f9380fe649f63bd6259fb0a69b87a3b9f694c` (`Refresh Lore takeover handoff`)
+- Current synced feature head before this docs-only Claude handoff update:
+  `b3d1f71018c4c44e3c117952de29410667547267` (`Add Nairobi Wellington content canary`)
 - Backend/content repo handoff doc added separately:
   `docs/34-CONTENT-RICHNESS-AUDIT-2026-08-09.md`
 - Repeatable public audit command:
@@ -269,7 +279,8 @@ CLI PR/check commands.
    dock when expanded.
 5. Verify App Store Connect status and whether the latest code has actually reached TestFlight.
 6. Continue content depth waves, prioritizing thin cities and the richer section kinds that now power the Meet City field brief.
-7. Use the backend `low-place-floor-001` canary recommendation before claiming
-   that the empty-city feeling is fixed: +1 place each for Nashville, Seoul,
-   Santiago, Nairobi, and Wellington, and +9 places for Stone Town, staged
-   through the reviewed content lane rather than direct public writes.
+7. Use the backend `low-place-floor-001` and `low-place-floor-002` candidate
+   waves before claiming that the empty-city feeling is fixed. The second wave
+   adds candidate supply for Nairobi and Wellington, but neither wave changes
+   public counts until rows are reviewed and promoted through the private
+   `lore_ops` lane.
