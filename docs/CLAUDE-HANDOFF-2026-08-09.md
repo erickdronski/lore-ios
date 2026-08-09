@@ -118,11 +118,12 @@ Lore only. Do not mix Nalee, Tapt, Scout, or other portfolio projects into this 
 15. The Claude handoff refresh after item 14 was docs-only. Runtime app work
     resumed after that checkpoint in the place-card field-kit continuation.
 
-16. Place cards now surface a compact `City field kit` after the story teaser:
+16. Place cards and full dossiers now surface a compact `City field kit`:
     - it reuses the existing source-backed `CityFieldBrief` synthesis from
       reviewed `city_section` rows
     - it self-hides unless the city has at least three real rich-context rows
-    - it caps the place-card card to three cues so the dossier stays compact
+    - it caps the place-card and dossier cards to three cues so both surfaces
+      stay compact
     - it preserves the existing HTTPS watch/hashtag action and links straight
       into `Meet city`
     - the loader caches hits and confirmed misses per city so repeated place
@@ -149,6 +150,7 @@ Lore only. Do not mix Nalee, Tapt, Scout, or other portfolio projects into this 
 - `Sources/Lore/Models/Place.swift`
 - `Sources/Lore/Models/SavedPlace.swift`
 - `Sources/Lore/Models/CitySection.swift`
+- `Sources/Lore/Features/PlaceCard/DiveView.swift`
 - `Sources/Lore/Features/PlaceCard/PlaceCardView.swift`
 - `Sources/Lore/Features/PlaceCard/PlaceCityFieldKit.swift`
 - `Sources/Lore/Features/Travel/SavePlaceButton.swift`
@@ -255,6 +257,21 @@ Result: `** TEST SUCCEEDED **` with 9 tests, including compact place-card
 field-kit synthesis and preservation of source-backed external actions.
 
 Also passed after the field-kit patch:
+
+```sh
+git diff --check
+```
+
+Dossier field-kit continuation validation:
+
+```sh
+xcodebuild test -project Lore.xcodeproj -scheme Lore -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:LoreTests/CitySectionTests
+```
+
+Result: `** TEST SUCCEEDED **` with 9 tests after wiring the same compact city
+field kit into `DiveView`.
+
+Also passed after the dossier field-kit patch:
 
 ```sh
 git diff --check

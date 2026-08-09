@@ -9,6 +9,12 @@ struct DiveView: View {
     /// Optional dossier already fetched by the Layer-1 card for its teaser.
     /// Reusing it avoids a second network hop when the reader taps Go deeper.
     var initialDive: Dive? = nil
+    /// Compact city-local context already loaded by the Layer-1 card. Passed in
+    /// rather than fetched here so opening the dossier does not add another
+    /// city-section request.
+    var cityKit: PlaceCityFieldKit? = nil
+    /// Opens the full "Meet city" surface from inside the dossier.
+    var onMeetCity: (String) -> Void = { _ in }
     /// The shared-element morph namespace (LUXURY-MOTION §6): when the dossier is
     /// grown from a Layer-1 card, the pin/emoji medallion morphs from the card
     /// header into this header via `matchedGeometryEffect`. `nil` when the
@@ -37,6 +43,7 @@ struct DiveView: View {
             VStack(alignment: .leading, spacing: 24) {
                 header
                 tagRow
+                dossierCityFieldKit
 
                 if gated {
                     // The place name (header) stays above the gate, so the
@@ -173,6 +180,13 @@ struct DiveView: View {
     }
 
     // MARK: Dossier body
+
+    @ViewBuilder
+    private var dossierCityFieldKit: some View {
+        if let cityKit {
+            DossierCityFieldKitCard(city: place.city, kit: cityKit, onMeetCity: onMeetCity)
+        }
+    }
 
     @ViewBuilder
     private func diveBody(_ dive: Dive) -> some View {

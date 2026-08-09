@@ -465,7 +465,7 @@ struct PlaceCardView: View {
             // geometry to hand off and the dossier's `matchedGeometryEffect`
             // receiver would float over the narrative. Nil namespace = the
             // medallion just appears in its correct header slot.
-            DiveView(place: place, initialDive: dive)
+            DiveView(place: place, initialDive: dive, cityKit: cityKit.kit, onMeetCity: onMeetCity)
 
             HStack {
                 // Dismiss affordance, springs the dossier back down into the card.
