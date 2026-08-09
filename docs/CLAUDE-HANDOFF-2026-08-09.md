@@ -8,8 +8,13 @@ Lore only. Do not mix Nalee, Tapt, Scout, or other portfolio projects into this 
 
 - Repo: `/Users/dron/Projects/lore-ios`
 - Branch: `codex/lore-next-level-20260809`
-- Current branch head: verify with `git rev-parse HEAD`; this file is updated
-  on the branch as the takeover log evolves.
+- Claude takeover backup: this branch and `/Users/dron/Projects/lore` were
+  checked clean and pushed on August 9, 2026. The native feature state
+  immediately before this docs-only backup was
+  `ae21573070a5cf046f9f15e9bea794b3087e31ad` (`Add server-backed saved places`).
+- Current branch head: verify with `git rev-parse HEAD`; this file is updated on
+  the branch as the takeover log evolves, so the final handoff commit will be a
+  docs-only commit above the feature state listed here.
 - Saved-place continuation started from handoff-only head
   `a411de655602828dc0f101fd6ed76531f99e7c0e`.
 - Last feature head before the saved-place continuation:
@@ -179,7 +184,8 @@ git diff --check
 
 - Repo: `/Users/dron/Projects/lore`
 - Branch: `main`
-- Current synced head: `014b5d11c2ccc47b7dc8a650b0ca0482ffabedf0` (`Expand public content surface audit`)
+- Current synced feature head before the August 9 docs-only Claude backup:
+  `677f9380fe649f63bd6259fb0a69b87a3b9f694c` (`Refresh Lore takeover handoff`)
 - Backend/content repo handoff doc added separately:
   `docs/34-CONTENT-RICHNESS-AUDIT-2026-08-09.md`
 - Repeatable public audit command:
