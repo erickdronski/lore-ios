@@ -148,6 +148,17 @@ Lore only. Do not mix Nalee, Tapt, Scout, or other portfolio projects into this 
     - focused journey tests cover route identity, stop tour ids, and
       `TourProgressStore` isolation between two generated Chicago walks
 
+19. Profile now has a state-driven `Guide companion` surface instead of only a
+    static account/settings stack:
+    - it converts real signed-in state, synced `user_stats`, saved-place count,
+      profile completion, and Lore+ entitlement state into the next three
+      recommended actions
+    - it routes directly to sign-in, profile editing, Journal, Saved Places,
+      Passport, Travel Preferences, or the live Lore+ paywall without inventing
+      fake recommendations
+    - signed-out and sync-failed states are explicit, so the companion remains a
+      useful guide surface even before a full field record is available
+
 ## Files Changed
 
 - `Sources/Lore/App/LoreApp.swift`
@@ -315,6 +326,21 @@ Result: `** TEST SUCCEEDED **` with 27 tests, including generated-walk route
 identity and progress isolation coverage.
 
 Also passed after the route fingerprint patch:
+
+```sh
+git diff --check
+```
+
+Profile guide companion continuation validation:
+
+```sh
+xcodebuild test -quiet -project Lore.xcodeproj -scheme Lore -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:LoreTests/ProfileAccountTests
+```
+
+Result: exited `0`, including the Profile journey and new Guide companion cue
+selection tests.
+
+Also passed after the Profile companion patch:
 
 ```sh
 git diff --check

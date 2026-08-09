@@ -74,6 +74,8 @@ struct ProfileScreen: View {
 
                 journeySection
 
+                guideCompanionSection
+
                 membershipSection
 
                 fieldKitSection
@@ -294,6 +296,81 @@ struct ProfileScreen: View {
         }
     }
 
+    private var guideCompanionSection: some View {
+        Section {
+            ProfileGuideCompanionCard(
+                snapshot: ProfileGuideCompanionSnapshot(
+                    isSignedIn: auth.isSignedIn,
+                    isPlus: entitlements.isPlus,
+                    profile: auth.profile,
+                    journeyState: journey.state,
+                    savedCount: savedPlaces.savedCount
+                )
+            ) { cue in
+                guideCueControl(cue)
+            }
+            .listRowInsets(EdgeInsets(top: 2, leading: 16, bottom: 8, trailing: 16))
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+        }
+    }
+
+    @ViewBuilder
+    private func guideCueControl(_ cue: ProfileGuideCue) -> some View {
+        switch cue.destination {
+        case .signIn:
+            Button {
+                showSignIn = true
+            } label: {
+                ProfileGuideCueRow(cue: cue)
+            }
+            .buttonStyle(.pressable)
+        case .editProfile:
+            Button {
+                if let profile = auth.profile { editingProfile = profile }
+            } label: {
+                ProfileGuideCueRow(cue: cue)
+            }
+            .buttonStyle(.pressable)
+            .disabled(auth.profile == nil)
+        case .journal:
+            NavigationLink {
+                JournalView()
+            } label: {
+                ProfileGuideCueRow(cue: cue)
+            }
+            .buttonStyle(.pressableSilent)
+        case .savedPlaces:
+            NavigationLink {
+                SavedPlacesView()
+            } label: {
+                ProfileGuideCueRow(cue: cue)
+            }
+            .buttonStyle(.pressableSilent)
+        case .passport:
+            NavigationLink {
+                PassportView()
+            } label: {
+                ProfileGuideCueRow(cue: cue)
+            }
+            .buttonStyle(.pressableSilent)
+        case .travelPreferences:
+            NavigationLink {
+                TravelPreferencesView()
+            } label: {
+                ProfileGuideCueRow(cue: cue)
+            }
+            .buttonStyle(.pressableSilent)
+        case .paywall:
+            Button {
+                showPaywall = true
+            } label: {
+                ProfileGuideCueRow(cue: cue)
+            }
+            .buttonStyle(.pressable)
+        }
+    }
+
     // MARK: Membership (Lore+ is live, not a "coming" stub)
 
     /// Lore+ is a real, purchasable membership, so this opens the live paywall
@@ -458,6 +535,158 @@ struct ProfileScreen: View {
         }
     }
 
+}
+
+// MARK: - Guide companion
+
+private struct ProfileGuideCompanionCard<ActionView: View>: View {
+    let snapshot: ProfileGuideCompanionSnapshot
+    private let action: (ProfileGuideCue) -> ActionView
+
+    init(
+        snapshot: ProfileGuideCompanionSnapshot,
+        @ViewBuilder action: @escaping (ProfileGuideCue) -> ActionView
+    ) {
+        self.snapshot = snapshot
+        self.action = action
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .top, spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(LoreColor.amber.opacity(0.18))
+                    Circle()
+                        .strokeBorder(LoreColor.brass300.opacity(0.42), lineWidth: 1)
+                    Image(systemName: "sparkle.magnifyingglass")
+                        .font(.system(size: 19, weight: .semibold))
+                        .foregroundStyle(LoreColor.amber)
+                }
+                .frame(width: 48, height: 48)
+                .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("GUIDE COMPANION")
+                        .font(LoreType.label)
+                        .tracking(1)
+                        .foregroundStyle(LoreColor.brass300)
+                    Text(snapshot.title)
+                        .font(LoreType.display(size: 25, weight: .semibold))
+                        .foregroundStyle(LoreColor.bone)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(snapshot.subtitle)
+                        .font(LoreType.caption)
+                        .foregroundStyle(LoreColor.bone.opacity(0.7))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            VStack(spacing: 8) {
+                ForEach(snapshot.cues) { cue in
+                    action(cue)
+                }
+            }
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            ZStack(alignment: .topTrailing) {
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [LoreColor.ink800, LoreColor.ink950],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                GuideRouteConstellation()
+                    .stroke(
+                        LoreColor.brass300.opacity(0.16),
+                        style: StrokeStyle(lineWidth: 1.2, lineCap: .round, dash: [5, 9])
+                    )
+                    .frame(width: 170, height: 92)
+                    .offset(x: 34, y: 8)
+                    .accessibilityHidden(true)
+            }
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .strokeBorder(LoreColor.brass300.opacity(0.22), lineWidth: 1)
+        )
+        .loreElevation(.elev1)
+        .accessibilityElement(children: .contain)
+    }
+}
+
+private struct ProfileGuideCueRow: View {
+    let cue: ProfileGuideCue
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(LoreColor.ink950.opacity(0.55))
+                Image(systemName: cue.symbol)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(LoreColor.amber)
+            }
+            .frame(width: 42, height: 42)
+            .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(cue.title)
+                    .font(LoreType.body.weight(.semibold))
+                    .foregroundStyle(LoreColor.bone)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(cue.detail)
+                    .font(LoreType.caption)
+                    .foregroundStyle(LoreColor.bone.opacity(0.64))
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 8)
+
+            Image(systemName: "chevron.right")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(LoreColor.brass300.opacity(0.7))
+                .accessibilityHidden(true)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            LoreColor.ink900.opacity(0.72),
+            in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(LoreColor.brass300.opacity(0.14), lineWidth: 1)
+        )
+        .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(cue.title). \(cue.detail)")
+    }
+}
+
+private struct GuideRouteConstellation: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let points = [
+            CGPoint(x: rect.minX + rect.width * 0.02, y: rect.minY + rect.height * 0.60),
+            CGPoint(x: rect.minX + rect.width * 0.27, y: rect.minY + rect.height * 0.34),
+            CGPoint(x: rect.minX + rect.width * 0.50, y: rect.minY + rect.height * 0.74),
+            CGPoint(x: rect.minX + rect.width * 0.72, y: rect.minY + rect.height * 0.28),
+            CGPoint(x: rect.minX + rect.width * 0.98, y: rect.minY + rect.height * 0.48),
+        ]
+        guard let first = points.first else { return path }
+        path.move(to: first)
+        for point in points.dropFirst() {
+            path.addLine(to: point)
+        }
+        return path
+    }
 }
 
 // MARK: - Journey card
