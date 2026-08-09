@@ -57,11 +57,23 @@ Lore only. Do not mix Nalee, Tapt, Scout, or other portfolio projects into this 
    links into Journal, Passport, Travel Preferences, Privacy & Data, Settings,
    and the live Lore+ membership surface.
 
+10. Discovery Deck / Around You cards were compacted and lifted above the
+    floating tab dock:
+    - normal near-me cards are `244pt` tall instead of `268pt`
+    - normal card teasers are one line to remove wasted vertical space
+    - expanded deck clearance is explicit (`78pt`) so visit toggles and card
+      footers do not sit under the tab bar
+    - the map overlay remains an overlay, not a bottom safe-area inset, so the
+      deck should not force MapKit to re-solve the camera and zoom out
+
 ## Files Changed
 
 - `Sources/Lore/App/LoreApp.swift`
 - `Sources/Lore/Features/Culture/CityFlavorViews.swift`
 - `Sources/Lore/Features/Culture/CultureView.swift`
+- `Sources/Lore/Features/Map/MapScreen.swift`
+- `Sources/Lore/Features/Travel/NearMeShelf.swift`
+- `Sources/Lore/Features/Travel/TravelMapOverlay.swift`
 - `Sources/Lore/Features/Tours/TourDetailView.swift`
 - `Sources/Lore/Features/Tours/ToursScreen.swift`
 - `Sources/Lore/Features/Scanner/NarrationService.swift`
@@ -92,7 +104,8 @@ Passed:
 xcodebuild test -project Lore.xcodeproj -scheme Lore -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:LoreTests/ExplorationJourneyTests
 ```
 
-Result: `** TEST SUCCEEDED **` with 15 tests.
+Result: `** TEST SUCCEEDED **` with 16 tests, including the compact near-me
+card layout and expanded dock-clearance regression checks.
 
 Passed:
 
@@ -157,6 +170,8 @@ Historical docs say build 27 was submitted to Apple App Review on 2026-08-03 and
 
 1. Review and merge this branch after CI.
 2. Run a broader simulator build/test pass before TestFlight.
-3. Verify the Discovery Deck/Around Me dock clipping fix on a real device with the latest build.
+3. Verify the Discovery Deck/Around Me dock clipping fix on a real device with
+   the latest build, specifically that the visit toggle clears the floating tab
+   dock when expanded.
 4. Verify App Store Connect status and whether the latest code has actually reached TestFlight.
 5. Continue content depth waves, prioritizing thin cities and the richer section kinds that now power the Meet City field brief.
