@@ -12,6 +12,10 @@ enum OneHourTour {
     private static let dwellMinutes = 6.0
     /// Never route more than this many stops into one walk.
     private static let maxStops = 8
+    /// A live origin is useful only when the traveler is plausibly near the
+    /// selected city's story cluster. Otherwise browsing Warsaw from New Jersey
+    /// would generate a nonsense transcontinental first leg.
+    private static let maximumOriginBudgetShare = 0.45
 
     /// Build a `Tour` for `city` from `places`, starting at `origin` (the user's
     /// location when known, else the densest centre of the set). Returns nil if
@@ -25,14 +29,16 @@ enum OneHourTour {
         guard places.count >= 2 else { return nil }
 
         var pool = places
-        var start = origin ?? centroid(of: places)
+        let resolvedOrigin = usableOrigin(origin, in: places, durationMin: durationMin)
+        var start = resolvedOrigin ?? centroid(of: places)
         // Anchor the walk on a real place near the start so the first leg is short.
-        if origin == nil, let anchor = pool.min(by: { distance(start, $0.coordinate) < distance(start, $1.coordinate) }) {
+        if resolvedOrigin == nil, let anchor = pool.min(by: { distance(start, $0.coordinate) < distance(start, $1.coordinate) }) {
             start = anchor.coordinate
         }
 
         var ordered: [Place] = []
         var remaining = Double(durationMin)
+        var totalMeters = 0.0
         var current = start
 
         while !pool.isEmpty && ordered.count < maxStops {
@@ -41,10 +47,10 @@ enum OneHourTour {
             }) else { break }
             let legMeters = distance(current, next.coordinate)
             let cost = legMeters / metersPerMinute + dwellMinutes
-            // Always take the first stop; after that, respect the time budget.
-            if !ordered.isEmpty && cost > remaining { break }
+            if cost > remaining { break }
             ordered.append(next)
             remaining -= cost
+            totalMeters += legMeters
             current = next.coordinate
             pool.removeAll { $0.id == next.id }
         }
@@ -55,8 +61,6 @@ enum OneHourTour {
         let stops = ordered.enumerated().map { index, place in
             TourStop(tourID: tourID, placeID: place.id, seq: index + 1, note: place.layer1?.hook)
         }
-        let totalMeters = zip(ordered, ordered.dropFirst())
-            .reduce(0.0) { $0 + distance($1.0.coordinate, $1.1.coordinate) }
 
         return Tour(
             id: tourID,
@@ -84,6 +88,22 @@ enum OneHourTour {
             latitude: places.map(\.lat).reduce(0, +) / count,
             longitude: places.map(\.lng).reduce(0, +) / count
         )
+    }
+
+    private static func usableOrigin(
+        _ origin: CLLocationCoordinate2D?,
+        in places: [Place],
+        durationMin: Int
+    ) -> CLLocationCoordinate2D? {
+        guard let origin,
+              let nearest = places.min(by: {
+                  distance(origin, $0.coordinate) < distance(origin, $1.coordinate)
+              })
+        else { return nil }
+
+        let maximumOriginMeters = Double(durationMin) * metersPerMinute * maximumOriginBudgetShare
+        guard distance(origin, nearest.coordinate) <= maximumOriginMeters else { return nil }
+        return origin
     }
 
     private static func cityLabel(_ slug: String) -> String {

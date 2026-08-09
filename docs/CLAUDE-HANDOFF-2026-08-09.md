@@ -94,13 +94,26 @@ Lore only. Do not mix Nalee, Tapt, Scout, or other portfolio projects into this 
       that opens the real database-backed place dossier
     - signed-out taps nudge sign-in instead of silently pretending to save
 
+13. The generated "Build my walk" route now uses a fresh live location when it
+    can honestly do so:
+    - Tours observes an existing CoreLocation grant on appear and requests only
+      when the traveler taps the routing action
+    - stale or coarse fixes are rejected through the shared near-me provider
+    - the route generator uses the traveler origin only when it is close enough
+      to the selected city's story cluster, preserving normal remote city
+      browsing
+    - the first walking leg from the traveler to stop one now counts against
+      both route distance and time budget
+
 ## Files Changed
 
 - `Sources/Lore/App/LoreApp.swift`
 - `Sources/Lore/Features/Culture/CityFlavorViews.swift`
 - `Sources/Lore/Features/Culture/CultureView.swift`
 - `Sources/Lore/Features/Map/MapScreen.swift`
+- `Sources/Lore/Features/Tours/OneHourTour.swift`
 - `Sources/Lore/Features/Travel/NearMeShelf.swift`
+- `Sources/Lore/Features/Travel/NearMeLocationProvider.swift`
 - `Sources/Lore/Features/Travel/TravelMapOverlay.swift`
 - `Sources/Lore/Features/Tours/TourDetailView.swift`
 - `Sources/Lore/Features/Tours/ToursScreen.swift`
@@ -141,6 +154,16 @@ xcodebuild test -project Lore.xcodeproj -scheme Lore -destination 'platform=iOS 
 Result: `** TEST SUCCEEDED **` with 18 tests, including the compact near-me
 card layout, expanded dock-clearance regression checks, and map blur dismissal
 coverage.
+
+Origin-aware generated-walk continuation validation:
+
+```sh
+xcodebuild test -project Lore.xcodeproj -scheme Lore -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:LoreTests/ExplorationJourneyTests
+```
+
+Result: `** TEST SUCCEEDED **` with 23 tests, including the previous Discovery
+Deck/map regressions plus fresh-origin route start, first-leg distance, and
+remote-origin fallback coverage.
 
 Passed:
 

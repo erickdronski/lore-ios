@@ -1,3 +1,4 @@
+import CoreLocation
 import SwiftUI
 
 /// Curated walking tours, listed by city, each opening a stop-by-stop
@@ -11,6 +12,9 @@ struct ToursScreen: View {
     @Environment(StoreKitService.self) private var store
     @Environment(AuthService.self) private var auth
     @State private var model = ToursModel()
+    /// Lightweight position source for "Build my walk". It observes an existing
+    /// grant on appear and asks only when the traveler taps the routing action.
+    @State private var locationProvider = NearMeLocationProvider()
     /// The paywall raised by the offline-pack button's locked state.
     @State private var showPackPaywall = false
     /// The generated "1 Hour In" walk, presented in a sheet once routed.
@@ -126,6 +130,12 @@ struct ToursScreen: View {
             .task(id: router.selectedCity) {
                 cityDeals = (try? await LoreAPI.shared.cityDeals(city: router.selectedCity)) ?? []
             }
+            .onAppear {
+                locationProvider.start(requestPermission: false)
+            }
+            .onDisappear {
+                locationProvider.stop()
+            }
             .alert("Walk unavailable", isPresented: oneHourErrorBinding) {
                 Button("OK", role: .cancel) {}
             } message: {
@@ -152,25 +162,7 @@ struct ToursScreen: View {
                 minutes: oneHourMinutes,
                 isGenerating: generatingCity == router.selectedCity
             ) {
-                let city = router.selectedCity
-                let minutes = oneHourMinutes
-                generatingCity = city
-                Task {
-                    do {
-                        if let tour = try await model.oneHourTour(city: city, durationMin: minutes) {
-                            if router.selectedCity == city { generatedTour = tour }
-                        } else {
-                            if router.selectedCity == city {
-                                oneHourError = "There aren't enough stops in \(cityLabel(city)) yet for a full walk. Try another city."
-                            }
-                        }
-                    } catch {
-                        if router.selectedCity == city {
-                            oneHourError = "Couldn't build your walk. Check your connection and try again."
-                        }
-                    }
-                    if generatingCity == city { generatingCity = nil }
-                }
+                buildOneHourWalk()
             }
 
             Picker("Walk length", selection: $oneHourMinutes) {
@@ -213,6 +205,48 @@ struct ToursScreen: View {
         .textCase(nil)
         .accessibilityLabel(Text("Current city, \(cityLabel(router.selectedCity))"))
         .accessibilityHint(Text("Switch cities to see their tours."))
+    }
+
+    private func buildOneHourWalk() {
+        let city = router.selectedCity
+        let minutes = oneHourMinutes
+        generatingCity = city
+        locationProvider.start(requestPermission: true)
+        Task {
+            let origin = await currentTourOrigin()
+            do {
+                if let tour = try await model.oneHourTour(city: city, durationMin: minutes, origin: origin) {
+                    if router.selectedCity == city { generatedTour = tour }
+                } else {
+                    if router.selectedCity == city {
+                        oneHourError = "There aren't enough stops in \(cityLabel(city)) yet for a full walk. Try another city."
+                    }
+                }
+            } catch {
+                if router.selectedCity == city {
+                    oneHourError = "Couldn't build your walk. Check your connection and try again."
+                }
+            }
+            if generatingCity == city { generatingCity = nil }
+        }
+    }
+
+    @MainActor
+    private func currentTourOrigin() async -> CLLocationCoordinate2D? {
+        if let location = locationProvider.freshLocation() {
+            return location.coordinate
+        }
+        guard !locationProvider.isDenied else { return nil }
+
+        for _ in 0..<8 {
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            if Task.isCancelled { return nil }
+            if let location = locationProvider.freshLocation() {
+                return location.coordinate
+            }
+            if locationProvider.isDenied { return nil }
+        }
+        return nil
     }
 }
 
@@ -569,8 +603,12 @@ final class ToursModel {
     /// the city's places and routes them. Throws on a network failure (so the
     /// caller can distinguish "offline" from "too few stops"); returns nil when
     /// the fetch succeeds but there aren't enough stops to route a walk.
-    func oneHourTour(city: String, durationMin: Int = 60) async throws -> Tour? {
+    func oneHourTour(
+        city: String,
+        durationMin: Int = 60,
+        origin: CLLocationCoordinate2D? = nil
+    ) async throws -> Tour? {
         let places = try await LoreAPI.shared.places(city: city)
-        return OneHourTour.generate(city: city, places: places, from: nil, durationMin: durationMin)
+        return OneHourTour.generate(city: city, places: places, from: origin, durationMin: durationMin)
     }
 }

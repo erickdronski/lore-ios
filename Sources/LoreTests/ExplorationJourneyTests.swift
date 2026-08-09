@@ -325,6 +325,50 @@ final class ExplorationJourneyTests: XCTestCase {
         XCTAssertLessThanOrEqual(TourBrowseLayout.tourRowInsets.bottom, 4)
     }
 
+    func testGeneratedWalkStartsNearFreshTravelerOrigin() throws {
+        let origin = CLLocationCoordinate2D(latitude: 41.8900, longitude: -87.6200)
+        let nearOrigin = place(id: "near-origin", kind: "building", lat: 41.8970, lng: -87.6200)
+        let nextNearOrigin = place(id: "next-near-origin", kind: "park", lat: 41.8980, lng: -87.6200)
+        let cityCenter = place(id: "city-center", kind: "monument", lat: 41.8700, lng: -87.6500)
+        let cityCenterNext = place(id: "city-center-next", kind: "building", lat: 41.8710, lng: -87.6500)
+
+        let tour = try XCTUnwrap(OneHourTour.generate(
+            city: "chicago",
+            places: [cityCenter, cityCenterNext, nearOrigin, nextNearOrigin],
+            from: origin,
+            durationMin: 60
+        ))
+
+        XCTAssertEqual(tour.stops.first?.placeID, "near-origin")
+        XCTAssertEqual(tour.stops.dropFirst().first?.placeID, "next-near-origin")
+        XCTAssertGreaterThan(tour.distanceKm ?? 0, 0.7)
+    }
+
+    func testGeneratedWalkIgnoresRemoteBrowseOrigin() throws {
+        let places = [
+            place(id: "anchor", kind: "building", lat: 41.8800, lng: -87.6300),
+            place(id: "second", kind: "park", lat: 41.8810, lng: -87.6300),
+            place(id: "third", kind: "monument", lat: 41.8820, lng: -87.6300),
+        ]
+        let remoteOrigin = CLLocationCoordinate2D(latitude: 34.0522, longitude: -118.2437)
+
+        let cityWalk = try XCTUnwrap(OneHourTour.generate(
+            city: "chicago",
+            places: places,
+            from: nil,
+            durationMin: 60
+        ))
+        let remoteBrowseWalk = try XCTUnwrap(OneHourTour.generate(
+            city: "chicago",
+            places: places,
+            from: remoteOrigin,
+            durationMin: 60
+        ))
+
+        XCTAssertEqual(remoteBrowseWalk.stops.map(\.placeID), cityWalk.stops.map(\.placeID))
+        XCTAssertEqual(remoteBrowseWalk.distanceKm ?? -1, cityWalk.distanceKm ?? -2, accuracy: 0.001)
+    }
+
     func testCityRegionHandlesHomeAndInternationalMarkets() {
         XCTAssertEqual(CityRegion.region(forCountry: "US"), .unitedStates)
         XCTAssertEqual(CityRegion.region(forCountry: "JP"), .asia)
