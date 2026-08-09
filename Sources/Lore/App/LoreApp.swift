@@ -76,6 +76,7 @@ struct LoreApp: App {
                 .environment(diveMeter)
                 .environment(travel)
                 .environment(travel.visits)
+                .environment(travel.savedPlaces)
                 .environment(travel.filters)
                 .environment(packs)
                 // Wire the StoreKit client path into the entitlement store and
@@ -749,6 +750,7 @@ struct RootTabView: View {
 
         if userID != syncedUserID {
             travel.visits.reset()
+            travel.savedPlaces.reset()
             travel.clearUnlocks()
             syncedUserID = userID
         }

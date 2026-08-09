@@ -105,6 +105,77 @@ final class ExplorationJourneyTests: XCTestCase {
         XCTAssertNil(store.lastError)
     }
 
+    func testSavedPlaceStoreHydratesFromServerAndResetsForSignedOutState() async {
+        var signedIn = true
+        let store = SavedPlaceStore(
+            credentials: { signedIn ? ("traveler", "token") : nil },
+            savedPlacesLoader: { _ in [
+                SavedPlace(
+                    userID: "traveler",
+                    placeID: "place-1",
+                    savedAt: "2026-08-09T12:00:00Z",
+                    place: SavedPlace.PlaceSummary(
+                        id: "place-1",
+                        slug: "old-library",
+                        name: "Old Library",
+                        kind: "building",
+                        city: "dublin",
+                        emoji: "📚"
+                    )
+                ),
+            ] },
+            saveWriter: { _, _ in },
+            removeWriter: { _, _ in }
+        )
+
+        await store.load()
+        XCTAssertTrue(store.hasSaved("place-1"))
+        XCTAssertEqual(store.savedCount, 1)
+        XCTAssertEqual(store.entries.first?.displayName, "Old Library")
+
+        signedIn = false
+        await store.load(force: true)
+        XCTAssertFalse(store.hasSaved("place-1"))
+        XCTAssertEqual(store.savedCount, 0)
+        XCTAssertTrue(store.loaded)
+    }
+
+    func testSavedPlaceStoreDoesNotWriteWhenSignedOut() async {
+        var writes = 0
+        let store = SavedPlaceStore(
+            credentials: { nil },
+            savedPlacesLoader: { _ in [] },
+            saveWriter: { _, _ in writes += 1 },
+            removeWriter: { _, _ in writes += 1 }
+        )
+
+        let result = await store.save(placeID: "place-1")
+
+        XCTAssertEqual(result, .signedOut)
+        XCTAssertEqual(writes, 0)
+        XCTAssertFalse(store.hasSaved("place-1"))
+    }
+
+    func testSavedPlaceStoreRollsBackFailedOptimisticSave() async {
+        let store = SavedPlaceStore(
+            credentials: { ("traveler", "token") },
+            savedPlacesLoader: { _ in [] },
+            saveWriter: { _, _ in
+                throw TravelReads.TravelError.http(status: 500, body: "boom")
+            },
+            removeWriter: { _, _ in }
+        )
+
+        let result = await store.save(placeID: "place-1")
+
+        XCTAssertFalse(store.hasSaved("place-1"))
+        guard case .failed(let message) = result else {
+            XCTFail("Expected a failed save")
+            return
+        }
+        XCTAssertTrue(message.contains("500"))
+    }
+
     func testCollectionsOnlyAppearWithEnoughRealMatches() {
         let onePark = [place(id: "1", kind: "park")]
         XCTAssertFalse(PlaceCollection.available(in: onePark).contains(.nature))

@@ -10,6 +10,7 @@ struct ProfileScreen: View {
     @Environment(AuthService.self) private var auth
     @Environment(EntitlementStore.self) private var entitlements
     @Environment(StoreKitService.self) private var store
+    @Environment(SavedPlaceStore.self) private var savedPlaces
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var showSignIn = false
     @State private var showPaywall = false
@@ -361,6 +362,16 @@ struct ProfileScreen: View {
             }
 
             NavigationLink {
+                SavedPlacesView()
+            } label: {
+                profileActionRow(
+                    "Saved places",
+                    detail: savedPlacesDetail,
+                    icon: "bookmark.fill"
+                )
+            }
+
+            NavigationLink {
                 PassportView()
             } label: {
                 profileActionRow(
@@ -419,6 +430,13 @@ struct ProfileScreen: View {
         }
         .padding(.vertical, 3)
         .accessibilityElement(children: .combine)
+    }
+
+    private var savedPlacesDetail: String {
+        guard auth.isSignedIn else { return "Sign in to keep your want-to-go list" }
+        let count = savedPlaces.savedCount
+        guard count > 0 else { return "Build a want-to-go list from place cards" }
+        return "\(count) saved \(count == 1 ? "place" : "places") for the next walk"
     }
 
     private var aboutSection: some View {

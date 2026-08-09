@@ -5,10 +5,12 @@ import Foundation
 /// any existing file. Same posture as `LoreAPI`: anon `apikey` on every request,
 /// a user bearer token where RLS needs `auth.uid()` (`visit`, `user_prefs`).
 ///
-/// Two calls live here:
+/// Calls live here for the user-owned travel loop:
 /// - `visits(accessToken:)`, hydrate the "Been here" set (`GET /visit`).
 /// - `updateHiddenKinds(_:accessToken:)`, persist the map filter chips'
 ///   category toggles to `user_prefs.hidden_kinds` (`PATCH /user_prefs`).
+/// - `savedPlaces`, `savePlace`, and `removeSavedPlace`, the future-tense
+///   want-to-go list backed by `saved_place`.
 ///
 /// When the shared client grows these (a natural addition to `LoreAPI`), the
 /// call sites here can be repointed and this file deleted.
@@ -60,6 +62,109 @@ enum TravelReads {
         } catch {
             throw TravelError.decoding(error)
         }
+    }
+
+    /// The signed-in user's saved places with a light embedded place summary.
+    /// `GET /rest/v1/saved_place?select=user_id,place_id,saved_at,note,rating,place(id,slug,name,kind,city,emoji)&order=saved_at.desc`
+    static func savedPlaces(
+        accessToken: String,
+        session: URLSession = .shared
+    ) async throws -> [SavedPlace] {
+        var components = URLComponents(
+            url: Config.restURL.appending(path: "saved_place"),
+            resolvingAgainstBaseURL: false
+        )
+        components?.queryItems = [
+            URLQueryItem(name: "select", value: "user_id,place_id,saved_at,note,rating,place(id,slug,name,kind,city,emoji)"),
+            URLQueryItem(name: "order", value: "saved_at.desc"),
+        ]
+        guard let url = components?.url else { throw TravelError.badURL }
+
+        let pageSize = 200
+        var lowerBound = 0
+        var saved: [SavedPlace] = []
+
+        while true {
+            var request = URLRequest(url: url)
+            request.httpMethod = "GET"
+            apply(&request, accessToken: accessToken)
+            request.setValue("application/json", forHTTPHeaderField: "Accept")
+            request.setValue("items", forHTTPHeaderField: "Range-Unit")
+            request.setValue(
+                "\(lowerBound)-\(lowerBound + pageSize - 1)",
+                forHTTPHeaderField: "Range"
+            )
+
+            let (data, response) = try await session.data(for: request)
+            try ensureOK(response, data: data)
+            let page: [SavedPlace]
+            do {
+                page = try JSONDecoder().decode([SavedPlace].self, from: data)
+            } catch {
+                throw TravelError.decoding(error)
+            }
+            saved.append(contentsOf: page)
+            if page.count < pageSize { return saved }
+            lowerBound += pageSize
+        }
+    }
+
+    /// Save a future-tense place. `user_id` defaults to `auth.uid()`, and the
+    /// upsert ignores a duplicate tap without touching existing note/rating.
+    /// `POST /rest/v1/saved_place?on_conflict=user_id,place_id` `{ "place_id": "..." }`
+    static func savePlace(
+        placeID: String,
+        accessToken: String,
+        session: URLSession = .shared
+    ) async throws {
+        var components = URLComponents(
+            url: Config.restURL.appending(path: "saved_place"),
+            resolvingAgainstBaseURL: false
+        )
+        components?.queryItems = [
+            URLQueryItem(name: "on_conflict", value: "user_id,place_id"),
+        ]
+        guard let url = components?.url else { throw TravelError.badURL }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        apply(&request, accessToken: accessToken)
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("resolution=ignore-duplicates,return=minimal", forHTTPHeaderField: "Prefer")
+        do {
+            request.httpBody = try JSONSerialization.data(withJSONObject: ["place_id": placeID])
+        } catch {
+            throw TravelError.encoding(error)
+        }
+
+        let (data, response) = try await session.data(for: request)
+        try ensureOK(response, data: data)
+    }
+
+    /// Remove one saved place. RLS scopes the delete to the caller's own row.
+    /// `DELETE /rest/v1/saved_place?place_id=eq.{placeID}`
+    static func removeSavedPlace(
+        placeID: String,
+        accessToken: String,
+        session: URLSession = .shared
+    ) async throws {
+        var components = URLComponents(
+            url: Config.restURL.appending(path: "saved_place"),
+            resolvingAgainstBaseURL: false
+        )
+        components?.queryItems = [
+            URLQueryItem(name: "place_id", value: "eq.\(placeID)"),
+        ]
+        guard let url = components?.url else { throw TravelError.badURL }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        apply(&request, accessToken: accessToken)
+        request.setValue("return=minimal", forHTTPHeaderField: "Prefer")
+
+        let (data, response) = try await session.data(for: request)
+        try ensureOK(response, data: data)
     }
 
     /// Persist just the `hidden_kinds` array (the map filter chips' one hard

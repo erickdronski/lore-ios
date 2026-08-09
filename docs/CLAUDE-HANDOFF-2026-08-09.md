@@ -8,7 +8,12 @@ Lore only. Do not mix Nalee, Tapt, Scout, or other portfolio projects into this 
 
 - Repo: `/Users/dron/Projects/lore-ios`
 - Branch: `codex/lore-next-level-20260809`
-- Current head: `d729cef21865737f5ee52c5dcc6f362689222731` (`Promote richer city field briefs`)
+- Current branch head: verify with `git rev-parse HEAD`; this file is updated
+  on the branch as the takeover log evolves.
+- Saved-place continuation started from handoff-only head
+  `a411de655602828dc0f101fd6ed76531f99e7c0e`.
+- Last feature head before the saved-place continuation:
+  `d729cef21865737f5ee52c5dcc6f362689222731` (`Promote richer city field briefs`)
 - GitHub PR: `https://github.com/erickdronski/lore-ios/pull/40`
 - Base: `origin/main` at `466fd05` (`Journal: per-photo delete, remove-memory, server-enforced 12-photo cap`)
 
@@ -75,6 +80,15 @@ Lore only. Do not mix Nalee, Tapt, Scout, or other portfolio projects into this 
     relying on MapKit's retained selected pin id. This fixes the reported bug
     where closing a place card could leave the entire map dimmed/blurred.
 
+12. The existing `saved_place` Supabase contract is now wired into the app as a
+    real want-to-go loop:
+    - every place card has a bookmark save/remove control
+    - `SavedPlaceStore` hydrates owner-scoped saves, handles optimistic writes,
+      rolls back failed writes, and resets on sign-out/session changes
+    - Profile now has a `Saved places` field-kit entry and a saved-list view
+      that opens the real database-backed place dossier
+    - signed-out taps nudge sign-in instead of silently pretending to save
+
 ## Files Changed
 
 - `Sources/Lore/App/LoreApp.swift`
@@ -90,12 +104,17 @@ Lore only. Do not mix Nalee, Tapt, Scout, or other portfolio projects into this 
 - `Sources/Lore/Features/Scanner/ScannerScreen.swift`
 - `Sources/Lore/Features/Profile/ProfileJourneyModel.swift`
 - `Sources/Lore/Features/Profile/ProfileScreen.swift`
+- `Sources/Lore/Features/Profile/SavedPlacesView.swift`
 - `Sources/Lore/Models/Place.swift`
+- `Sources/Lore/Models/SavedPlace.swift`
 - `Sources/Lore/Models/CitySection.swift`
+- `Sources/Lore/Features/Travel/SavePlaceButton.swift`
+- `Sources/Lore/Features/Travel/SavedPlaceStore.swift`
 - `Sources/LoreTests/CitySectionTests.swift`
 - `Sources/LoreTests/ExplorationJourneyTests.swift`
 - `Sources/LoreTests/ScannerLogicTests.swift`
 - `Sources/LoreTests/ProfileAccountTests.swift`
+- `Sources/LoreTests/TravelReadsTests.swift`
 
 ## Validation
 
@@ -135,6 +154,22 @@ xcodebuild test -project Lore.xcodeproj -scheme Lore -destination 'platform=iOS 
 Result: `** TEST SUCCEEDED **` with 13 tests.
 
 Also passed:
+
+```sh
+git diff --check
+```
+
+Saved-place continuation validation:
+
+```sh
+xcodebuild test -project Lore.xcodeproj -scheme Lore -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:LoreTests/TravelReadsTests -only-testing:LoreTests/ExplorationJourneyTests -only-testing:LoreTests/ProfileAccountTests
+```
+
+Result: `** TEST SUCCEEDED **` with 42 focused tests, including the saved-place
+PostgREST contract, optimistic save rollback, signed-out behavior, existing
+Discovery Deck regressions, and Profile account tests.
+
+Also passed after the saved-place patch:
 
 ```sh
 git diff --check
@@ -197,12 +232,15 @@ CLI PR/check commands.
 
 1. Review and merge this branch after CI.
 2. Run a broader simulator build/test pass before TestFlight.
-3. Verify the Discovery Deck/Around Me dock clipping fix on a real device with
+3. Verify the saved-place loop on a signed-in physical device: save from a place
+   card, see it in Profile -> Saved places, reopen the dossier, remove it, sign
+   out, and confirm the list clears.
+4. Verify the Discovery Deck/Around Me dock clipping fix on a real device with
    the latest build, specifically that the visit toggle clears the floating tab
    dock when expanded.
-4. Verify App Store Connect status and whether the latest code has actually reached TestFlight.
-5. Continue content depth waves, prioritizing thin cities and the richer section kinds that now power the Meet City field brief.
-6. Use the backend `low-place-floor-001` canary recommendation before claiming
+5. Verify App Store Connect status and whether the latest code has actually reached TestFlight.
+6. Continue content depth waves, prioritizing thin cities and the richer section kinds that now power the Meet City field brief.
+7. Use the backend `low-place-floor-001` canary recommendation before claiming
    that the empty-city feeling is fixed: +1 place each for Nashville, Seoul,
    Santiago, Nairobi, and Wellington, and +9 places for Stone Town, staged
    through the reviewed content lane rather than direct public writes.

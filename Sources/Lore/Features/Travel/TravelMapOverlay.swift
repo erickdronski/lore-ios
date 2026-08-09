@@ -237,6 +237,7 @@ enum TravelMapDeckLayout {
 @MainActor
 final class TravelSession {
     let visits: VisitStore
+    let savedPlaces: SavedPlaceStore
     let filters: MapFilterStore
 
     /// The queue the host raises an `UnlockCelebration` for. Set by the
@@ -247,6 +248,7 @@ final class TravelSession {
     ///   out, usually `{ auth.session.map { ($0.user.id, $0.accessToken) } }`.
     init(credentials: @escaping () -> (userID: String, accessToken: String)?) {
         self.visits = VisitStore(credentials: credentials)
+        self.savedPlaces = SavedPlaceStore(credentials: credentials)
         self.filters = MapFilterStore(credentials: credentials)
         // Now that both stored properties exist, `self` is fully initialized —
         // wire the unlock bridge so a logged visit raises the celebration queue.
@@ -260,6 +262,7 @@ final class TravelSession {
     func bootstrap(prefs: UserPrefs?) async {
         filters.adopt(prefs: prefs)
         await visits.load()
+        await savedPlaces.load()
     }
 
     /// A `MapRelevance` for the current prefs and filter state.

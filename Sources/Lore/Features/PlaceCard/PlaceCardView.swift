@@ -523,7 +523,10 @@ struct PlaceCardView: View {
                 if let year = place.layer1?.yearBuilt {
                     YearChip(year: year, accent: accent)
                 }
-                shareButton
+                HStack(spacing: 8) {
+                    SavePlaceButton(place: place, onNeedsSignIn: { showSignIn = true })
+                    shareButton
+                }
             }
         }
     }

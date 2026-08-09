@@ -42,6 +42,99 @@ final class TravelReadsTests: XCTestCase {
         )
     }
 
+    func testSavedPlacesReadUsesOwnerScopedJoinAndPagingHeaders() async throws {
+        TravelReadsURLProtocol.handler = { request in
+            XCTAssertEqual(request.httpMethod, "GET")
+            XCTAssertEqual(request.url?.path, "/rest/v1/saved_place")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer token-123")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Range-Unit"), "items")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Range"), "0-199")
+
+            let query = request.url?.query?.removingPercentEncoding ?? ""
+            XCTAssertTrue(query.contains("select=user_id,place_id,saved_at,note,rating,place(id,slug,name,kind,city,emoji)"))
+            XCTAssertTrue(query.contains("order=saved_at.desc"))
+
+            let response = try XCTUnwrap(HTTPURLResponse(
+                url: try XCTUnwrap(request.url),
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: ["Content-Type": "application/json"]
+            ))
+            return (response, Data(#"[{"user_id":"u1","place_id":"p1","saved_at":"2026-08-09T12:00:00Z","place":{"id":"p1","slug":"library","name":"Old Library","kind":"building","city":"dublin","emoji":"📚"}}]"#.utf8))
+        }
+
+        let rows = try await TravelReads.savedPlaces(
+            accessToken: "token-123",
+            session: makeSession()
+        )
+
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertEqual(rows.first?.placeID, "p1")
+        XCTAssertEqual(rows.first?.displayName, "Old Library")
+        XCTAssertEqual(rows.first?.displayCity, "Dublin")
+    }
+
+    func testSavePlacePostsPlaceOnlyWithDuplicateSafeContract() async throws {
+        let placeID = "7c26d345-a8c0-43b9-b56b-f7c58b6da972"
+
+        TravelReadsURLProtocol.handler = { request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.path, "/rest/v1/saved_place")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer token-123")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Content-Type"), "application/json")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Prefer"), "resolution=ignore-duplicates,return=minimal")
+
+            let query = request.url?.query?.removingPercentEncoding ?? ""
+            XCTAssertTrue(query.contains("on_conflict=user_id,place_id"))
+
+            let body = try self.requestBody(request)
+            let json = try XCTUnwrap(
+                JSONSerialization.jsonObject(with: body) as? [String: String]
+            )
+            XCTAssertEqual(json, ["place_id": placeID])
+
+            let response = try XCTUnwrap(HTTPURLResponse(
+                url: try XCTUnwrap(request.url),
+                statusCode: 201,
+                httpVersion: nil,
+                headerFields: ["Content-Type": "application/json"]
+            ))
+            return (response, Data())
+        }
+
+        try await TravelReads.savePlace(
+            placeID: placeID,
+            accessToken: "token-123",
+            session: makeSession()
+        )
+    }
+
+    func testRemoveSavedPlaceDeletesOnlyTheSelectedPlace() async throws {
+        let placeID = "7c26d345-a8c0-43b9-b56b-f7c58b6da972"
+
+        TravelReadsURLProtocol.handler = { request in
+            XCTAssertEqual(request.httpMethod, "DELETE")
+            XCTAssertEqual(request.url?.path, "/rest/v1/saved_place")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer token-123")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Prefer"), "return=minimal")
+            XCTAssertEqual(request.url?.query?.removingPercentEncoding, "place_id=eq.\(placeID)")
+
+            let response = try XCTUnwrap(HTTPURLResponse(
+                url: try XCTUnwrap(request.url),
+                statusCode: 204,
+                httpVersion: nil,
+                headerFields: nil
+            ))
+            return (response, Data())
+        }
+
+        try await TravelReads.removeSavedPlace(
+            placeID: placeID,
+            accessToken: "token-123",
+            session: makeSession()
+        )
+    }
+
     func testStoreJournalPhotoDeletesUploadWhenDatabaseAppendFails() async throws {
         let placeID = "7c26d345-a8c0-43b9-b56b-f7c58b6da972"
         let lock = NSLock()
