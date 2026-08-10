@@ -16,6 +16,8 @@ on:
       - "StoreKit/**"
       - "fastlane/**"
       - "Gemfile*"
+      - "scripts/verify-edge-function-contracts.mjs"
+      - "supabase/functions/**"
       - ".github/workflows/ios-testflight.yml"
   pull_request:
     paths:
@@ -24,6 +26,8 @@ on:
       - "StoreKit/**"
       - "fastlane/**"
       - "Gemfile*"
+      - "scripts/verify-edge-function-contracts.mjs"
+      - "supabase/functions/**"
       - ".github/workflows/ios-testflight.yml"
   workflow_dispatch:
     inputs:

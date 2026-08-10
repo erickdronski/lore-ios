@@ -17,6 +17,14 @@ function requireText(source, needle, label) {
   }
 }
 
+function forbidText(source, needle, label) {
+  if (source.includes(needle)) {
+    console.error(`Edge contract failed: ${label}`);
+    console.error(`Forbidden: ${needle}`);
+    process.exitCode = 1;
+  }
+}
+
 const landmark = read("supabase/functions/landmark-id/index.ts");
 const plus = read("supabase/functions/_shared/plusEntitlement.mjs");
 
@@ -54,6 +62,26 @@ requireText(
   landmark,
   "place_city: matchedPlace?.city ?? null",
   "landmark-id response must include place_city",
+);
+requireText(
+  landmark,
+  'JSON.stringify({ error: "vision failed" })',
+  "landmark-id must return a generic Vision failure to clients",
+);
+requireText(
+  landmark,
+  'console.error("vision request failed", e);',
+  "landmark-id must keep Vision exceptions in server logs",
+);
+forbidText(
+  landmark,
+  "String(e)",
+  "landmark-id must not return stack trace text to clients",
+);
+forbidText(
+  landmark,
+  "json?.error?.message",
+  "landmark-id must not return raw provider messages to clients",
 );
 requireText(
   plus,
