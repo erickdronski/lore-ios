@@ -168,8 +168,8 @@ struct SignInView: View {
 
     @ViewBuilder
     private var policyLinks: some View {
-        Link("Terms of Use", destination: URL(string: "https://lore-web-liart.vercel.app/terms")!)
-        Link("Privacy Policy", destination: URL(string: "https://lore-web-liart.vercel.app/privacy")!)
+        Link("Terms of Use", destination: ProfileSupportLinks.terms)
+        Link("Privacy Policy", destination: ProfileSupportLinks.privacy)
     }
 
     private var accountCreationConsent: some View {

@@ -21,49 +21,56 @@ struct StoryMarker: View {
     private var isHiddenFind: Bool { projected.story.isHiddenFind }
 
     var body: some View {
-        VStack(spacing: 4) {
-            // The tether disc, smaller than a place pin, dashed ring so it
-            // reads as "a moment here", not "a building here". A hidden find
-            // earns a solid amber ring + ✦: a secret worth walking to, still
-            // lighter than any place pin.
-            ZStack {
-                Circle()
-                    .fill(LoreColor.ink.opacity(isHaunted ? 0.55 : 0.72))
-                    .frame(width: 26, height: 26)
-                Circle()
-                    .strokeBorder(
-                        LoreColor.amber.opacity(isHaunted ? 0.5 : isHiddenFind ? 1.0 : 0.8),
-                        style: isHiddenFind
-                            ? StrokeStyle(lineWidth: 1.5)
-                            : StrokeStyle(lineWidth: 1, dash: [3, 2])
-                    )
-                    .frame(width: 26, height: 26)
-                Text(projected.story.displayEmoji)
-                    .font(.system(size: 13))
-                if isHiddenFind {
-                    Text("✦")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(LoreColor.amber)
-                        .offset(x: 11, y: -11)
+        Button {
+            Haptics.play(.chipTap)
+            onTap()
+        } label: {
+            VStack(spacing: 4) {
+                // The tether disc, smaller than a place pin, dashed ring so it
+                // reads as "a moment here", not "a building here". A hidden find
+                // earns a solid amber ring + ✦: a secret worth walking to, still
+                // lighter than any place pin.
+                ZStack {
+                    Circle()
+                        .fill(LoreColor.ink.opacity(isHaunted ? 0.55 : 0.72))
+                        .frame(width: 26, height: 26)
+                    Circle()
+                        .strokeBorder(
+                            LoreColor.amber.opacity(isHaunted ? 0.5 : isHiddenFind ? 1.0 : 0.8),
+                            style: isHiddenFind
+                                ? StrokeStyle(lineWidth: 1.5)
+                                : StrokeStyle(lineWidth: 1, dash: [3, 2])
+                        )
+                        .frame(width: 26, height: 26)
+                    Text(projected.story.displayEmoji)
+                        .font(.system(size: 13))
+                    if isHiddenFind {
+                        Text("✦")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(LoreColor.amber)
+                            .offset(x: 11, y: -11)
+                    }
                 }
-            }
 
-            // The one-line hook: "On this corner, 1934…", year + a taste of
-            // the title, deliberately terse (the full narrative is the sheet).
-            Text(hookLine)
-                .font(LoreType.caption)
-                .foregroundStyle(LoreColor.bone)
-                .lineLimit(1)
-                // Clamp the width so a long, undated story title truncates with
-                // an ellipsis instead of running off the screen edge.
-                .frame(maxWidth: 220)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(
-                    (isHaunted ? LoreColor.scrimSky : LoreColor.scrimFacade),
-                    in: Capsule()
-                )
+                // The one-line hook: "On this corner, 1934…", year + a taste of
+                // the title, deliberately terse (the full narrative is the sheet).
+                Text(hookLine)
+                    .font(LoreType.caption)
+                    .foregroundStyle(LoreColor.bone)
+                    .lineLimit(1)
+                    // Clamp the width so a long, undated story title truncates with
+                    // an ellipsis instead of running off the screen edge.
+                    .frame(maxWidth: 220)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        (isHaunted ? LoreColor.scrimSky : LoreColor.scrimFacade),
+                        in: Capsule()
+                    )
+            }
+            .frame(minWidth: 44, minHeight: 44)
         }
+        .buttonStyle(.plain)
         .scaleEffect(bloomed ? 1 : 0.6)
         .opacity(bloomed ? 1 : 0)
         .onAppear {
@@ -72,13 +79,8 @@ struct StoryMarker: View {
             }
         }
         .contentShape(Rectangle())
-        .onTapGesture {
-            Haptics.play(.chipTap)
-            onTap()
-        }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(Text(accessibilityLine))
-        .accessibilityAddTraits(.isButton)
     }
 
     /// "On this corner, 1934" style lead. Uses the curated `year_label` when

@@ -36,7 +36,6 @@ struct PaywallView: View {
     @State private var appeared = false
     @State private var showManageSubscriptions = false
     @State private var showSignIn = false
-    @State private var pendingProductAfterSignIn: String?
 
     var body: some View {
         ZStack {
@@ -76,11 +75,6 @@ struct PaywallView: View {
         .manageSubscriptionsSheet(isPresented: $showManageSubscriptions)
         .sheet(isPresented: $showSignIn) {
             SignInView()
-        }
-        .onChange(of: auth.session?.user.id) { _, newValue in
-            guard newValue != nil, let productID = pendingProductAfterSignIn else { return }
-            pendingProductAfterSignIn = nil
-            Task { await purchase(productID: productID) }
         }
         .onAppear {
             appeared = true
@@ -361,11 +355,13 @@ struct PaywallView: View {
                     .frame(height: 56)
                 }
                 .buttonStyle(.plain)
-                .disabled(auth.isSignedIn && !model.canPurchaseSelectedPlan)
-                .opacity(!auth.isSignedIn || model.canPurchaseSelectedPlan ? 1 : 0.62)
+                .disabled(!model.canPurchaseSelectedPlan)
+                .opacity(model.canPurchaseSelectedPlan ? 1 : 0.62)
                 .accessibilityLabel(auth.isSignedIn
                     ? model.purchaseAccessibilityLabel
-                    : "Sign in to continue to Lore plus")
+                    : model.canPurchaseSelectedPlan
+                        ? "Sign in to continue to Lore plus"
+                        : "Lore plus options unavailable")
                 .accessibilityHint("Apple shows a confirmation sheet before any purchase is completed")
 
                 if auth.isSignedIn {
@@ -468,13 +464,13 @@ struct PaywallView: View {
     private var legalLinks: some View {
         ViewThatFits(in: .horizontal) {
             HStack(spacing: 14) {
-                Link("Terms of Use", destination: URL(string: "https://lore-web-liart.vercel.app/terms")!)
+                Link("Terms of Use", destination: ProfileSupportLinks.terms)
                 Text("·").foregroundStyle(LoreColor.ink700)
-                Link("Privacy Policy", destination: URL(string: "https://lore-web-liart.vercel.app/privacy")!)
+                Link("Privacy Policy", destination: ProfileSupportLinks.privacy)
             }
             VStack(spacing: 10) {
-                Link("Terms of Use", destination: URL(string: "https://lore-web-liart.vercel.app/terms")!)
-                Link("Privacy Policy", destination: URL(string: "https://lore-web-liart.vercel.app/privacy")!)
+                Link("Terms of Use", destination: ProfileSupportLinks.terms)
+                Link("Privacy Policy", destination: ProfileSupportLinks.privacy)
             }
         }
         .font(LoreType.caption)
@@ -510,9 +506,16 @@ struct PaywallView: View {
     }
 
     private func purchase(productID: String) async {
+        guard store.product(for: productID) != nil else {
+            _ = await model.purchase(productID: productID)
+            UIAccessibility.post(
+                notification: .announcement,
+                argument: model.purchaseError ?? "That option isn't available from the App Store right now."
+            )
+            return
+        }
         guard let userID = auth.session?.user.id,
               let accountUUID = UUID(uuidString: userID) else {
-            pendingProductAfterSignIn = productID
             showSignIn = true
             return
         }

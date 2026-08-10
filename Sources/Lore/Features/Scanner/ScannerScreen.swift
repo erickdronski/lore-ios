@@ -265,7 +265,15 @@ struct ScannerScreen: View {
     @ViewBuilder
     private func lockedPin(size: CGSize) -> some View {
         if let locked = model.lockedRanked {
-            LockedPin(ranked: locked)
+            Button {
+                Haptics.play(.dossierOpen)
+                model.select(locked.place)
+            } label: {
+                LockedPin(ranked: locked)
+                    .frame(minWidth: 44, minHeight: 44)
+            }
+            .buttonStyle(.plain)
+            .contentShape(Rectangle())
                 .position(
                     x: chipX(fraction: locked.projected.screenFraction, width: size.width),
                     y: size.height * 0.42
@@ -277,10 +285,6 @@ struct ScannerScreen: View {
                     reduceMotion ? nil : LoreSpring.smoothInteractive,
                     value: locked.projected.screenFraction
                 )
-                .onTapGesture {
-                    Haptics.play(.dossierOpen)
-                    model.select(locked.place)
-                }
                 // Lands with `spring.bounce` (a lock is an arrival) and leaves on
                 // a crossfade; the `.rigid` lock haptic fires in the model.
                 .transition(.scale(scale: 0.6).combined(with: .opacity))
@@ -297,7 +301,15 @@ struct ScannerScreen: View {
     private var geoPins: some View {
         GeometryReader { proxy in
             ForEach(model.geoARPins) { display in
-                GeoLockedPin(place: display.place, distanceM: display.pin.distanceM)
+                Button {
+                    Haptics.play(.dossierOpen)
+                    model.select(display.place)
+                } label: {
+                    GeoLockedPin(place: display.place, distanceM: display.pin.distanceM)
+                        .frame(minWidth: 44, minHeight: 44)
+                }
+                .buttonStyle(.plain)
+                .contentShape(Rectangle())
                     .position(clampToSafeBounds(display.pin.screenPoint, in: proxy.size))
                     // Track the projection on an interruptible spring so the
                     // 10 Hz snapshots read as smooth world-lock, never jitter.
@@ -305,10 +317,6 @@ struct ScannerScreen: View {
                         reduceMotion ? nil : LoreSpring.smoothInteractive,
                         value: display.pin.screenPoint
                     )
-                    .onTapGesture {
-                        Haptics.play(.dossierOpen)
-                        model.select(display.place)
-                    }
                     .transition(.scale(scale: 0.6).combined(with: .opacity))
             }
             .animation(
@@ -343,8 +351,14 @@ struct ScannerScreen: View {
                         model.confirmFromStack(confirmed)
                     }
                 } else {
-                    BearingChip(ranked: cluster.lead, showArrow: false)
-                        .onTapGesture { model.select(cluster.lead.place) }
+                    Button {
+                        model.select(cluster.lead.place)
+                    } label: {
+                        BearingChip(ranked: cluster.lead, showArrow: false)
+                            .frame(minWidth: 44, minHeight: 44)
+                    }
+                    .buttonStyle(.plain)
+                    .contentShape(Rectangle())
                 }
             }
             .position(
@@ -555,8 +569,14 @@ struct ScannerScreen: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 ForEach(model.directionalCandidates) { ranked in
-                    BearingChip(ranked: ranked, showArrow: true)
-                        .onTapGesture { model.select(ranked.place) }
+                    Button {
+                        model.select(ranked.place)
+                    } label: {
+                        BearingChip(ranked: ranked, showArrow: true)
+                            .frame(minWidth: 44, minHeight: 44)
+                    }
+                    .buttonStyle(.plain)
+                    .contentShape(Rectangle())
                 }
             }
             .padding(.horizontal, 16)
