@@ -91,16 +91,21 @@ struct TravelMapControls: View {
         }
         .padding(.top, 6)
         .padding(.bottom, 10)
-        .padding(.bottom, TravelMapDeckLayout.bottomClearance(collapsed: collapsed))
         .background(
             // The ink fade only exists to keep the shelf text legible over the
             // map. When collapsed there is nothing to protect, so it disappears
             // entirely, leaving just the floating "Around you" pill over a clean
-            // map (no lingering grey haze).
+            // map (no lingering grey haze). The deck/dock clearance sits outside
+            // this background so the space above the tab bar remains map, not a
+            // separate dark section.
             Group {
                 if !collapsed {
                     LinearGradient(
-                        colors: [LoreColor.ink900.opacity(0), LoreColor.ink900.opacity(0.92)],
+                        stops: [
+                            .init(color: LoreColor.ink900.opacity(0), location: 0),
+                            .init(color: LoreColor.ink900.opacity(0.28), location: 0.42),
+                            .init(color: LoreColor.ink900.opacity(0.76), location: 1)
+                        ],
                         startPoint: .top,
                         endPoint: .bottom
                     )
@@ -108,6 +113,7 @@ struct TravelMapControls: View {
                 }
             }
         )
+        .padding(.bottom, TravelMapDeckLayout.bottomClearance(collapsed: collapsed))
         .onAppear { filters.syncCategories(from: places) }
         .onChange(of: places) { _, newValue in
             filters.syncCategories(from: newValue)
@@ -213,10 +219,11 @@ struct TravelMapControls: View {
 
 enum TravelMapDeckLayout {
     /// The collapsed pill should sit close to the dock; it is a launcher, not a
-    /// panel. The expanded deck needs a real landing zone so card footers and
-    /// visit toggles do not disappear beneath the floating tab bar.
+    /// panel. The expanded deck only reserves the dock height still needed after
+    /// TabView safe-area accounting; keeping this tight prevents the empty
+    /// gradient band under the card row.
     static let collapsedBottomClearance: CGFloat = 16
-    static let expandedBottomClearance: CGFloat = 78
+    static let expandedBottomClearance: CGFloat = 60
 
     static func bottomClearance(collapsed: Bool) -> CGFloat {
         collapsed ? collapsedBottomClearance : expandedBottomClearance
