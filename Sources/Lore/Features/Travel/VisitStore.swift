@@ -60,6 +60,9 @@ final class VisitStore {
     /// Signed Storage URLs are valid for an hour. Keep them for 50 minutes so
     /// scrolling the journal does not re-sign every thumbnail on every appear.
     private var photoURLCache: [String: CachedPhotoURL] = [:]
+    /// Freshly uploaded private photos should render immediately, even before
+    /// Supabase signs and serves the object back to `AsyncImage`.
+    private var photoPreviewCache: [String: Data] = [:]
     private let visitsLoader: VisitsLoader
     private let visitHistoryLoader: VisitHistoryLoader
 
@@ -176,22 +179,23 @@ final class VisitStore {
 
     /// Upload a journal photo for a place, append its path, and refresh.
     @discardableResult
-    func addPhoto(placeID: String, imageData: Data) async -> Bool {
+    func addPhoto(placeID: String, imageData: Data) async -> String? {
         guard let creds = credentials() else {
             lastError = "Sign in to add a journal photo."
-            return false
+            return nil
         }
         do {
             lastError = nil
-            try await TravelReads.storeJournalPhoto(
+            let path = try await TravelReads.storeJournalPhoto(
                 data: imageData, userID: creds.userID, placeID: placeID, accessToken: creds.accessToken
             )
+            photoPreviewCache[path] = imageData
             await settleAchievements(for: creds)
             await loadHistory(force: true)
-            return true
+            return path
         } catch {
             lastError = "Couldn't add that photo."
-            return false
+            return nil
         }
     }
 
@@ -205,6 +209,8 @@ final class VisitStore {
         do {
             lastError = nil
             try await TravelReads.removeVisitPhoto(placeID: placeID, path: path, accessToken: creds.accessToken)
+            photoURLCache.removeValue(forKey: path)
+            photoPreviewCache.removeValue(forKey: path)
             await loadHistory(force: true)
             return true
         } catch {
@@ -225,6 +231,10 @@ final class VisitStore {
             lastError = nil
             try await TravelReads.deleteVisit(placeID: placeID, photoPaths: photoPaths, accessToken: creds.accessToken)
             visitedPlaceIDs.remove(placeID)
+            for path in photoPaths {
+                photoURLCache.removeValue(forKey: path)
+                photoPreviewCache.removeValue(forKey: path)
+            }
             await settleAchievements(for: creds)
             await loadHistory(force: true)
             return true
@@ -251,6 +261,12 @@ final class VisitStore {
             expiresAt: Date().addingTimeInterval(50 * 60)
         )
         return url
+    }
+
+    /// Local preview bytes for a newly uploaded private photo. This is only a
+    /// display cache; the durable source of truth remains Storage + visit.photos.
+    func cachedPhotoPreview(path: String) -> Data? {
+        photoPreviewCache[path]
     }
 
     /// Clear a stale public flag from an older client before saving the private

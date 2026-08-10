@@ -501,9 +501,26 @@ enum TravelReads {
         try ensureOK(response, data: data)
         struct Signed: Decodable { let signedURL: String }
         let signed = try JSONDecoder().decode(Signed.self, from: data)
-        // The response is a path relative to the storage base ("/object/sign/...").
-        let relative = signed.signedURL.hasPrefix("/") ? String(signed.signedURL.dropFirst()) : signed.signedURL
-        guard let full = URL(string: Config.storageURL.absoluteString + "/" + relative) else { throw TravelError.badURL }
+        return try storageSignedURL(from: signed.signedURL)
+    }
+
+    static func storageSignedURL(from signedURL: String) throws -> URL {
+        let raw = signedURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !raw.isEmpty else { throw TravelError.badURL }
+        if let absolute = URL(string: raw), absolute.scheme != nil {
+            return absolute
+        }
+
+        let relative = raw.hasPrefix("/") ? String(raw.dropFirst()) : raw
+        let base: URL
+        if relative.hasPrefix("storage/v1/") {
+            base = Config.supabaseURL
+        } else {
+            base = Config.storageURL
+        }
+        guard let full = URL(string: base.absoluteString + "/" + relative) else {
+            throw TravelError.badURL
+        }
         return full
     }
 

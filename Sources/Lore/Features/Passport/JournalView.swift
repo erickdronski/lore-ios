@@ -561,9 +561,16 @@ struct NoteEditorSheet: View {
     @State private var photoToDelete: String?
     @State private var showDeleteMemoryConfirmation = false
     @State private var deleting = false
+    @State private var localPhotoPaths: [String] = []
+    @State private var pendingPhoto: PendingJournalPhoto?
 
     private let maximumCharacters = JournalDraftPolicy.maximumCharacters
     private let maximumPhotos = 12
+
+    private struct PendingJournalPhoto: Identifiable {
+        let id = UUID()
+        let data: Data
+    }
 
     init(entry: VisitLogEntry, onSave: @escaping (String) async -> Bool) {
         self.entry = entry
@@ -575,8 +582,10 @@ struct NoteEditorSheet: View {
 
     /// Live photos for this place from the store, so an upload shows immediately.
     private var photos: [String] {
-        visits.visitHistory.first(where: { $0.placeID == entry.placeID })?.photoPaths ?? entry.photoPaths
+        let stored = visits.visitHistory.first(where: { $0.placeID == entry.placeID })?.photoPaths ?? entry.photoPaths
+        return Self.uniquePhotoPaths(stored + localPhotoPaths)
     }
+    private var visiblePhotoCount: Int { photos.count + (pendingPhoto == nil ? 0 : 1) }
 
     private var normalizedText: String { JournalDraftPolicy.normalized(text) }
     private var hasUnsavedChanges: Bool {
@@ -598,6 +607,8 @@ struct NoteEditorSheet: View {
                         .foregroundStyle(LoreColor.brass700)
                     TextEditor(text: $text)
                         .font(LoreType.body)
+                        .foregroundStyle(LoreColor.ink)
+                        .tint(LoreColor.brass700)
                         .scrollContentBackground(.hidden)
                         .padding(12)
                         .frame(minHeight: 170)
@@ -638,9 +649,9 @@ struct NoteEditorSheet: View {
                             }
                             .foregroundStyle(LoreColor.brass700)
                         }
-                        .disabled(saving || uploading || photos.count >= maximumPhotos)
+                        .disabled(saving || uploading || visiblePhotoCount >= maximumPhotos)
                     }
-                    if photos.isEmpty {
+                    if photos.isEmpty && pendingPhoto == nil {
                         HStack(spacing: 10) {
                             Image(systemName: "photo.badge.plus")
                                 .font(.system(size: 20, weight: .medium))
@@ -656,6 +667,17 @@ struct NoteEditorSheet: View {
                     } else {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 10) {
+                                if let pendingPhoto {
+                                    LocalJournalPhotoThumb(data: pendingPhoto.data, size: 96)
+                                        .overlay {
+                                            ZStack {
+                                                Color.black.opacity(0.2)
+                                                ProgressView()
+                                                    .tint(LoreColor.bone)
+                                            }
+                                        }
+                                        .accessibilityLabel("Uploading private journal photo")
+                                }
                                 ForEach(photos, id: \.self) { path in
                                     JournalPhotoThumb(path: path, size: 96)
                                         .overlay(alignment: .topTrailing) {
@@ -680,7 +702,7 @@ struct NoteEditorSheet: View {
                     }
 
                     Text(
-                        photos.count >= maximumPhotos
+                        visiblePhotoCount >= maximumPhotos
                             ? "This memory has the maximum of \(maximumPhotos) private photos."
                             : "Photos are private and save immediately when added, even if you cancel the note draft."
                     )
@@ -771,7 +793,9 @@ struct NoteEditorSheet: View {
                 Button("Remove photo", role: .destructive) {
                     if let path = photoToDelete {
                         Task {
-                            if !(await visits.removePhoto(placeID: entry.placeID, path: path)) {
+                            if await visits.removePhoto(placeID: entry.placeID, path: path) {
+                                localPhotoPaths.removeAll { $0 == path }
+                            } else {
                                 sheetError = visits.lastError ?? "Couldn't remove that photo."
                             }
                             photoToDelete = nil
@@ -810,13 +834,20 @@ struct NoteEditorSheet: View {
                             sheetError = "That photo couldn't be prepared for upload."
                             return
                         }
-                        let added = await visits.addPhoto(placeID: entry.placeID, imageData: jpeg)
-                        if !added {
+                        let pending = PendingJournalPhoto(data: jpeg)
+                        pendingPhoto = pending
+                        guard let path = await visits.addPhoto(placeID: entry.placeID, imageData: jpeg) else {
+                            if pendingPhoto?.id == pending.id { pendingPhoto = nil }
                             sheetError = visits.lastError ?? "Couldn't add that photo."
+                            return
                         }
+                        if !localPhotoPaths.contains(path) { localPhotoPaths.append(path) }
+                        if pendingPhoto?.id == pending.id { pendingPhoto = nil }
                     } catch is CancellationError {
+                        pendingPhoto = nil
                         return
                     } catch {
+                        pendingPhoto = nil
                         sheetError = "That photo couldn't be prepared for upload."
                     }
                 }
@@ -856,6 +887,11 @@ struct NoteEditorSheet: View {
         }
 
         dismiss()
+    }
+
+    private static func uniquePhotoPaths(_ paths: [String]) -> [String] {
+        var seen = Set<String>()
+        return paths.filter { seen.insert($0).inserted }
     }
 
     private var editorMasthead: some View {
@@ -984,6 +1020,45 @@ enum JournalDraftPolicy {
     }
 }
 
+/// A just-picked private journal photo. It makes the user's selected image
+/// visible immediately while the durable Storage path and signed URL settle.
+struct LocalJournalPhotoThumb: View {
+    let data: Data
+    var size: CGFloat = 72
+
+    var body: some View {
+        Group {
+            if let image = UIImage(data: data) {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                ZStack {
+                    LinearGradient(
+                        colors: [LoreColor.ink800, LoreColor.ink900],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                    Image(systemName: "photo")
+                        .font(.system(size: 17, weight: .medium))
+                        .foregroundStyle(LoreColor.brass300.opacity(0.75))
+                }
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(LoreColor.bone50, lineWidth: 3)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(LoreColor.bone300.opacity(0.8), lineWidth: 1)
+        )
+        .loreElevation(.elev1)
+    }
+}
+
 /// A private journal photo: resolves a short-lived signed URL for its storage
 /// path (RLS-guarded to the owner) and loads it, with a quiet placeholder.
 struct JournalPhotoThumb: View {
@@ -996,7 +1071,13 @@ struct JournalPhotoThumb: View {
 
     var body: some View {
         Group {
-            if let url {
+            if let data = visits.cachedPhotoPreview(path: path),
+               let image = UIImage(data: data) {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .accessibilityLabel("Private journal photo")
+            } else if let url {
                 AsyncImage(url: url) { phase in
                     switch phase {
                     case .success(let image):

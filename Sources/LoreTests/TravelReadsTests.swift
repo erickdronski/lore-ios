@@ -283,6 +283,35 @@ final class TravelReadsTests: XCTestCase {
         }
     }
 
+    func testStorageSignedURLAcceptsRelativeStoragePath() throws {
+        let url = try TravelReads.storageSignedURL(
+            from: "/object/sign/journal-photos/user-123/place-123/photo.jpg?token=abc"
+        )
+
+        XCTAssertEqual(
+            url.absoluteString,
+            "\(Config.storageURL.absoluteString)/object/sign/journal-photos/user-123/place-123/photo.jpg?token=abc"
+        )
+    }
+
+    func testStorageSignedURLAcceptsSupabaseRootRelativePath() throws {
+        let url = try TravelReads.storageSignedURL(
+            from: "/storage/v1/object/sign/journal-photos/user-123/place-123/photo.jpg?token=abc"
+        )
+
+        XCTAssertEqual(
+            url.absoluteString,
+            "\(Config.supabaseURL.absoluteString)/storage/v1/object/sign/journal-photos/user-123/place-123/photo.jpg?token=abc"
+        )
+    }
+
+    func testStorageSignedURLAcceptsAbsoluteURL() throws {
+        let absolute = "https://cdn.example.com/object/sign/journal-photos/user-123/place-123/photo.jpg?token=abc"
+        let url = try TravelReads.storageSignedURL(from: absolute)
+
+        XCTAssertEqual(url.absoluteString, absolute)
+    }
+
     private static func historyRow(_ index: Int) -> [String: Any] {
         [
             "place_id": "place-\(index)",
