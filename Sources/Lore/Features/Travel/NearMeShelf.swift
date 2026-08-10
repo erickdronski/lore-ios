@@ -280,10 +280,10 @@ enum NearMeCardLayout {
 
     /// Every tile is this EXACT height so the shelf reads as one uniform row,
     /// not a ragged skyline. Keep the standard card compact: identity,
-    /// proximity, and the visit toggle, without the dead space that made the
+    /// proximity, and the visit icon, without the dead space that made the
     /// deck read as a detached bottom panel in TestFlight.
     static func uniformHeight(isAccessibilitySize: Bool) -> CGFloat {
-        isAccessibilitySize ? 286 : 222
+        isAccessibilitySize ? 258 : 194
     }
 
     static func shelfMaxHeight(isAccessibilitySize: Bool) -> CGFloat {
@@ -295,8 +295,8 @@ enum NearMeCardLayout {
     }
 }
 
-/// One near-you card: emoji medallion, name, live distance, and an inline
-/// "been here" toggle. Compact by doctrine (brand/ELEVATION.md §5b), a taste,
+/// One near-you card: emoji medallion, name, live distance, and a compact
+/// visited icon. Compact by doctrine (brand/ELEVATION.md §5b), a taste,
 /// not a wall; the full dossier is one tap via `onSelect`.
 struct NearMeCard: View {
     let ranked: RankedPlace
@@ -310,7 +310,6 @@ struct NearMeCard: View {
     /// Current city theme, if curated. Used for the medallion ring and top rule.
     var theme: CityTheme? = nil
 
-    @Environment(VisitStore.self) private var visits
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private var place: Place { ranked.place }
@@ -328,25 +327,36 @@ struct NearMeCard: View {
     @State private var photoResolved = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(alignment: .top, spacing: 8) {
+                Button(action: onSelect) {
+                    medallion
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text("Open \(place.name)"))
+
+                Spacer(minLength: 4)
+
+                if isForYou {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(LoreColor.brass300)
+                        .frame(width: 34, height: 34)
+                        .background(Circle().fill(LoreColor.ink900.opacity(0.78)))
+                        .accessibilityLabel(Text("For you"))
+                }
+
+                VisitToggle(
+                    place: place,
+                    source: .map,
+                    style: .icon,
+                    onNeedsSignIn: onNeedsSignIn,
+                    onLogged: onSelect
+                )
+            }
+
             Button(action: onSelect) {
                 VStack(alignment: .leading, spacing: 5) {
-                    HStack(alignment: .top) {
-                        medallion
-                        Spacer()
-                        if isForYou {
-                            Label("For you", systemImage: "sparkles")
-                                .font(LoreType.caption)
-                                .foregroundStyle(LoreColor.brass300)
-                                .padding(.horizontal, 8)
-                                .frame(height: 26)
-                                .background(Capsule().fill(LoreColor.ink900.opacity(0.78)))
-                        }
-                        if visits.hasVisited(place.id) {
-                            VisitedPinAccent()
-                        }
-                    }
-
                     Text(kindLabel.uppercased())
                         .loreLabelStyle()
                         .tracking(1)
@@ -380,12 +390,6 @@ struct NearMeCard: View {
             .frame(maxHeight: .infinity, alignment: .topLeading)
             .accessibilityLabel(Text(cardAccessibilityLabel))
             .accessibilityHint(Text("Opens this field note"))
-
-            // Marking visited here flows straight into the place, where the
-            // "your lore" editor lives — so adding a lore is one gesture from
-            // the shelf, not a scavenger hunt.
-            VisitToggle(place: place, source: .map, onNeedsSignIn: onNeedsSignIn, onLogged: onSelect)
-                .frame(maxWidth: .infinity, alignment: .center)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)

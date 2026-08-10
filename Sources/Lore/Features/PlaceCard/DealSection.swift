@@ -12,7 +12,13 @@ import SwiftUI
 /// only shown when it was truly checked (with its date), and `match_note`
 /// states HOW the offer relates to this place. Nothing is invented or estimated.
 struct DealSection: View {
+    enum Style {
+        case card
+        case compact
+    }
+
     let placeID: String
+    var style: Style = .card
 
     @Environment(EntitlementStore.self) private var entitlements
     @Environment(StoreKitService.self) private var store
@@ -21,30 +27,92 @@ struct DealSection: View {
 
     @State private var deals: [Deal] = []
     @State private var showPaywall = false
+    @State private var showOffers = false
     @State private var phase: Phase = .loading
 
     private enum Phase { case loading, empty, failed, loaded }
 
     var body: some View {
-        Group {
-            switch phase {
-            case .loading:
-                loadingCard
-            case .empty:
-                Color.clear.frame(width: 0, height: 0)
-            case .failed:
-                recoveryCard
-            case .loaded:
-                if entitlements.isPlus {
-                    section
-                } else {
-                    lockedTeaser
-                }
-            }
-        }
+        Group { bodyContent }
         .task(id: placeID) { await load() }
         .sheet(isPresented: $showPaywall) {
             PaywallView(entitlements: entitlements, store: store, auth: auth, context: .general)
+        }
+        .sheet(isPresented: $showOffers) {
+            NavigationStack {
+                ScrollView {
+                    section
+                        .padding(16)
+                }
+                .background(LoreColor.bone100)
+                .navigationTitle("Visit offers")
+                .navigationBarTitleDisplayMode(.inline)
+            }
+            .presentationDetents([.medium, .large])
+        }
+    }
+
+    @ViewBuilder
+    private var bodyContent: some View {
+        switch style {
+        case .card:
+            cardContent
+        case .compact:
+            compactContent
+        }
+    }
+
+    @ViewBuilder
+    private var cardContent: some View {
+        switch phase {
+        case .loading:
+            loadingCard
+        case .empty:
+            Color.clear.frame(width: 0, height: 0)
+        case .failed:
+            recoveryCard
+        case .loaded:
+            if entitlements.isPlus {
+                section
+            } else {
+                lockedTeaser
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var compactContent: some View {
+        switch phase {
+        case .loading:
+            compactIcon(isLoading: true, isAvailable: false)
+                .accessibilityLabel("Loading visit offers")
+        case .empty:
+            EmptyView()
+        case .failed:
+            Button {
+                Task { await load() }
+            } label: {
+                compactIcon(systemName: "ticket.fill", isAvailable: false, badge: "!")
+            }
+            .buttonStyle(.pressable)
+            .accessibilityLabel("Visit offers unavailable. Retry")
+        case .loaded:
+            Button {
+                Haptics.play(.chipTap)
+                if entitlements.isPlus {
+                    showOffers = true
+                } else {
+                    showPaywall = true
+                }
+            } label: {
+                compactIcon(
+                    systemName: entitlements.isPlus ? "ticket.fill" : "ticket",
+                    isAvailable: true,
+                    badge: String(min(deals.count, 9))
+                )
+            }
+            .buttonStyle(.pressable)
+            .accessibilityLabel(Text(deals.count == 1 ? "Open one curated offer" : "Open \(deals.count) curated offers"))
         }
     }
 
@@ -65,6 +133,42 @@ struct DealSection: View {
             deals = []
             phase = .failed
         }
+    }
+
+    private func compactIcon(
+        systemName: String = "ticket",
+        isLoading: Bool = false,
+        isAvailable: Bool,
+        badge: String? = nil
+    ) -> some View {
+        ZStack(alignment: .topTrailing) {
+            Circle()
+                .fill(isAvailable ? LoreColor.amber.opacity(0.95) : LoreColor.bone200)
+            Circle()
+                .strokeBorder(
+                    isAvailable ? LoreColor.brass.opacity(0.36) : LoreColor.brass700.opacity(0.24),
+                    lineWidth: 1
+                )
+            if isLoading {
+                ProgressView()
+                    .controlSize(.small)
+                    .tint(LoreColor.brass700)
+            } else {
+                Image(systemName: systemName)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(isAvailable ? LoreColor.ink : LoreColor.brass700)
+            }
+            if let badge {
+                Text(badge)
+                    .font(.system(size: badge == "!" ? 10 : 9, weight: .bold))
+                    .foregroundStyle(isAvailable ? LoreColor.bone : LoreColor.ink900)
+                    .frame(width: 16, height: 16)
+                    .background(isAvailable ? LoreColor.ink900 : LoreColor.amber, in: Circle())
+                    .offset(x: 3, y: -3)
+            }
+        }
+        .frame(width: 44, height: 44)
+        .contentShape(Circle())
     }
 
     private var loadingCard: some View {

@@ -221,6 +221,8 @@ struct PlaceCardView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     heroPhoto
 
+                    placeActionRail
+
                     header
 
                     if let hook = place.teaser {
@@ -244,74 +246,7 @@ struct PlaceCardView: View {
                         accent: accent
                     )
 
-                    // Log-the-visit + the reader's own lore, together: the
-                    // toggle records "I was here", and once logged the note +
-                    // photos render as part of the place itself.
-                    HStack {
-                        Spacer(minLength: 0)
-                        VisitToggle(
-                            place: place,
-                            source: visitSource,
-                            onNeedsSignIn: { showSignIn = true },
-                            // Open only after the server-backed history row is
-                            // available; a synthetic blank draft could overwrite
-                            // an existing note on a delayed or duplicate visit.
-                            onLogged: {
-                                Task {
-                                    await visits.loadHistory(force: true)
-                                    loreEditorEntry = myEntry
-                                }
-                            }
-                        )
-                        Spacer(minLength: 0)
-                    }
-
                     yourLore
-
-                    // Real curated marketplace deals on this place (Lore+).
-                    // Self-hides when there is nothing genuinely matched.
-                    DealSection(placeID: place.id)
-
-                    Button {
-                        Haptics.play(.dossierOpen)
-                        showDive = true
-                    } label: {
-                        // Background + tint live *inside* the label so the press
-                        // scale (PressableStyle) lifts the whole capsule, not just
-                        // the text sitting on a static pill.
-                        HStack {
-                            Image(systemName: "book.pages")
-                            Text("Go deeper")
-                                .font(LoreType.button)
-                            Spacer()
-                            Image(systemName: "chevron.right")
-                        }
-                        .padding(.horizontal, 16)
-                        .frame(height: 50)
-                        .background(LoreColor.ink, in: Capsule())
-                        .foregroundStyle(LoreColor.bone)
-                    }
-                    .buttonStyle(.pressable)
-
-                    // Meet-the-City entry (task: expose from PlaceCard). Routes
-                    // out to the culture surface for this place's city.
-                    Button {
-                        Haptics.play(.chipTap)
-                        onMeetCity(place.city)
-                    } label: {
-                        HStack {
-                            Image(systemName: "quote.bubble")
-                            Text("Meet this city")
-                                .font(LoreType.button)
-                            Spacer()
-                            Image(systemName: "chevron.right")
-                        }
-                        .padding(.horizontal, 16)
-                        .frame(height: 50)
-                        .overlay(Capsule().strokeBorder(LoreColor.ink, lineWidth: 1.5))
-                        .foregroundStyle(LoreColor.ink)
-                    }
-                    .buttonStyle(.pressable)
                 }
                 .padding(16)
             }
@@ -337,6 +272,83 @@ struct PlaceCardView: View {
             .padding(.top, 8)
             .padding(.trailing, 12)
         }
+    }
+
+    /// Primary actions live directly under the hero image so visit logging,
+    /// offers, saved intent, sharing, dossier depth, and city context are visible
+    /// before the traveler starts reading. The full narrative stays below instead
+    /// of being interrupted by oversized CTA bars.
+    private var placeActionRail: some View {
+        HStack {
+            Spacer(minLength: 0)
+
+            HStack(spacing: 8) {
+                SavePlaceButton(place: place, onNeedsSignIn: { showSignIn = true })
+                DealSection(placeID: place.id, style: .compact)
+                VisitToggle(
+                    place: place,
+                    source: visitSource,
+                    style: .icon,
+                    onNeedsSignIn: { showSignIn = true },
+                    // Open only after the server-backed history row is available; a
+                    // synthetic blank draft could overwrite an existing note on a
+                    // delayed or duplicate visit.
+                    onLogged: {
+                        Task {
+                            await visits.loadHistory(force: true)
+                            loreEditorEntry = myEntry
+                        }
+                    }
+                )
+                actionIconButton(
+                    systemName: "book.pages",
+                    title: "Go deeper",
+                    isProminent: true
+                ) {
+                    Haptics.play(.dossierOpen)
+                    showDive = true
+                }
+                actionIconButton(
+                    systemName: "quote.bubble",
+                    title: "Meet this city"
+                ) {
+                    Haptics.play(.chipTap)
+                    onMeetCity(place.city)
+                }
+                shareButton
+            }
+            .padding(8)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .strokeBorder(accent.opacity(0.18), lineWidth: 1)
+            )
+            .accessibilityElement(children: .contain)
+        }
+    }
+
+    private func actionIconButton(
+        systemName: String,
+        title: String,
+        isProminent: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(isProminent ? LoreColor.bone : LoreColor.brass700)
+                .frame(width: 44, height: 44)
+                .background(isProminent ? LoreColor.ink : LoreColor.bone200, in: Circle())
+                .overlay(
+                    Circle().strokeBorder(
+                        isProminent ? LoreColor.ink.opacity(0.18) : LoreColor.brass700.opacity(0.24),
+                        lineWidth: 1
+                    )
+                )
+                .contentShape(Circle())
+        }
+        .buttonStyle(.pressable)
+        .accessibilityLabel(Text(title))
     }
 
     // MARK: City field kit
@@ -546,10 +558,6 @@ struct PlaceCardView: View {
             VStack(alignment: .trailing, spacing: 8) {
                 if let year = place.layer1?.yearBuilt {
                     YearChip(year: year, accent: accent)
-                }
-                HStack(spacing: 8) {
-                    SavePlaceButton(place: place, onNeedsSignIn: { showSignIn = true })
-                    shareButton
                 }
             }
         }

@@ -17,9 +17,16 @@ import SwiftUI
 /// (a warning haptic + the integrator's sign-in nudge) rather than silently
 /// failing, reading/marking intent is never a dead end.
 struct VisitToggle: View {
+    enum Style {
+        case pill
+        case icon
+    }
+
     let place: Place
     /// How this visit should be attributed if logged from here.
     var source: Visit.Source = .map
+    /// Full text for onboarding moments, compact icon for card action rails.
+    var style: Style = .pill
     /// Called when a tap can't proceed because there's no signed-in user.
     var onNeedsSignIn: () -> Void = {}
     /// Called right after a visit is FRESHLY logged (not on re-taps), so a
@@ -37,18 +44,7 @@ struct VisitToggle: View {
 
     var body: some View {
         Button(action: tap) {
-            HStack(spacing: 8) {
-                marker
-                Text(label)
-                    .font(LoreType.button)
-            }
-            .padding(.horizontal, 16)
-            .frame(height: 44) // HIG min target (brand/DESIGN.md §8)
-            .frame(minWidth: 44)
-            .background(background)
-            .overlay(border)
-            .foregroundStyle(visited ? LoreColor.ink : LoreColor.ink)
-            .contentShape(Capsule())
+            labelView
         }
         .buttonStyle(.plain)
         .disabled(inFlight)
@@ -67,6 +63,35 @@ struct VisitToggle: View {
     }
 
     // MARK: Pieces
+
+    @ViewBuilder
+    private var labelView: some View {
+        switch style {
+        case .pill:
+            HStack(spacing: 8) {
+                marker
+                Text(label)
+                    .font(LoreType.button)
+            }
+            .padding(.horizontal, 16)
+            .frame(height: 44) // HIG min target (brand/DESIGN.md §8)
+            .frame(minWidth: 44)
+            .background(background)
+            .overlay(border)
+            .foregroundStyle(LoreColor.ink)
+            .contentShape(Capsule())
+        case .icon:
+            ZStack {
+                Circle()
+                    .fill(visited ? LoreColor.amber : LoreColor.bone200)
+                Circle()
+                    .strokeBorder(visited ? LoreColor.brass.opacity(0.35) : LoreColor.brass700.opacity(0.24), lineWidth: 1)
+                marker
+            }
+            .frame(width: 44, height: 44)
+            .contentShape(Circle())
+        }
+    }
 
     @ViewBuilder
     private var marker: some View {

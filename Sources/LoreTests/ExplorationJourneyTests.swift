@@ -206,15 +206,15 @@ final class ExplorationJourneyTests: XCTestCase {
     func testNearbyCardLayoutIsUniformForDiscoveryDeck() {
         XCTAssertEqual(NearMeCardLayout.cardWidth(isAccessibilitySize: false), 204)
         // Every tile shares one fixed height so the shelf reads as a uniform row,
-        // bounded (not bloated) yet tall enough to fit the visit toggle.
-        XCTAssertEqual(NearMeCardLayout.uniformHeight(isAccessibilitySize: false), 222)
-        XCTAssertLessThanOrEqual(NearMeCardLayout.uniformHeight(isAccessibilitySize: false), 228)
+        // bounded tightly now that visit logging is a compact top action icon.
+        XCTAssertEqual(NearMeCardLayout.uniformHeight(isAccessibilitySize: false), 194)
+        XCTAssertLessThanOrEqual(NearMeCardLayout.uniformHeight(isAccessibilitySize: false), 200)
         // The shelf frame must be >= the card height, or the toggle gets clipped.
         XCTAssertGreaterThanOrEqual(
             NearMeCardLayout.shelfMaxHeight(isAccessibilitySize: false),
             NearMeCardLayout.uniformHeight(isAccessibilitySize: false)
         )
-        XCTAssertLessThanOrEqual(NearMeCardLayout.shelfMaxHeight(isAccessibilitySize: false), 238)
+        XCTAssertLessThanOrEqual(NearMeCardLayout.shelfMaxHeight(isAccessibilitySize: false), 210)
         XCTAssertEqual(NearMeCardLayout.teaserLineLimit(isAccessibilitySize: false), 0)
 
         // Accessibility sizes scale the tile up, and the shelf still contains it.
@@ -226,7 +226,7 @@ final class ExplorationJourneyTests: XCTestCase {
             NearMeCardLayout.shelfMaxHeight(isAccessibilitySize: true),
             NearMeCardLayout.uniformHeight(isAccessibilitySize: true)
         )
-        XCTAssertLessThanOrEqual(NearMeCardLayout.shelfMaxHeight(isAccessibilitySize: true), 310)
+        XCTAssertLessThanOrEqual(NearMeCardLayout.shelfMaxHeight(isAccessibilitySize: true), 278)
         XCTAssertEqual(NearMeCardLayout.teaserLineLimit(isAccessibilitySize: true), 2)
     }
 
