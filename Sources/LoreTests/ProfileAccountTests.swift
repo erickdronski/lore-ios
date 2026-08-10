@@ -54,6 +54,112 @@ final class ProfileAccountTests: XCTestCase {
         XCTAssertNil(insecure.secureAvatarURL)
     }
 
+    func testProfileJourneySnapshotUsesServerStats() {
+        let stats = UserStats(
+            places: 14,
+            cities: 3,
+            countries: 2,
+            continents: 1,
+            continentsList: ["North America"],
+            divesRead: 9,
+            notes: 4,
+            photos: 6,
+            scannerVisits: 5,
+            badges: 7,
+            badgesTotal: 425,
+            insightPoints: 140,
+            currentStreak: 2,
+            longestStreak: 5,
+            topCategories: [],
+            firstVisit: nil
+        )
+
+        let snapshot = ProfileJourneySnapshot(stats: stats)
+
+        XCTAssertEqual(snapshot.headline, "3 cities in your atlas")
+        XCTAssertEqual(snapshot.primaryMetrics.map(\.value), ["14", "3", "9", "6"])
+        XCTAssertEqual(snapshot.secondaryMetrics.map(\.value), ["7/425", "140", "2d"])
+    }
+
+    func testProfileJourneySnapshotHasHonestZeroState() {
+        let snapshot = ProfileJourneySnapshot(stats: .zero)
+
+        XCTAssertEqual(snapshot.headline, "Your field record is ready")
+        XCTAssertTrue(snapshot.subhead.contains("Visits, dives, notes, photos, and badges"))
+        XCTAssertEqual(snapshot.secondaryMetrics.first?.value, "0")
+    }
+
+    func testGuideCompanionSignedOutStartsWithAccountAndLens() {
+        let snapshot = ProfileGuideCompanionSnapshot(
+            isSignedIn: false,
+            isPlus: false,
+            profile: nil,
+            journeyState: .signedOut,
+            savedCount: 0
+        )
+
+        XCTAssertEqual(snapshot.title, "Start your field record")
+        XCTAssertEqual(snapshot.cues.map(\.id), ["sign-in", "travel-lens"])
+        XCTAssertEqual(snapshot.cues.first?.destination, .signIn)
+    }
+
+    func testGuideCompanionUsesZeroJourneyStateForFirstMoves() {
+        let profile = UserProfile(id: "u1", displayName: "Ada")
+        let snapshot = ProfileGuideCompanionSnapshot(
+            isSignedIn: true,
+            isPlus: false,
+            profile: profile,
+            journeyState: .loaded(.zero),
+            savedCount: 0
+        )
+
+        XCTAssertEqual(snapshot.title, "Your guide is ready")
+        XCTAssertEqual(
+            snapshot.cues.map(\.id),
+            ["traveler-card", "first-visit", "save-route-seed"]
+        )
+        XCTAssertEqual(snapshot.cues.map(\.destination), [.editProfile, .journal, .savedPlaces])
+    }
+
+    func testGuideCompanionPicksSpecificNextMovesFromSyncedStats() {
+        let stats = UserStats(
+            places: 8,
+            cities: 2,
+            countries: 1,
+            continents: 1,
+            continentsList: ["North America"],
+            divesRead: 12,
+            notes: 2,
+            photos: 0,
+            scannerVisits: 3,
+            badges: 4,
+            badgesTotal: 425,
+            insightPoints: 90,
+            currentStreak: 3,
+            longestStreak: 5,
+            topCategories: [],
+            firstVisit: nil
+        )
+        let profile = UserProfile(
+            id: "u1",
+            handle: "ada",
+            displayName: "Ada",
+            bio: "Architecture walks"
+        )
+
+        let snapshot = ProfileGuideCompanionSnapshot(
+            isSignedIn: true,
+            isPlus: true,
+            profile: profile,
+            journeyState: .loaded(stats),
+            savedCount: 2
+        )
+
+        XCTAssertEqual(snapshot.title, "Your next field moves")
+        XCTAssertEqual(snapshot.cues.map(\.id), ["first-photo", "saved-walk", "next-badge"])
+        XCTAssertEqual(snapshot.cues.map(\.destination), [.journal, .savedPlaces, .passport])
+    }
+
     func testPreferencesDecodeForwardCompatiblyAndDeduplicate() throws {
         let data = Data(#"{"user_id":"u1","persona":"future_lens","interests":["history","history",""],"hidden_kinds":["museum","museum"],"onboarded":true}"#.utf8)
 

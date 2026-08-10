@@ -14,6 +14,8 @@ import Observation
 @Observable
 final class NearMeLocationProvider: NSObject, CLLocationManagerDelegate {
     private let manager = CLLocationManager()
+    private static let maximumFixAge: TimeInterval = 30
+    private static let maximumHorizontalAccuracy: CLLocationAccuracy = 65
 
     private(set) var location: CLLocation?
     private(set) var authorizationStatus: CLAuthorizationStatus = .notDetermined
@@ -86,6 +88,14 @@ final class NearMeLocationProvider: NSObject, CLLocationManagerDelegate {
         manager.stopUpdatingLocation()
     }
 
+    /// A recent, accurate-enough location for action routing. A fix that was
+    /// fresh when Core Location delivered it can age out while another tab is
+    /// open, so consumers should prefer this over reading `location` directly.
+    func freshLocation(now: Date = Date()) -> CLLocation? {
+        guard let location, Self.isActionable(location, now: now) else { return nil }
+        return location
+    }
+
     // MARK: CLLocationManagerDelegate
 
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
@@ -107,10 +117,7 @@ final class NearMeLocationProvider: NSObject, CLLocationManagerDelegate {
         //  - a stale cached fix delivered on start (older than 30 s), which no
         //    longer reflects where the user is standing.
         // Better to keep showing "finding your block" than a wrong distance.
-        guard latest.horizontalAccuracy >= 0,
-              latest.horizontalAccuracy <= 65,
-              abs(latest.timestamp.timeIntervalSinceNow) <= 30
-        else { return }
+        guard Self.isActionable(latest) else { return }
         lastError = nil
         location = latest
     }
@@ -126,5 +133,13 @@ final class NearMeLocationProvider: NSObject, CLLocationManagerDelegate {
         } else {
             lastError = "We couldn’t get a reliable location fix. You can retry or keep exploring the city map."
         }
+    }
+
+    private static func isActionable(_ location: CLLocation, now: Date = Date()) -> Bool {
+        let age = now.timeIntervalSince(location.timestamp)
+        return location.horizontalAccuracy >= 0
+            && location.horizontalAccuracy <= maximumHorizontalAccuracy
+            && age >= -1
+            && age <= maximumFixAge
     }
 }

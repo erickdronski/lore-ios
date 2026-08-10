@@ -672,7 +672,9 @@ struct ScannerScreen: View {
         // Two sibling controls (not a tap gesture nested in a Button): a play
         // area and a real 44pt dismiss button, so "dismiss" never mis-fires as
         // "play". Audio narration is a Lore+ perk, so a free tap opens the paywall.
-        HStack(spacing: 4) {
+        let hasStudioNarration = model.hasStudioNarrationOffer(for: place)
+        let title = hasStudioNarration ? "Play studio story" : "Keep walking, I'll tell you"
+        return HStack(spacing: 4) {
             Button {
                 if entitlements.isPlus {
                     model.playNarration(for: place)
@@ -682,8 +684,8 @@ struct ScannerScreen: View {
                 }
             } label: {
                 HStack(spacing: 8) {
-                    Image(systemName: entitlements.isPlus ? "headphones" : "headphones.circle")
-                    Text("Keep walking, I'll tell you")
+                    Image(systemName: hasStudioNarration ? "waveform.circle.fill" : entitlements.isPlus ? "headphones" : "headphones.circle")
+                    Text(title)
                         .font(LoreType.button)
                         .lineLimit(1)
                         .minimumScaleFactor(0.85)
@@ -698,7 +700,10 @@ struct ScannerScreen: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(Text(entitlements.isPlus ? "Play narration" : "Unlock audio narration with Lore plus"))
+            .accessibilityLabel(Text(audioOfferAccessibilityLabel(
+                place: place,
+                hasStudioNarration: hasStudioNarration
+            )))
 
             Button {
                 model.narration.dismissOffer()
@@ -719,6 +724,17 @@ struct ScannerScreen: View {
         )
         .padding(.horizontal, 16)
         .transition(.move(edge: .bottom).combined(with: .opacity))
+    }
+
+    private func audioOfferAccessibilityLabel(place: Place, hasStudioNarration: Bool) -> String {
+        if entitlements.isPlus {
+            return hasStudioNarration
+                ? "Play studio narration for \(place.name)"
+                : "Play scanner narration for \(place.name)"
+        }
+        return hasStudioNarration
+            ? "Unlock studio narration for \(place.name) with Lore plus"
+            : "Unlock scanner narration for \(place.name) with Lore plus"
     }
 
     // MARK: Camera permission
@@ -1288,8 +1304,8 @@ enum IdentifyFailure: Equatable {
     var message: String {
         switch self {
         case .capture: return "Lore couldn't grab that frame. Aim again and retry."
-        case .network: return "Landmark ID needs a connection. Check your signal and retry."
-        case .service: return "Google landmark matching is temporarily unavailable. Try again in a moment."
+        case .network: return "Image match needs a connection. Check your signal and retry."
+        case .service: return "Image matching is temporarily unavailable. Try again in a moment."
         case .invalidResponse: return "The match came back incomplete, so Lore didn't guess. Try another angle."
         case .membership: return "Lore+ couldn't be verified for cloud identification. Sign in and restore purchases, then try again."
         }
@@ -1317,7 +1333,7 @@ enum ScannerMatchSource: Equatable {
         case .geometryLock: return "geometry lock"
         case .preciseAR: return "precise AR"
         case .marker: return "Lore marker"
-        case .cloud: return "Google assisted"
+        case .cloud: return "image match"
         }
     }
 }
@@ -1458,7 +1474,7 @@ enum ScannerAccessibilityAnnouncement {
         case .idle:
             return nil
         case .loading:
-            return "Identifying one camera frame with Google Cloud Vision."
+            return "Checking one camera frame for a landmark match."
         case .result(let landmark):
             let prefix = landmark.isAmbiguous ? "Possible landmark" : "Landmark identified"
             if landmark.slug != nil || landmark.placeID != nil {
@@ -2236,8 +2252,23 @@ final class ScannerModel {
     }
 
     func playNarration(for place: Place) {
-        let register = ScannerRanking.voiceRegister(for: prefs?.persona ?? .traveler)
-        narration.speak(place, register: register)
+        if let insight = lockedInsight,
+           insight.place.id == place.id,
+           let dive = insight.dive,
+           dive.audioURL != nil {
+            narration.narrateDossier(text: dive.narrative, audioURL: dive.audioURL)
+        } else {
+            let register = ScannerRanking.voiceRegister(for: prefs?.persona ?? .traveler)
+            narration.speak(place, register: register)
+        }
+    }
+
+    func hasStudioNarrationOffer(for place: Place) -> Bool {
+        guard let insight = lockedInsight,
+              insight.place.id == place.id,
+              insight.dive?.audioURL != nil
+        else { return false }
+        return true
     }
 
     // MARK: Projection loop

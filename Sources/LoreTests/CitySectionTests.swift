@@ -94,6 +94,111 @@ struct CitySectionTests {
         #expect(SectionKindMeta.header(for: "photo_prompt").title == "Photo Field Prompts")
     }
 
+    @Test("Field brief synthesizes a traveler plan from rich city sections")
+    func fieldBriefUsesRichLocalExpertKinds() throws {
+        let sections = try [
+            decode(
+                id: "mistake",
+                kind: "first_timer_mistake",
+                title: "Do not sprint the market",
+                body: "Arrive with time to notice working counters.",
+                sort: 190
+            ),
+            decode(
+                id: "watch",
+                kind: "watch",
+                title: "Watch the waterfront first",
+                body: "Start with a current walk-through before you map the day.",
+                links: #"{"youtube_url":"https://www.youtube.com/watch?v=city"}"#,
+                meta: #"{"platform":"YouTube"}"#,
+                source: "https://www.youtube.com/watch?v=city",
+                sort: 160
+            ),
+            decode(
+                id: "hashtag",
+                kind: "hashtag",
+                title: "#BackstreetCity",
+                body: "Search the tag before the obvious monument shots.",
+                links: ##"{"hashtag_url":"https://www.tiktok.com/tag/backstreetcity"}"##,
+                meta: ##"{"hashtag":"#BackstreetCity"}"##,
+                source: "https://example.org/city-social",
+                sort: 170
+            ),
+            decode(
+                id: "legend",
+                kind: "local_legend",
+                title: "Ask about the old gate",
+                body: "The local story starts at the smaller entrance.",
+                sort: 180
+            ),
+            decode(
+                id: "neighborhood",
+                kind: "neighborhood_decode",
+                title: "Read the station edge",
+                body: "The useful streets sit one block off the plaza.",
+                sort: 200
+            ),
+            decode(
+                id: "photo",
+                kind: "photo_prompt",
+                title: "Frame the stone threshold",
+                body: "Use signs, public edges, and materials instead of faces.",
+                sort: 210
+            ),
+            decode(
+                id: "seasonal",
+                kind: "seasonal",
+                title: "Come back at dusk",
+                body: "The route feels different once the shopfronts switch on.",
+                sort: 220
+            ),
+        ]
+
+        let brief = try #require(CityFieldBrief(sections: sections))
+
+        #expect(brief.items.map(\.label) == ["Prime the lens", "Search", "Ask about", "Avoid", "Decode", "Frame", "Time it"])
+        #expect(brief.items.first?.title == "Watch the waterfront first")
+        #expect(brief.items.map(\.title).contains("#BackstreetCity"))
+        #expect(brief.items.last?.title == "Come back at dusk")
+        #expect(brief.action?.label == "Watch YouTube")
+        #expect(brief.action?.url.absoluteString == "https://www.youtube.com/watch?v=city")
+    }
+
+    @Test("Field brief stays hidden when the city lacks enough rich context")
+    func fieldBriefRequiresEnoughContext() throws {
+        let sections = try [
+            decode(id: "watch", kind: "watch", title: "Watch", sort: 160),
+            decode(id: "photo", kind: "photo_prompt", title: "Photo", sort: 210),
+        ]
+
+        #expect(CityFieldBrief(sections: sections) == nil)
+    }
+
+    @Test("Place card field kit stays compact while preserving source-backed actions")
+    func placeCityFieldKitCapsBriefForPlaceCards() throws {
+        let sections = try [
+            decode(
+                id: "watch",
+                kind: "watch",
+                title: "Watch the waterfront first",
+                links: #"{"youtube_url":"https://www.youtube.com/watch?v=city"}"#,
+                meta: #"{"platform":"YouTube"}"#,
+                source: "https://www.youtube.com/watch?v=city",
+                sort: 160
+            ),
+            decode(id: "hashtag", kind: "hashtag", title: "#BackstreetCity", sort: 170),
+            decode(id: "legend", kind: "local_legend", title: "Ask about the old gate", sort: 180),
+            decode(id: "mistake", kind: "first_timer_mistake", title: "Do not sprint the market", sort: 190),
+        ]
+        let brief = try #require(CityFieldBrief(sections: sections))
+        let kit = try #require(PlaceCityFieldKit(brief: brief))
+
+        #expect(kit.items.map(\.label) == ["Prime the lens", "Search", "Ask about"])
+        #expect(kit.items.map(\.title).contains("Do not sprint the market") == false)
+        #expect(kit.action?.label == "Watch YouTube")
+        #expect(kit.action?.url.absoluteString == "https://www.youtube.com/watch?v=city")
+    }
+
     private func decode(source: String) throws -> CitySection {
         try decode(kind: "phrase", title: "Bonjour", links: "{}", meta: """
         {
@@ -104,25 +209,28 @@ struct CitySectionTests {
     }
 
     private func decode(
+        id: String = "00000000-0000-0000-0000-000000000001",
         kind: String,
         title: String = "Bonjour",
+        body: String = "Hello. A polite greeting for most everyday encounters.",
         links: String = "{}",
         meta: String = "{}",
-        source: String
+        source: String = "https://example.org/source",
+        sort: Int = 120
     ) throws -> CitySection {
         let json = """
         {
-          "id": "00000000-0000-0000-0000-000000000001",
+          "id": "\(id)",
           "city": "paris",
           "kind": "\(kind)",
           "title": "\(title)",
-          "body": "Hello. A polite greeting for most everyday encounters.",
+          "body": "\(body)",
           "attribution": "bohn-ZHOOR",
           "emoji": "wave",
           "place_id": null,
           "source": "\(source)",
           "provenance_state": "reviewed",
-          "sort": 120,
+          "sort": \(sort),
           "links": \(links),
           "meta": \(meta)
         }

@@ -59,11 +59,12 @@ final class NarrationService {
     }
 
     /// The ~20-second hook line for a place, docent voice. Prefers the authored
-    /// Layer-1 hook; falls back to a persona-flavored orienting line built from
-    /// the place's own facts (never invents history, only reads what's there).
+    /// public teaser; falls back to a persona-flavored orienting line built
+    /// from the place's own facts (never invents history, only reads what's
+    /// there).
     static func hookText(for place: Place, register: String) -> String {
-        if let hook = place.layer1?.hook, !hook.isEmpty {
-            return hook
+        if let teaser = place.teaser {
+            return teaser
         }
         var line = "\(register) \(place.name)."
         if let year = place.layer1?.yearBuilt {
@@ -97,10 +98,11 @@ final class NarrationService {
         configureSession()
         let utterance = AVSpeechUtterance(string: Self.hookText(for: place, register: register))
         utterance.voice = Self.docentVoice()
-        utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 0.90 * playbackRate
-        utterance.pitchMultiplier = 0.97
+        utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 0.84 * playbackRate
+        utterance.pitchMultiplier = 0.96
         utterance.volume = 0.95
-        utterance.postUtteranceDelay = 0.2
+        utterance.preUtteranceDelay = 0.05
+        utterance.postUtteranceDelay = 0.25
         activeUtterance = utterance
         isSpeaking = true
         isPaused = false
@@ -120,10 +122,11 @@ final class NarrationService {
         configureSession()
         let utterance = AVSpeechUtterance(string: text)
         utterance.voice = Self.docentVoice()
-        utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 0.88 * playbackRate
-        utterance.pitchMultiplier = 0.97
+        utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 0.82 * playbackRate
+        utterance.pitchMultiplier = 0.96
         utterance.volume = 0.95
-        utterance.postUtteranceDelay = 0.15
+        utterance.preUtteranceDelay = 0.05
+        utterance.postUtteranceDelay = 0.2
         activeUtterance = utterance
         isSpeaking = true
         isPaused = false
@@ -140,7 +143,7 @@ final class NarrationService {
         configureSession()
         let utterance = AVSpeechUtterance(string: text)
         utterance.voice = Self.voice(matching: languageName)
-        utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 0.86 * playbackRate
+        utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 0.84 * playbackRate
         utterance.pitchMultiplier = 0.98
         utterance.volume = 0.95
         utterance.postUtteranceDelay = 0.1
@@ -333,6 +336,45 @@ final class NarrationService {
         }
     }
 
+    /// Ranks installed voices for Lore's fallback narrator. Quality stays the
+    /// first-order signal, then exact locale, then voices that tend to be the
+    /// natural Siri/Ava/Samantha-style options. Novelty voices are deliberately
+    /// penalized so a device with playful voices installed never sounds like a
+    /// gimmick when the city lacks studio audio.
+    nonisolated static func voiceSelectionScore(
+        quality: AVSpeechSynthesisVoiceQuality,
+        name: String,
+        language: String,
+        exactLanguages: Set<String> = []
+    ) -> Int {
+        let foldedName = name.folding(
+            options: [.caseInsensitive, .diacriticInsensitive],
+            locale: Locale(identifier: "en")
+        )
+        var score = voiceQualityRank(quality) * 1_000
+        if exactLanguages.contains(language) { score += 150 }
+        if language == "en-US" { score += 40 }
+        if ["en-GB", "en-AU", "en-CA"].contains(language) { score += 24 }
+
+        let premiumDocentNames = [
+            "siri", "ava", "samantha", "allison", "joelle", "karen",
+            "daniel", "arthur", "martha", "moira", "tessa", "serena"
+        ]
+        if let index = premiumDocentNames.firstIndex(where: { foldedName.contains($0) }) {
+            score += max(30, 120 - index * 6)
+        }
+
+        let noveltyNames = [
+            "bahh", "bells", "boing", "bubbles", "cellos", "good news",
+            "bad news", "jester", "organ", "superstar", "trinoids",
+            "whisper", "zarvox", "hysterical", "deranged", "wobble"
+        ]
+        if noveltyNames.contains(where: { foldedName.contains($0) }) {
+            score -= 500
+        }
+        return score
+    }
+
     private static func docentVoice() -> AVSpeechSynthesisVoice? {
         preferredVoice(for: ["en-US", "en-GB", "en-AU", "en-CA"]) ?? AVSpeechSynthesisVoice(language: "en-US")
     }
@@ -375,13 +417,19 @@ final class NarrationService {
         exactLanguages: Set<String> = []
     ) -> AVSpeechSynthesisVoice? {
         voices.sorted { lhs, rhs in
-            let lhsQuality = voiceQualityRank(lhs.quality)
-            let rhsQuality = voiceQualityRank(rhs.quality)
-            if lhsQuality != rhsQuality { return lhsQuality > rhsQuality }
-
-            let lhsExact = exactLanguages.contains(lhs.language)
-            let rhsExact = exactLanguages.contains(rhs.language)
-            if lhsExact != rhsExact { return lhsExact }
+            let lhsScore = voiceSelectionScore(
+                quality: lhs.quality,
+                name: lhs.name,
+                language: lhs.language,
+                exactLanguages: exactLanguages
+            )
+            let rhsScore = voiceSelectionScore(
+                quality: rhs.quality,
+                name: rhs.name,
+                language: rhs.language,
+                exactLanguages: exactLanguages
+            )
+            if lhsScore != rhsScore { return lhsScore > rhsScore }
 
             return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
         }.first

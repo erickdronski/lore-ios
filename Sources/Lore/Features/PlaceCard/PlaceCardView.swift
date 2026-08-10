@@ -49,6 +49,9 @@ struct PlaceCardView: View {
     /// estate, fill the white space below with more fun").
     @State private var dive: Dive?
     @State private var loadedTheme: CityTheme?
+    /// A compact, source-backed city brief rendered inside the place card so
+    /// city-level context is not hidden behind a second tap.
+    @State private var cityKit = PlaceCityFieldKitModel()
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -103,6 +106,9 @@ struct PlaceCardView: View {
         .task(id: place.city) {
             guard cityTheme == nil else { return }
             loadedTheme = (try? await LoreAPI.shared.cityTheme(city: place.city)) ?? nil
+        }
+        .task(id: place.city) {
+            await cityKit.load(city: place.city)
         }
         .sheet(item: $loreEditorEntry) { entry in
             NoteEditorSheet(entry: entry) { note in
@@ -217,16 +223,19 @@ struct PlaceCardView: View {
 
                     header
 
-                    if let hook = place.layer1?.hook {
+                    if let hook = place.teaser {
                         Text(hook)
                             .font(LoreType.hook)
                             .foregroundStyle(LoreColor.ink)
                             .fixedSize(horizontal: false, vertical: true)
+                            .padding(.horizontal, 1)
                     }
 
                     factChips
 
                     storyTeaser
+
+                    cityFieldKit
 
                     // Log-the-visit + the reader's own lore, together: the
                     // toggle records "I was here", and once logged the note +
@@ -323,6 +332,15 @@ struct PlaceCardView: View {
         }
     }
 
+    // MARK: City field kit
+
+    @ViewBuilder
+    private var cityFieldKit: some View {
+        if let kit = cityKit.kit {
+            PlaceCityFieldKitCard(city: place.city, kit: kit, accent: accent, onMeetCity: onMeetCity)
+        }
+    }
+
     // MARK: Story teaser
 
     /// A few lines of the dive narrative, filling the card with real content for
@@ -348,6 +366,23 @@ struct PlaceCardView: View {
                     .foregroundStyle(LoreColor.ink)
                     .lineLimit(4)
                     .fixedSize(horizontal: false, vertical: true)
+
+                Button {
+                    Haptics.play(.dossierOpen)
+                    showDive = true
+                } label: {
+                    HStack(spacing: 6) {
+                        Text("Read full story")
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 11, weight: .bold))
+                    }
+                    .font(LoreType.button)
+                    .foregroundStyle(accent)
+                    .frame(minHeight: 36)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("Opens the complete dossier for this place")
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(14)
@@ -430,7 +465,7 @@ struct PlaceCardView: View {
             // geometry to hand off and the dossier's `matchedGeometryEffect`
             // receiver would float over the narrative. Nil namespace = the
             // medallion just appears in its correct header slot.
-            DiveView(place: place, initialDive: dive)
+            DiveView(place: place, initialDive: dive, cityKit: cityKit.kit, onMeetCity: onMeetCity)
 
             HStack {
                 // Dismiss affordance, springs the dossier back down into the card.
@@ -505,7 +540,10 @@ struct PlaceCardView: View {
                 if let year = place.layer1?.yearBuilt {
                     YearChip(year: year, accent: accent)
                 }
-                shareButton
+                HStack(spacing: 8) {
+                    SavePlaceButton(place: place, onNeedsSignIn: { showSignIn = true })
+                    shareButton
+                }
             }
         }
     }

@@ -317,8 +317,8 @@ enum ScannerRanking {
         // Landmark tags earn a flat bump.
         if place.tags.contains("skyline-icon") { score += 0.3 }
         if place.tags.contains("monument") || place.tags.contains("observation-deck") { score += 0.15 }
-        // Dive richness: an authored hook means there's a payoff behind the pin.
-        if place.layer1?.hook?.isEmpty == false { score += 0.15 }
+        // Dive richness: a public teaser means there's a payoff behind the pin.
+        if place.teaser != nil { score += 0.15 }
         return min(score, 1.0)
     }
 

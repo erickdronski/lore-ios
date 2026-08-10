@@ -105,6 +105,77 @@ final class ExplorationJourneyTests: XCTestCase {
         XCTAssertNil(store.lastError)
     }
 
+    func testSavedPlaceStoreHydratesFromServerAndResetsForSignedOutState() async {
+        var signedIn = true
+        let store = SavedPlaceStore(
+            credentials: { signedIn ? ("traveler", "token") : nil },
+            savedPlacesLoader: { _ in [
+                SavedPlace(
+                    userID: "traveler",
+                    placeID: "place-1",
+                    savedAt: "2026-08-09T12:00:00Z",
+                    place: SavedPlace.PlaceSummary(
+                        id: "place-1",
+                        slug: "old-library",
+                        name: "Old Library",
+                        kind: "building",
+                        city: "dublin",
+                        emoji: "📚"
+                    )
+                ),
+            ] },
+            saveWriter: { _, _ in },
+            removeWriter: { _, _ in }
+        )
+
+        await store.load()
+        XCTAssertTrue(store.hasSaved("place-1"))
+        XCTAssertEqual(store.savedCount, 1)
+        XCTAssertEqual(store.entries.first?.displayName, "Old Library")
+
+        signedIn = false
+        await store.load(force: true)
+        XCTAssertFalse(store.hasSaved("place-1"))
+        XCTAssertEqual(store.savedCount, 0)
+        XCTAssertTrue(store.loaded)
+    }
+
+    func testSavedPlaceStoreDoesNotWriteWhenSignedOut() async {
+        var writes = 0
+        let store = SavedPlaceStore(
+            credentials: { nil },
+            savedPlacesLoader: { _ in [] },
+            saveWriter: { _, _ in writes += 1 },
+            removeWriter: { _, _ in writes += 1 }
+        )
+
+        let result = await store.save(placeID: "place-1")
+
+        XCTAssertEqual(result, .signedOut)
+        XCTAssertEqual(writes, 0)
+        XCTAssertFalse(store.hasSaved("place-1"))
+    }
+
+    func testSavedPlaceStoreRollsBackFailedOptimisticSave() async {
+        let store = SavedPlaceStore(
+            credentials: { ("traveler", "token") },
+            savedPlacesLoader: { _ in [] },
+            saveWriter: { _, _ in
+                throw TravelReads.TravelError.http(status: 500, body: "boom")
+            },
+            removeWriter: { _, _ in }
+        )
+
+        let result = await store.save(placeID: "place-1")
+
+        XCTAssertFalse(store.hasSaved("place-1"))
+        guard case .failed(let message) = result else {
+            XCTFail("Expected a failed save")
+            return
+        }
+        XCTAssertTrue(message.contains("500"))
+    }
+
     func testCollectionsOnlyAppearWithEnoughRealMatches() {
         let onePark = [place(id: "1", kind: "park")]
         XCTAssertFalse(PlaceCollection.available(in: onePark).contains(.nature))
@@ -135,15 +206,15 @@ final class ExplorationJourneyTests: XCTestCase {
     func testNearbyCardLayoutIsUniformForDiscoveryDeck() {
         XCTAssertEqual(NearMeCardLayout.cardWidth(isAccessibilitySize: false), 204)
         // Every tile shares one fixed height so the shelf reads as a uniform row,
-        // bounded (not bloated) yet tall enough to fit the "I've been here" toggle.
-        XCTAssertEqual(NearMeCardLayout.uniformHeight(isAccessibilitySize: false), 268)
-        XCTAssertLessThanOrEqual(NearMeCardLayout.uniformHeight(isAccessibilitySize: false), 300)
+        // bounded (not bloated) yet tall enough to fit the visit toggle.
+        XCTAssertEqual(NearMeCardLayout.uniformHeight(isAccessibilitySize: false), 244)
+        XCTAssertLessThanOrEqual(NearMeCardLayout.uniformHeight(isAccessibilitySize: false), 260)
         // The shelf frame must be >= the card height, or the toggle gets clipped.
         XCTAssertGreaterThanOrEqual(
             NearMeCardLayout.shelfMaxHeight(isAccessibilitySize: false),
             NearMeCardLayout.uniformHeight(isAccessibilitySize: false)
         )
-        XCTAssertEqual(NearMeCardLayout.teaserLineLimit(isAccessibilitySize: false), 2)
+        XCTAssertEqual(NearMeCardLayout.teaserLineLimit(isAccessibilitySize: false), 1)
 
         // Accessibility sizes scale the tile up, and the shelf still contains it.
         XCTAssertGreaterThan(
@@ -155,6 +226,75 @@ final class ExplorationJourneyTests: XCTestCase {
             NearMeCardLayout.uniformHeight(isAccessibilitySize: true)
         )
         XCTAssertEqual(NearMeCardLayout.teaserLineLimit(isAccessibilitySize: true), 3)
+    }
+
+    func testExpandedDiscoveryDeckClearsFloatingTabDock() {
+        XCTAssertEqual(TravelMapDeckLayout.collapsedBottomClearance, 16)
+        XCTAssertEqual(TravelMapDeckLayout.expandedBottomClearance, 78)
+        XCTAssertLessThan(
+            TravelMapDeckLayout.bottomClearance(collapsed: true),
+            TravelMapDeckLayout.bottomClearance(collapsed: false)
+        )
+        XCTAssertGreaterThanOrEqual(
+            TravelMapDeckLayout.bottomClearance(collapsed: false),
+            72
+        )
+    }
+
+    func testMapPresentationResolvesOnlyLoadedPlaces() {
+        let place = place(id: "found", kind: "building")
+
+        let presented = MapPlacePresentationPolicy.presentablePlace(
+            selectedID: "found",
+            places: [place]
+        )
+
+        XCTAssertEqual(presented?.id, "found")
+        XCTAssertTrue(MapPlacePresentationPolicy.shouldRecedeMap(presentedPlace: presented))
+    }
+
+    func testMapRecedeClearsForStaleSelectedPlaceID() {
+        let presented = MapPlacePresentationPolicy.presentablePlace(
+            selectedID: "stale",
+            places: [place(id: "current", kind: "building")]
+        )
+
+        XCTAssertNil(presented)
+        XCTAssertFalse(MapPlacePresentationPolicy.shouldRecedeMap(presentedPlace: presented))
+    }
+
+    func testPlaceTeaserPrefersServerDerivedHookText() {
+        let place = place(
+            id: "place",
+            kind: "building",
+            layer1: Layer1(
+                hook: "A shorter legacy hook.",
+                yearBuilt: nil,
+                architect: nil,
+                style: nil,
+                nameMeaning: nil
+            ),
+            hookText: "  A richer first sentence from the published dossier.  "
+        )
+
+        XCTAssertEqual(place.teaser, "A richer first sentence from the published dossier.")
+    }
+
+    func testPlaceTeaserFallsBackToTrimmedLayerOneHook() {
+        let place = place(
+            id: "place",
+            kind: "building",
+            layer1: Layer1(
+                hook: "  A legacy curated hook.  ",
+                yearBuilt: nil,
+                architect: nil,
+                style: nil,
+                nameMeaning: nil
+            ),
+            hookText: "   "
+        )
+
+        XCTAssertEqual(place.teaser, "A legacy curated hook.")
     }
 
     func testMapFallbackCameraIgnoresFarOutlierCoordinates() throws {
@@ -185,6 +325,100 @@ final class ExplorationJourneyTests: XCTestCase {
         XCTAssertLessThanOrEqual(TourBrowseLayout.tourRowInsets.bottom, 4)
     }
 
+    func testGeneratedWalkStartsNearFreshTravelerOrigin() throws {
+        let origin = CLLocationCoordinate2D(latitude: 41.8900, longitude: -87.6200)
+        let nearOrigin = place(id: "near-origin", kind: "building", lat: 41.8970, lng: -87.6200)
+        let nextNearOrigin = place(id: "next-near-origin", kind: "park", lat: 41.8980, lng: -87.6200)
+        let cityCenter = place(id: "city-center", kind: "monument", lat: 41.8700, lng: -87.6500)
+        let cityCenterNext = place(id: "city-center-next", kind: "building", lat: 41.8710, lng: -87.6500)
+
+        let tour = try XCTUnwrap(OneHourTour.generate(
+            city: "chicago",
+            places: [cityCenter, cityCenterNext, nearOrigin, nextNearOrigin],
+            from: origin,
+            durationMin: 60
+        ))
+
+        XCTAssertEqual(tour.stops.first?.placeID, "near-origin")
+        XCTAssertEqual(tour.stops.dropFirst().first?.placeID, "next-near-origin")
+        XCTAssertGreaterThan(tour.distanceKm ?? 0, 0.7)
+    }
+
+    func testGeneratedWalkIgnoresRemoteBrowseOrigin() throws {
+        let places = [
+            place(id: "anchor", kind: "building", lat: 41.8800, lng: -87.6300),
+            place(id: "second", kind: "park", lat: 41.8810, lng: -87.6300),
+            place(id: "third", kind: "monument", lat: 41.8820, lng: -87.6300),
+        ]
+        let remoteOrigin = CLLocationCoordinate2D(latitude: 34.0522, longitude: -118.2437)
+
+        let cityWalk = try XCTUnwrap(OneHourTour.generate(
+            city: "chicago",
+            places: places,
+            from: nil,
+            durationMin: 60
+        ))
+        let remoteBrowseWalk = try XCTUnwrap(OneHourTour.generate(
+            city: "chicago",
+            places: places,
+            from: remoteOrigin,
+            durationMin: 60
+        ))
+
+        XCTAssertEqual(remoteBrowseWalk.stops.map(\.placeID), cityWalk.stops.map(\.placeID))
+        XCTAssertEqual(remoteBrowseWalk.distanceKm ?? -1, cityWalk.distanceKm ?? -2, accuracy: 0.001)
+    }
+
+    func testGeneratedWalkIdentityIncludesOrderedRouteStops() throws {
+        let northOrigin = CLLocationCoordinate2D(latitude: 41.8970, longitude: -87.6200)
+        let southOrigin = CLLocationCoordinate2D(latitude: 41.8700, longitude: -87.6500)
+        let places = [
+            place(id: "south-anchor", kind: "building", lat: 41.8700, lng: -87.6500),
+            place(id: "south-next", kind: "park", lat: 41.8710, lng: -87.6500),
+            place(id: "north-anchor", kind: "museum", lat: 41.8970, lng: -87.6200),
+            place(id: "north-next", kind: "monument", lat: 41.8980, lng: -87.6200),
+        ]
+
+        let northWalk = try XCTUnwrap(OneHourTour.generate(
+            city: "chicago",
+            places: places,
+            from: northOrigin,
+            durationMin: 60
+        ))
+        let southWalk = try XCTUnwrap(OneHourTour.generate(
+            city: "chicago",
+            places: places,
+            from: southOrigin,
+            durationMin: 60
+        ))
+
+        XCTAssertNotEqual(northWalk.stops.map(\.placeID), southWalk.stops.map(\.placeID))
+        XCTAssertNotEqual(northWalk.slug, southWalk.slug)
+        XCTAssertEqual(northWalk.title, "1 Hour In Chicago")
+        XCTAssertEqual(southWalk.title, "1 Hour In Chicago")
+        XCTAssertTrue(northWalk.stops.allSatisfy { $0.tourID == northWalk.id })
+        XCTAssertTrue(southWalk.stops.allSatisfy { $0.tourID == southWalk.id })
+
+        TourProgressStore.complete(
+            tourSlug: northWalk.slug,
+            userID: "traveler",
+            defaults: defaults
+        )
+
+        XCTAssertTrue(TourProgressStore.progress(
+            for: northWalk.slug,
+            userID: "traveler",
+            stopCount: northWalk.stops.count,
+            defaults: defaults
+        ).isCompleted)
+        XCTAssertEqual(TourProgressStore.progress(
+            for: southWalk.slug,
+            userID: "traveler",
+            stopCount: southWalk.stops.count,
+            defaults: defaults
+        ), .empty)
+    }
+
     func testCityRegionHandlesHomeAndInternationalMarkets() {
         XCTAssertEqual(CityRegion.region(forCountry: "US"), .unitedStates)
         XCTAssertEqual(CityRegion.region(forCountry: "JP"), .asia)
@@ -196,7 +430,9 @@ final class ExplorationJourneyTests: XCTestCase {
         id: String,
         kind: String,
         lat: Double = 41.881,
-        lng: Double = -87.629
+        lng: Double = -87.629,
+        layer1: Layer1? = nil,
+        hookText: String? = nil
     ) -> Place {
         Place(
             id: id,
@@ -205,7 +441,9 @@ final class ExplorationJourneyTests: XCTestCase {
             kind: kind,
             lat: lat,
             lng: lng,
-            city: "chicago"
+            city: "chicago",
+            layer1: layer1,
+            hookText: hookText
         )
     }
 }

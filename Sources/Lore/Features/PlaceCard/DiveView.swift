@@ -9,6 +9,12 @@ struct DiveView: View {
     /// Optional dossier already fetched by the Layer-1 card for its teaser.
     /// Reusing it avoids a second network hop when the reader taps Go deeper.
     var initialDive: Dive? = nil
+    /// Compact city-local context already loaded by the Layer-1 card. Passed in
+    /// rather than fetched here so opening the dossier does not add another
+    /// city-section request.
+    var cityKit: PlaceCityFieldKit? = nil
+    /// Opens the full "Meet city" surface from inside the dossier.
+    var onMeetCity: (String) -> Void = { _ in }
     /// The shared-element morph namespace (LUXURY-MOTION §6): when the dossier is
     /// grown from a Layer-1 card, the pin/emoji medallion morphs from the card
     /// header into this header via `matchedGeometryEffect`. `nil` when the
@@ -37,6 +43,7 @@ struct DiveView: View {
             VStack(alignment: .leading, spacing: 24) {
                 header
                 tagRow
+                dossierCityFieldKit
 
                 if gated {
                     // The place name (header) stays above the gate, so the
@@ -175,6 +182,13 @@ struct DiveView: View {
     // MARK: Dossier body
 
     @ViewBuilder
+    private var dossierCityFieldKit: some View {
+        if let cityKit {
+            DossierCityFieldKitCard(city: place.city, kit: cityKit, onMeetCity: onMeetCity)
+        }
+    }
+
+    @ViewBuilder
     private func diveBody(_ dive: Dive) -> some View {
         if let narrative = dive.narrative {
             // Compact by default with a Read more toggle, so the gallery and
@@ -305,13 +319,18 @@ struct DiveView: View {
     private var citationLinks: [(icon: String, title: String, subtitle: String?, url: URL)] {
         guard case .loaded(let dive) = model.state else { return [] }
         var rows: [(icon: String, title: String, subtitle: String?, url: URL)] = []
-        if let website = dive.links.website,
-           let url = URL(string: website),
-           ["http", "https"].contains(url.scheme?.lowercased() ?? "") {
-            rows.append(("link", "Official site", url.host(), url))
+        func appendUnique(icon: String, title: String, subtitle: String?, url: URL) {
+            guard !rows.contains(where: { $0.url.absoluteString == url.absoluteString }) else { return }
+            rows.append((icon, title, subtitle, url))
+        }
+        if let url = dive.links.websiteURL {
+            appendUnique(icon: "link", title: "Official site", subtitle: url.host(), url: url)
+        }
+        if let url = dive.links.sourceRecordURL {
+            appendUnique(icon: "link.badge.plus", title: "Source record", subtitle: url.host(), url: url)
         }
         if let url = dive.links.wikipediaURL {
-            rows.append(("book", "Wikipedia", "en.wikipedia.org", url))
+            appendUnique(icon: "book", title: "Wikipedia", subtitle: "en.wikipedia.org", url: url)
         }
         return rows
     }

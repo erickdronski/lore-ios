@@ -285,20 +285,19 @@ enum NearMeCardLayout {
     }
 
     /// Every tile is this EXACT height so the shelf reads as one uniform row,
-    /// not a ragged skyline. Sized to fit the worst case (a 2-line title + a
-    /// 2-line teaser + medallion, category, proximity, and the visit toggle)
-    /// WITHOUT clipping the "I've been here" button; shorter cards pin their
-    /// toggle to the bottom with a spacer.
+    /// not a ragged skyline. Keep the standard card deliberately compact: title,
+    /// one dossier line, proximity, and the visit toggle, without the dead space
+    /// that made the deck collide with the tab dock in TestFlight.
     static func uniformHeight(isAccessibilitySize: Bool) -> CGFloat {
-        isAccessibilitySize ? 340 : 268
+        isAccessibilitySize ? 318 : 244
     }
 
     static func shelfMaxHeight(isAccessibilitySize: Bool) -> CGFloat {
-        uniformHeight(isAccessibilitySize: isAccessibilitySize) + 10
+        uniformHeight(isAccessibilitySize: isAccessibilitySize) + 8
     }
 
     static func teaserLineLimit(isAccessibilitySize: Bool) -> Int {
-        isAccessibilitySize ? 3 : 2
+        isAccessibilitySize ? 3 : 1
     }
 }
 

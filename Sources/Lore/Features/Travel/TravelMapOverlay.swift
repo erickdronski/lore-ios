@@ -91,6 +91,7 @@ struct TravelMapControls: View {
         }
         .padding(.top, 6)
         .padding(.bottom, 10)
+        .padding(.bottom, TravelMapDeckLayout.bottomClearance(collapsed: collapsed))
         .background(
             // The ink fade only exists to keep the shelf text legible over the
             // map. When collapsed there is nothing to protect, so it disappears
@@ -210,6 +211,18 @@ struct TravelMapControls: View {
     }
 }
 
+enum TravelMapDeckLayout {
+    /// The collapsed pill should sit close to the dock; it is a launcher, not a
+    /// panel. The expanded deck needs a real landing zone so card footers and
+    /// visit toggles do not disappear beneath the floating tab bar.
+    static let collapsedBottomClearance: CGFloat = 16
+    static let expandedBottomClearance: CGFloat = 78
+
+    static func bottomClearance(collapsed: Bool) -> CGFloat {
+        collapsed ? collapsedBottomClearance : expandedBottomClearance
+    }
+}
+
 /// One owner for the Travel stores + the unlock bridge. The integrator creates a
 /// `TravelSession` high enough to outlive the map tab (e.g. alongside
 /// `AuthService`), injects the stores into the environment, and forwards
@@ -224,6 +237,7 @@ struct TravelMapControls: View {
 @MainActor
 final class TravelSession {
     let visits: VisitStore
+    let savedPlaces: SavedPlaceStore
     let filters: MapFilterStore
 
     /// The queue the host raises an `UnlockCelebration` for. Set by the
@@ -234,6 +248,7 @@ final class TravelSession {
     ///   out, usually `{ auth.session.map { ($0.user.id, $0.accessToken) } }`.
     init(credentials: @escaping () -> (userID: String, accessToken: String)?) {
         self.visits = VisitStore(credentials: credentials)
+        self.savedPlaces = SavedPlaceStore(credentials: credentials)
         self.filters = MapFilterStore(credentials: credentials)
         // Now that both stored properties exist, `self` is fully initialized —
         // wire the unlock bridge so a logged visit raises the celebration queue.
@@ -247,6 +262,7 @@ final class TravelSession {
     func bootstrap(prefs: UserPrefs?) async {
         filters.adopt(prefs: prefs)
         await visits.load()
+        await savedPlaces.load()
     }
 
     /// A `MapRelevance` for the current prefs and filter state.

@@ -50,6 +50,10 @@ struct MapScreen: View {
     @State private var nightStory: Story?
     @State private var position: MapCameraPosition = .automatic
     @State private var selectedPlaceID: String?
+    /// The sheet item that is actually on screen. Keep it separate from
+    /// `selectedPlaceID`, because MapKit can retain a pin selection after a
+    /// sheet dismisses; the map should recede only for a presented dossier.
+    @State private var presentedPlace: Place?
     /// Apple Maps registers (founder steer: Apple Maps base, 3D is critical).
     /// `satellite` swaps the Ink standard style for hybrid imagery; `dimensional`
     /// pitches the camera into the 3D / Flyover read (the cinematic payoff).
@@ -97,7 +101,9 @@ struct MapScreen: View {
 
     /// True while a place sheet is presented, drives the map's recede (dim +
     /// blur) so the focused surface floats above it (LUXURY-MOTION §4).
-    private var cardOpen: Bool { selectedPlaceID != nil }
+    private var cardOpen: Bool {
+        MapPlacePresentationPolicy.shouldRecedeMap(presentedPlace: presentedPlace)
+    }
 
     var body: some View {
         NavigationStack {
@@ -116,7 +122,14 @@ struct MapScreen: View {
             .animation(LoreMotion.tap, value: cardOpen)
             .onChange(of: selectedPlaceID) { _, newValue in
                 // Pin tap, light impact (brand/ELEVATION.md §4).
-                if newValue != nil { Haptics.play(.pinTap) }
+                if let newValue {
+                    Haptics.play(.pinTap)
+                    if presentedPlace?.id != newValue {
+                        presentPlace(id: newValue)
+                    }
+                } else if presentedPlace != nil {
+                    presentedPlace = nil
+                }
             }
             .safeAreaInset(edge: .top) {
                 MapHeader(
@@ -163,14 +176,13 @@ struct MapScreen: View {
                 // becoming a safe-area inset. Shrinking MapKit's safe area when
                 // the deck expands can make SwiftUI re-solve the visible camera
                 // and zoom the city out; the deck should not own camera policy.
-                // Because the map ignores safe area, this overlay anchors to the
-                // TRUE screen bottom — so it must clear the floating tab bar +
-                // home indicator itself, or the tab bar clips "I've been here"
-                // and the tour content (`bottomBarClearance`).
+                // Because the map ignores safe area, `TravelMapDeckLayout`
+                // clears the floating tab bar from inside the deck. This outer
+                // nudge only keeps the gradient from kissing the dock chrome.
                 travelControls
-                    .padding(.bottom, bottomBarClearance)
+                    .padding(.bottom, deckChromeBreathingRoom)
             }
-            .loreDossierPresentation(item: selectedPlaceBinding) { place in
+            .loreDossierPresentation(item: presentedPlaceBinding) { place in
                 // Detents are owned by PlaceCardView so opening the dossier can
                 // promote the sheet to `.large` from every entry point.
                 PlaceCardView(place: place, onMeetCity: onMeetCity, cityTheme: model.theme)
@@ -188,7 +200,7 @@ struct MapScreen: View {
             .onDisappear { surpriseTask?.cancel() }
             .onChange(of: city) { oldCity, newCity in
                 guard oldCity != newCity else { return }
-                selectedPlaceID = nil
+                clearPlacePresentation()
                 nightStory = nil
                 surpriseTask?.cancel()
                 surpriseTask = nil
@@ -220,7 +232,7 @@ struct MapScreen: View {
                 mode: mapMode,
                 viewMode: mapViewMode,
                 cameraTarget: model.cameraTarget?.center,
-                onSelectPlace: { selectedPlaceID = $0 }
+                onSelectPlace: { presentPlace(id: $0) }
             )
             .ignoresSafeArea()
         } else {
@@ -254,7 +266,7 @@ struct MapScreen: View {
     private var travelControls: some View {
         TravelMapControls(
             places: model.places,
-            onSelect: { selectedPlaceID = $0.id },
+            onSelect: { presentPlace($0) },
             onNeedsSignIn: onNeedsSignIn,
             relevance: relevance,
             city: city,
@@ -263,21 +275,44 @@ struct MapScreen: View {
         .padding(.bottom, 8)
     }
 
-    /// A small breathing gap above the floating tab bar. Even though the map
-    /// ignores safe area (to keep its own camera), this bottom overlay's CONTENT
-    /// is still laid out inside the safe area, which already reserves the
-    /// floating tab bar + home indicator — so the deck naturally clears the
-    /// dock and we only add a few points of air. (An earlier version added the
-    /// full tab-bar height here too, which double-counted and left the collapsed
-    /// pill floating far above the dock; verified in the iOS 26 simulator.)
-    private var bottomBarClearance: CGFloat { 6 }
+    /// A small final gap after `TravelMapDeckLayout` performs the actual
+    /// expanded/collapsed dock clearance.
+    private var deckChromeBreathingRoom: CGFloat { 6 }
 
-    /// Bridges Map's tag selection to a `.sheet(item:)` presentation.
-    private var selectedPlaceBinding: Binding<Place?> {
+    /// Bridges the actual presented dossier to `.sheet(item:)`; dismissal clears
+    /// MapKit's selected tag too, preventing a stale pin id from leaving the map
+    /// dimmed/blurred after the card is gone.
+    private var presentedPlaceBinding: Binding<Place?> {
         Binding(
-            get: { model.places.first { $0.id == selectedPlaceID } },
-            set: { newValue in selectedPlaceID = newValue?.id }
+            get: { presentedPlace },
+            set: { newValue in
+                presentedPlace = newValue
+                selectedPlaceID = newValue?.id
+            }
         )
+    }
+
+    private func presentPlace(_ place: Place) {
+        presentedPlace = place
+        if selectedPlaceID != place.id {
+            selectedPlaceID = place.id
+        }
+    }
+
+    private func presentPlace(id: String) {
+        guard let place = MapPlacePresentationPolicy.presentablePlace(
+            selectedID: id,
+            places: model.places
+        ) else {
+            clearPlacePresentation()
+            return
+        }
+        presentPlace(place)
+    }
+
+    private func clearPlacePresentation() {
+        presentedPlace = nil
+        selectedPlaceID = nil
     }
 
     // MARK: Apple Maps registers (Ink / Satellite / 3D)
@@ -484,7 +519,7 @@ struct MapScreen: View {
 
         Haptics.play(.scannerLock)
         surpriseTask?.cancel()
-        selectedPlaceID = nil
+        clearPlacePresentation()
         withAnimation(LoreSpring.smooth(reduceMotion: reduceMotion)) {
             surprisePlace = place
             position = .region(MKCoordinateRegion(
@@ -497,7 +532,7 @@ struct MapScreen: View {
             let revealDelay: Duration = reduceMotion ? .milliseconds(120) : .milliseconds(720)
             try? await Task.sleep(for: revealDelay)
             guard !Task.isCancelled, surprisePlace?.id == place.id else { return }
-            selectedPlaceID = place.id
+            presentPlace(place)
 
             try? await Task.sleep(for: .milliseconds(1_880))
             guard !Task.isCancelled, surprisePlace?.id == place.id else { return }
@@ -554,6 +589,17 @@ private struct SerendipityToast: View {
         .padding(.horizontal, 64)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Surprise destination: \(place.name)")
+    }
+}
+
+enum MapPlacePresentationPolicy {
+    static func presentablePlace(selectedID: String?, places: [Place]) -> Place? {
+        guard let selectedID else { return nil }
+        return places.first { $0.id == selectedID }
+    }
+
+    static func shouldRecedeMap(presentedPlace: Place?) -> Bool {
+        presentedPlace != nil
     }
 }
 
