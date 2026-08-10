@@ -561,6 +561,9 @@ final class SpecialistJourneyRegressionTests: XCTestCase {
         XCTAssertFalse(IdentifyFailure.service.message.localizedCaseInsensitiveContains("Google"))
         XCTAssertTrue(IdentifyFailure.service.message.localizedCaseInsensitiveContains("Image matching"))
         XCTAssertTrue(IdentifyFailure.network.message.localizedCaseInsensitiveContains("Image match"))
+        XCTAssertFalse(IdentifyFailure.membership.message.localizedCaseInsensitiveContains("Google"))
+        XCTAssertFalse(IdentifyFailure.membership.message.localizedCaseInsensitiveContains("cloud"))
+        XCTAssertTrue(IdentifyFailure.membership.message.localizedCaseInsensitiveContains("image matching"))
     }
 
     func testScannerGuidanceToastStaysCompactAndProviderAgnostic() {

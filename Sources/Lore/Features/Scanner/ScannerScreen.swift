@@ -1327,7 +1327,7 @@ enum IdentifyFailure: Equatable {
         case .network: return "Image match needs a connection. Check your signal and retry."
         case .service: return "Image matching is temporarily unavailable. Try again in a moment."
         case .invalidResponse: return "The match came back incomplete, so Lore didn't guess. Try another angle."
-        case .membership: return "Lore+ couldn't be verified for cloud identification. Sign in and restore purchases, then try again."
+        case .membership: return "Lore+ couldn't be verified for image matching. Sign in and restore purchases, then try again."
         }
     }
 }
