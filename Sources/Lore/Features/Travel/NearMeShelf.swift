@@ -20,6 +20,10 @@ import UIKit
 struct NearMeShelf: View {
     /// The city's places (the same array the map renders).
     let places: [Place]
+    /// Shared location source owned by the map deck. Keeping one source lets the
+    /// parent hide the deck when the selected city is not the user's current
+    /// geography.
+    let provider: NearMeLocationProvider
     /// Persona weighting + hard filter, so the shelf respects the map's lens
     /// while keeping "around me" ordered by real distance.
     let relevance: MapRelevance
@@ -35,7 +39,6 @@ struct NearMeShelf: View {
     /// Current city theme, applied as a restrained room-tone on shelf cards.
     var theme: CityTheme? = nil
 
-    @State private var provider = NearMeLocationProvider()
     @Environment(MapFilterStore.self) private var filters
     @Environment(\.openURL) private var openURL
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -68,15 +71,6 @@ struct NearMeShelf: View {
                 shelf
             }
         }
-        .onAppear {
-            // The map is mounted beneath first-run onboarding. Do not let it
-            // trigger Apple's prompt before Lore shows the location rationale.
-            let onboardingComplete = UserDefaults.standard.bool(
-                forKey: OnboardingStore.didOnboardDefaultsKey
-            )
-            provider.start(requestPermission: onboardingComplete)
-        }
-        .onDisappear { provider.stop() }
         // Publish the nearest places to the home-screen widget whenever the
         // ranking shifts (a new fix, a filter change). No-op until the App Group
         // is provisioned (docs/16 §7).

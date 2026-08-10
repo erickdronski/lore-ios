@@ -230,17 +230,27 @@ final class ExplorationJourneyTests: XCTestCase {
         XCTAssertEqual(NearMeCardLayout.teaserLineLimit(isAccessibilitySize: true), 2)
     }
 
-    func testExpandedDiscoveryDeckClearsFloatingTabDock() {
+    func testExpandedDiscoveryDeckSitsDirectlyAboveFloatingTabDock() {
         XCTAssertEqual(TravelMapDeckLayout.collapsedBottomClearance, 16)
-        XCTAssertEqual(TravelMapDeckLayout.expandedBottomClearance, 60)
-        XCTAssertLessThan(
+        XCTAssertEqual(TravelMapDeckLayout.expandedBottomClearance, 6)
+        XCTAssertGreaterThan(
             TravelMapDeckLayout.bottomClearance(collapsed: true),
             TravelMapDeckLayout.bottomClearance(collapsed: false)
         )
         XCTAssertLessThanOrEqual(
             TravelMapDeckLayout.bottomClearance(collapsed: false),
-            64
+            8
         )
+    }
+
+    func testDiscoveryDeckOnlyShowsForCurrentLocationCity() {
+        let user = CLLocation(latitude: 39.949, longitude: -74.904)
+        let local = place(id: "local", kind: "building", lat: 39.9495, lng: -74.903)
+        let browsedCity = place(id: "rome", kind: "monument", lat: 41.8902, lng: 12.4922)
+
+        XCTAssertTrue(TravelMapDeckLayout.selectedCitySupportsLiveDeck(location: nil, places: [browsedCity]))
+        XCTAssertTrue(TravelMapDeckLayout.selectedCitySupportsLiveDeck(location: user, places: [local]))
+        XCTAssertFalse(TravelMapDeckLayout.selectedCitySupportsLiveDeck(location: user, places: [browsedCity]))
     }
 
     func testPlaceFieldGuidePrioritizesConcretePlaceAndDossierContext() {

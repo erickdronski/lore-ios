@@ -1,3 +1,4 @@
+import CoreLocation
 import SwiftUI
 
 /// The composition layer (integrator convenience): a single additive overlay
@@ -29,6 +30,7 @@ struct TravelMapControls: View {
 
     @Environment(MapFilterStore.self) private var filters
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var locationProvider = NearMeLocationProvider()
 
     /// Collapsed hides the chips + shelf so the map gets the whole screen
     /// (TestFlight feedback: "I should be able to minimize / collapse / hide
@@ -63,7 +65,30 @@ struct TravelMapControls: View {
         return "\(filteredPlaces.count) places to wander"
     }
 
+    private var shouldShowDiscoveryDeck: Bool {
+        TravelMapDeckLayout.selectedCitySupportsLiveDeck(
+            location: locationProvider.freshLocation(),
+            places: places
+        )
+    }
+
     var body: some View {
+        Group {
+            if shouldShowDiscoveryDeck {
+                controlsBody
+            }
+        }
+        .onAppear {
+            filters.syncCategories(from: places)
+            startLocationProvider()
+        }
+        .onDisappear { locationProvider.stop() }
+        .onChange(of: places) { _, newValue in
+            filters.syncCategories(from: newValue)
+        }
+    }
+
+    private var controlsBody: some View {
         VStack(spacing: 8) {
             handle
 
@@ -79,6 +104,7 @@ struct TravelMapControls: View {
 
                     NearMeShelf(
                         places: filteredPlaces,
+                        provider: locationProvider,
                         relevance: relevance,
                         onSelect: onSelect,
                         onNeedsSignIn: onNeedsSignIn,
@@ -90,7 +116,7 @@ struct TravelMapControls: View {
             }
         }
         .padding(.top, 6)
-        .padding(.bottom, 10)
+        .padding(.bottom, 6)
         .background(
             // The ink fade only exists to keep the shelf text legible over the
             // map. When collapsed there is nothing to protect, so it disappears
@@ -114,10 +140,13 @@ struct TravelMapControls: View {
             }
         )
         .padding(.bottom, TravelMapDeckLayout.bottomClearance(collapsed: collapsed))
-        .onAppear { filters.syncCategories(from: places) }
-        .onChange(of: places) { _, newValue in
-            filters.syncCategories(from: newValue)
-        }
+    }
+
+    private func startLocationProvider() {
+        let onboardingComplete = UserDefaults.standard.bool(
+            forKey: OnboardingStore.didOnboardDefaultsKey
+        )
+        locationProvider.start(requestPermission: onboardingComplete)
     }
 
     /// A compact field-guide tab that explains what the deck contains before a
@@ -219,14 +248,28 @@ struct TravelMapControls: View {
 
 enum TravelMapDeckLayout {
     /// The collapsed pill should sit close to the dock; it is a launcher, not a
-    /// panel. The expanded deck only reserves the dock height still needed after
-    /// TabView safe-area accounting; keeping this tight prevents the empty
-    /// gradient band under the card row.
+    /// panel. The expanded deck sits directly over the floating dock after
+    /// TabView safe-area accounting; keeping this very tight prevents the empty
+    /// map/gradient band under the card row.
     static let collapsedBottomClearance: CGFloat = 16
-    static let expandedBottomClearance: CGFloat = 60
+    static let expandedBottomClearance: CGFloat = 6
+    static let currentLocationDeckRadiusMeters: CLLocationDistance = 50_000
 
     static func bottomClearance(collapsed: Bool) -> CGFloat {
         collapsed ? collapsedBottomClearance : expandedBottomClearance
+    }
+
+    /// "Around you right now" is literal. If the traveler is browsing another
+    /// city while physically elsewhere, the Discovery Deck hides instead of
+    /// showing an empty near-me shelf over the map.
+    static func selectedCitySupportsLiveDeck(
+        location: CLLocation?,
+        places: [Place]
+    ) -> Bool {
+        guard let location else { return true }
+        return places.contains {
+            location.distance(from: $0.location) <= currentLocationDeckRadiusMeters
+        }
     }
 }
 

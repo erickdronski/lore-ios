@@ -176,11 +176,7 @@ struct MapScreen: View {
                 // becoming a safe-area inset. Shrinking MapKit's safe area when
                 // the deck expands can make SwiftUI re-solve the visible camera
                 // and zoom the city out; the deck should not own camera policy.
-                // Because the map ignores safe area, `TravelMapDeckLayout`
-                // clears the floating tab bar from inside the deck. This outer
-                // nudge only keeps the gradient from kissing the dock chrome.
                 travelControls
-                    .padding(.bottom, deckChromeBreathingRoom)
             }
             .loreDossierPresentation(item: presentedPlaceBinding) { place in
                 // Detents are owned by PlaceCardView so opening the dossier can
@@ -272,12 +268,7 @@ struct MapScreen: View {
             city: city,
             theme: model.theme
         )
-        .padding(.bottom, 8)
     }
-
-    /// A small final gap after `TravelMapDeckLayout` performs the actual
-    /// expanded/collapsed dock clearance.
-    private var deckChromeBreathingRoom: CGFloat { 6 }
 
     /// Bridges the actual presented dossier to `.sheet(item:)`; dismissal clears
     /// MapKit's selected tag too, preventing a stale pin id from leaving the map
