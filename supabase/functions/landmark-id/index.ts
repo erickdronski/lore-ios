@@ -124,16 +124,16 @@ Deno.serve(async (req) => {
     const json = await resp.json();
     if (!resp.ok) {
       // e.g. "Cloud Vision API has not been used in project ... before or it is
-      // disabled" — the one owner step. Surface it (server log + body) so it's
-      // actionable, never silently swallowed.
+      // disabled" — keep that actionable in server logs, not in client bodies.
       console.error("vision error", JSON.stringify(json));
-      return new Response(JSON.stringify({ error: json?.error?.message ?? "vision failed" }), {
+      return new Response(JSON.stringify({ error: "vision failed" }), {
         status: 502, headers: { ...CORS, "Content-Type": "application/json" },
       });
     }
     annotations = json?.responses?.[0]?.landmarkAnnotations;
   } catch (e) {
-    return new Response(JSON.stringify({ error: String(e) }), {
+    console.error("vision request failed", e);
+    return new Response(JSON.stringify({ error: "vision failed" }), {
       status: 502, headers: { ...CORS, "Content-Type": "application/json" },
     });
   }
