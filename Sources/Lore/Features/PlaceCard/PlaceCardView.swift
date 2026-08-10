@@ -237,6 +237,13 @@ struct PlaceCardView: View {
 
                     cityFieldKit
 
+                    PlaceFieldGuideCard(
+                        place: place,
+                        dive: dive,
+                        cityKit: cityKit.kit,
+                        accent: accent
+                    )
+
                     // Log-the-visit + the reader's own lore, together: the
                     // toggle records "I was here", and once logged the note +
                     // photos render as part of the place itself.

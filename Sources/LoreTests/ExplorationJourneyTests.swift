@@ -243,6 +243,51 @@ final class ExplorationJourneyTests: XCTestCase {
         )
     }
 
+    func testPlaceFieldGuidePrioritizesConcretePlaceAndDossierContext() {
+        let place = place(
+            id: "union-station",
+            kind: "building",
+            layer1: Layer1(
+                hook: nil,
+                yearBuilt: 1881,
+                architect: "Taylor, Adams and Randall",
+                style: "Beaux-Arts",
+                nameMeaning: nil
+            )
+        )
+        let dive = Dive(
+            placeID: place.id,
+            narrative: "A depot became a civic room.",
+            timeline: [
+                TimelineEvent(
+                    year: 1881,
+                    title: "First depot opened",
+                    detail: "The railroads agreed to share one grand arrival hall.",
+                    emoji: nil
+                ),
+            ]
+        )
+
+        let moves = PlaceFieldGuide.moves(place: place, dive: dive, cityKit: nil)
+
+        XCTAssertEqual(moves.count, 3)
+        XCTAssertEqual(moves.map(\.label), ["Look for", "Timeline", "Name to know"])
+        XCTAssertEqual(moves[0].title, "Beaux-Arts")
+        XCTAssertTrue(moves[1].title.contains("1881"))
+        XCTAssertEqual(moves[2].title, "Taylor, Adams and Randall")
+    }
+
+    func testPlaceFieldGuideKeepsThinPlacesUsefulWithoutInventingFacts() {
+        let place = place(id: "quiet-square", kind: "park")
+
+        let moves = PlaceFieldGuide.moves(place: place, dive: nil, cityKit: nil)
+
+        XCTAssertEqual(moves.count, 3)
+        XCTAssertEqual(moves.map(\.label), ["Read the edge", "Frame", "Next move"])
+        XCTAssertEqual(moves[0].title, "Where the city softens")
+        XCTAssertEqual(moves[1].title, "One wide, one detail")
+    }
+
     func testMapPresentationResolvesOnlyLoadedPlaces() {
         let place = place(id: "found", kind: "building")
 
