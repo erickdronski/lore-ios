@@ -429,6 +429,28 @@ Local `gh auth status` reported an invalid GitHub CLI token on August 9, 2026.
 Use the connected GitHub app or re-authenticate `gh` before depending on GitHub
 CLI PR/check commands.
 
+## Security Follow-Up - 2026-08-10
+
+- A fresh GitHub Dependabot API check for `erickdronski/lore-ios` returned no
+  open alerts after the JSON gem security patch had already landed on `main`.
+- GitHub CodeQL still showed one open scanner finding:
+  `js/stack-trace-exposure` in `supabase/functions/landmark-id/index.ts`.
+- The default branch was updated directly with commit
+  `169a156ca41a4e64de7d8330e9a3c8c1fd7b2d83`
+  (`Stop exposing scanner Vision errors`).
+- The scanner edge function now keeps Google Vision/provider exceptions in
+  server logs and returns only `{ "error": "vision failed" }` to the client.
+  The iOS app already treats non-200 scanner responses as generic service
+  unavailable states, so this does not change the traveler-facing flow.
+- Verification completed:
+  - GitHub readback confirmed the hardened `main` file content.
+  - `git diff --check` passed.
+  - Targeted scan found no returned `String(e)` / provider error-message
+    pattern in `supabase/functions/landmark-id/index.ts`.
+- Local `deno fmt --check` could not run because `deno` is not installed in this
+  Codex environment.
+- CodeQL may remain visually open until GitHub analyzes the new `main` commit.
+
 ## Recommended Next Steps
 
 1. Review and merge this branch after CI.
