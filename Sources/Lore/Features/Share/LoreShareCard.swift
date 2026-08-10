@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// The shareable "Lore card" (docs: social-content-first). A designed, magazine
 /// grade poster of a single place that a user can post straight to Instagram,
@@ -13,6 +14,7 @@ import SwiftUI
 struct LoreShareCard: View {
     let place: Place
     var format: Format = .story
+    var heroImage: UIImage? = nil
 
     enum Format: Hashable, Sendable {
         case story   // 1080x1920 at scale 3 (logical 360x640)
@@ -114,15 +116,106 @@ struct LoreShareCard: View {
     }
 
     private var medallion: some View {
-        Text(place.displayEmoji)
-            .font(.system(size: format == .story ? 40 : 34))
-            .frame(width: format == .story ? 72 : 60, height: format == .story ? 72 : 60)
-            .background(
-                Circle().fill(LoreColor.amber.opacity(0.14))
-            )
-            .overlay(
-                Circle().strokeBorder(LoreColor.brass300.opacity(0.55), lineWidth: 1.5)
-            )
+        ZStack(alignment: .bottomTrailing) {
+            assetPlate
+            emojiCluster
+                .offset(x: format == .story ? 8 : 7, y: format == .story ? 7 : 6)
+        }
+    }
+
+    @ViewBuilder
+    private var assetPlate: some View {
+        let width: CGFloat = format == .story ? 82 : 68
+        let height: CGFloat = format == .story ? 94 : 76
+        let radius: CGFloat = format == .story ? 25 : 21
+        ZStack {
+            RoundedRectangle(cornerRadius: radius, style: .continuous)
+                .fill(LoreColor.amber.opacity(0.13))
+            if let heroImage {
+                Image(uiImage: heroImage)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: width, height: height)
+                    .overlay(
+                        LinearGradient(
+                            colors: [
+                                LoreColor.ink950.opacity(0.04),
+                                LoreColor.ink950.opacity(0.38),
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+            } else {
+                LoreTileArtwork(kind: .story, accent: LoreColor.brass300, intensity: 0.18)
+                Text(place.displayEmoji)
+                    .font(.system(size: format == .story ? 34 : 28))
+                    .shadow(color: LoreColor.ink950.opacity(0.35), radius: 8, x: 0, y: 4)
+            }
+        }
+        .frame(width: width, height: height)
+        .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: radius, style: .continuous)
+                .strokeBorder(LoreColor.brass300.opacity(heroImage == nil ? 0.55 : 0.72), lineWidth: 1.4)
+        )
+        .shadow(color: LoreColor.ink950.opacity(0.34), radius: 16, x: 0, y: 10)
+        .overlay(alignment: .topLeading) {
+            Circle()
+                .fill(LoreColor.bone.opacity(0.42))
+                .frame(width: 9, height: 9)
+                .padding(9)
+                .blendMode(.screen)
+                .accessibilityHidden(true)
+        }
+    }
+
+    private var emojiCluster: some View {
+        HStack(spacing: 3) {
+            ForEach(Array(shareEmojis.prefix(2).enumerated()), id: \.offset) { _, emoji in
+                Text(emoji)
+                    .font(.system(size: format == .story ? 12 : 10))
+                    .frame(width: format == .story ? 23 : 20, height: format == .story ? 23 : 20)
+                    .background(Circle().fill(LoreColor.bone.opacity(0.94)))
+                    .overlay(Circle().strokeBorder(LoreColor.brass300.opacity(0.5), lineWidth: 0.8))
+            }
+        }
+        .padding(.horizontal, 4)
+        .padding(.vertical, 3)
+        .background(Capsule().fill(LoreColor.ink950.opacity(0.52)))
+        .accessibilityHidden(true)
+    }
+
+    private var shareEmojis: [String] {
+        var values: [String] = []
+        func append(_ value: String) {
+            guard !value.isEmpty, !values.contains(value) else { return }
+            values.append(value)
+        }
+        append(place.displayEmoji)
+        let normalized = ([place.kind] + place.tags).map {
+            $0.lowercased().replacingOccurrences(of: "_", with: " ")
+        }
+        if normalized.contains(where: { $0.contains("beer") || $0.contains("bar") || $0.contains("pub") || $0.contains("venue") || $0.contains("nightlife") }) {
+            append("🍻")
+        }
+        if normalized.contains(where: { $0.contains("bridge") }) {
+            append("🌉")
+        }
+        if normalized.contains(where: { $0.contains("park") || $0.contains("garden") || $0.contains("nature") }) {
+            append("🌿")
+        }
+        if normalized.contains(where: { $0.contains("museum") || $0.contains("gallery") || $0.contains("art") }) {
+            append("🖼️")
+        }
+        if normalized.contains(where: { $0.contains("church") || $0.contains("temple") }) {
+            append("⛪️")
+        }
+        if normalized.contains(where: { $0.contains("monument") || $0.contains("memorial") || $0.contains("statue") || $0.contains("sculpture") }) {
+            append("🏛️")
+        }
+        append("📍")
+        return values
     }
 
     // MARK: Name + kind

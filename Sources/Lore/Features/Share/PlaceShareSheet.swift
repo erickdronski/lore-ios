@@ -15,6 +15,9 @@ struct PlaceShareSheet: View {
     @State private var activityItems: [Any]?
     @State private var isPreparing = false
     @State private var shareError: String?
+    @State private var heroImage: UIImage?
+    @State private var heroImageResolved = false
+    @State private var heroImageTask: Task<UIImage?, Never>?
 
     var body: some View {
         NavigationStack {
@@ -29,7 +32,7 @@ struct PlaceShareSheet: View {
                         (geo.size.width) / target.width,
                         (geo.size.height) / target.height
                     )
-                    LoreShareCard(place: place, format: format)
+                    LoreShareCard(place: place, format: format, heroImage: heroImage)
                         .frame(width: target.width, height: target.height)
                         .scaleEffect(scale)
                         .frame(width: geo.size.width, height: geo.size.height)
@@ -65,6 +68,9 @@ struct PlaceShareSheet: View {
                 Button("Cancel", role: .cancel) {}
             } message: {
                 Text(shareError ?? "Lore couldn't render the share image.")
+            }
+            .task(id: place.id) {
+                await prepareHeroImageIfNeeded()
             }
         }
     }
@@ -125,11 +131,34 @@ struct PlaceShareSheet: View {
         // Let the preparing state paint before ImageRenderer performs its
         // synchronous main-actor layout work.
         await Task.yield()
-        guard let image = ShareCardRenderer.loreCard(place, format: format) else {
+        await prepareHeroImageIfNeeded()
+        guard let image = ShareCardRenderer.loreCard(place, format: format, heroImage: heroImage) else {
             shareError = "Lore couldn't render this card. Try another format or try again."
             return
         }
         activityItems = [image, ShareCaption.text(for: place), ShareCaption.url(for: place)]
+    }
+
+    @MainActor
+    private func prepareHeroImageIfNeeded() async {
+        if heroImageResolved { return }
+
+        if let existing = heroImageTask {
+            let image = await existing.value
+            guard !Task.isCancelled else { return }
+            heroImage = image
+            heroImageResolved = true
+            heroImageTask = nil
+            return
+        }
+
+        let task = Task { await ShareHeroImageLoader.image(for: place) }
+        heroImageTask = task
+        let image = await task.value
+        guard !Task.isCancelled else { return }
+        heroImage = image
+        heroImageResolved = true
+        heroImageTask = nil
     }
 }
 
@@ -165,4 +194,33 @@ struct ActivityView: UIViewControllerRepresentable {
     }
 
     func updateUIViewController(_ vc: UIActivityViewController, context: Context) {}
+}
+
+enum ShareHeroImageLoader {
+    static func image(for place: Place) async -> UIImage? {
+        guard let title = cleanTitle(place.wikipediaTitle),
+              let remote = await WikipediaService.shared.portraitURL(for: title) else { return nil }
+        let resolved = PackImageStore.localURL(for: remote) ?? remote
+
+        do {
+            let data: Data
+            if resolved.isFileURL {
+                data = try Data(contentsOf: resolved)
+            } else {
+                let (loaded, response) = try await URLSession.shared.data(from: resolved)
+                if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+                    return nil
+                }
+                data = loaded
+            }
+            return UIImage(data: data)
+        } catch {
+            return nil
+        }
+    }
+
+    private static func cleanTitle(_ value: String?) -> String? {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
+    }
 }

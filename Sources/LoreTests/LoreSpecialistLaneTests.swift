@@ -204,6 +204,38 @@ final class LoreSpecialistLaneTests: XCTestCase {
         XCTAssertNotNil(ShareCardRenderer.image(Color.red, size: CGSize(width: 10, height: 10), scale: 1))
     }
 
+    @MainActor
+    func testShareRendererRendersPreloadedPlaceImageCard() {
+        let hero = UIGraphicsImageRenderer(size: CGSize(width: 160, height: 120)).image { context in
+            UIColor.systemOrange.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 160, height: 120))
+            UIColor.systemBlue.setFill()
+            context.fill(CGRect(x: 16, y: 16, width: 128, height: 88))
+        }
+        let place = Place(
+            id: "p1",
+            slug: "mcsorleys-old-ale-house",
+            name: "McSorley's Old Ale House",
+            kind: "venue",
+            lat: 40.7288,
+            lng: -73.9897,
+            city: "nyc",
+            layer1: Layer1(
+                hook: "It served men only for 116 years, until women were finally admitted in 1970.",
+                yearBuilt: 1854,
+                architect: nil,
+                style: "Irish alehouse",
+                nameMeaning: nil
+            ),
+            tags: ["nightlife", "historic_pub"],
+            emoji: "🍺",
+            hookText: nil,
+            wikipediaTitle: "McSorley's Old Ale House"
+        )
+
+        XCTAssertNotNil(ShareCardRenderer.loreCard(place, format: .square, heroImage: hero))
+    }
+
     private func achievement(
         slug: String,
         secret: Bool = false,

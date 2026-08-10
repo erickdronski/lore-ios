@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Renders a SwiftUI view off-screen to a `UIImage` at a fixed pixel size, so a
 /// share export is identical regardless of the device it came from. Uses
@@ -22,7 +23,11 @@ enum ShareCardRenderer {
     }
 
     /// Convenience for a `LoreShareCard` in a given format.
-    static func loreCard(_ place: Place, format: LoreShareCard.Format = .story) -> UIImage? {
-        image(LoreShareCard(place: place, format: format), size: format.size)
+    static func loreCard(
+        _ place: Place,
+        format: LoreShareCard.Format = .story,
+        heroImage: UIImage? = nil
+    ) -> UIImage? {
+        image(LoreShareCard(place: place, format: format, heroImage: heroImage), size: format.size)
     }
 }
