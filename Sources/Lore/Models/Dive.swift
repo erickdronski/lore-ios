@@ -144,17 +144,76 @@ struct DiveLinks: Codable, Hashable {
     }
 }
 
-/// `dive.media`, a jsonb object naming the Wikipedia article whose lead image
-/// is the dossier's gallery photo. Resolved to a URL at render via
-/// `WikipediaService`.
+enum WikipediaTitleList {
+    static func cleaned(_ values: [String?]) -> [String] {
+        var seen: Set<String> = []
+        var titles: [String] = []
+        for value in values {
+            let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard !trimmed.isEmpty else { continue }
+            let key = trimmed.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            if seen.insert(key).inserted {
+                titles.append(trimmed)
+            }
+        }
+        return titles
+    }
+}
+
+/// `dive.media`, a jsonb object naming the Wikipedia article(s) whose images
+/// can form the dossier gallery. Current rows usually carry one
+/// `wikipedia_title`; newer content can provide `wikipedia_titles` or
+/// `gallery_wikipedia_titles` and the app will render a carousel.
 struct DiveMediaRef: Codable, Hashable {
     let wikipediaTitle: String?
+    let wikipediaTitles: [String]
 
     enum CodingKeys: String, CodingKey {
         case wikipediaTitle = "wikipedia_title"
+        case wikipediaTitles = "wikipedia_titles"
+        case galleryWikipediaTitle = "gallery_wikipedia_title"
+        case galleryWikipediaTitles = "gallery_wikipedia_titles"
+        case imageWikipediaTitles = "image_wikipedia_titles"
     }
 
-    init(wikipediaTitle: String? = nil) {
-        self.wikipediaTitle = wikipediaTitle
+    init(wikipediaTitle: String? = nil, wikipediaTitles: [String] = []) {
+        let titles = WikipediaTitleList.cleaned([wikipediaTitle] + wikipediaTitles.map { Optional($0) })
+        self.wikipediaTitle = titles.first
+        self.wikipediaTitles = titles
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let primary = try container.decodeIfPresent(String.self, forKey: .wikipediaTitle)
+        let galleryPrimary = try container.decodeIfPresent(String.self, forKey: .galleryWikipediaTitle)
+        let titles = WikipediaTitleList.cleaned(
+            [primary, galleryPrimary]
+            + Self.decodeTitles(in: container, forKey: .wikipediaTitles).map { Optional($0) }
+            + Self.decodeTitles(in: container, forKey: .galleryWikipediaTitles).map { Optional($0) }
+            + Self.decodeTitles(in: container, forKey: .imageWikipediaTitles).map { Optional($0) }
+        )
+        wikipediaTitle = titles.first
+        wikipediaTitles = titles
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(wikipediaTitle, forKey: .wikipediaTitle)
+        if wikipediaTitles.count > 1 {
+            try container.encode(wikipediaTitles, forKey: .wikipediaTitles)
+        }
+    }
+
+    private static func decodeTitles(
+        in container: KeyedDecodingContainer<CodingKeys>,
+        forKey key: CodingKeys
+    ) -> [String] {
+        if let values = try? container.decodeIfPresent([String].self, forKey: key) {
+            return values
+        }
+        if let value = try? container.decodeIfPresent(String.self, forKey: key) {
+            return [value]
+        }
+        return []
     }
 }

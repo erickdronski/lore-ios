@@ -82,6 +82,28 @@ actor WikipediaService {
         }
     }
 
+    /// Resolve several titles in order, skipping blanks, duplicate titles, and
+    /// duplicate image URLs. Used by place galleries where a content row can
+    /// now expose more than one Wikipedia-backed image candidate.
+    func portraitURLs(for titles: [String]) async -> [URL] {
+        var seenTitles: Set<String> = []
+        var seenURLs: Set<String> = []
+        var urls: [URL] = []
+
+        for title in titles {
+            let key = title.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !key.isEmpty else { continue }
+            let titleKey = key.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            guard seenTitles.insert(titleKey).inserted else { continue }
+            guard let url = await portraitURL(for: key) else { continue }
+            if seenURLs.insert(url.absoluteString).inserted {
+                urls.append(url)
+            }
+        }
+
+        return urls
+    }
+
     /// Merge pack-resolved titles into the durable map (city-pack downloads).
     func persistTitles(_ map: [String: URL]) {
         var current = loadPersistent()

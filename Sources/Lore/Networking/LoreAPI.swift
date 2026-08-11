@@ -293,7 +293,7 @@ struct LoreAPI {
     /// Everything `pinCityPack` learned while pinning, for the image pass.
     struct CityPinResult {
         var places: [Place] = []
-        /// Distinct `media.wikipedia_title`s across the city's dives.
+        /// Distinct `media.wikipedia_title(s)` across the city's dives.
         var wikipediaTitles: [String] = []
         /// Every request URL pinned, recorded so a pack can be removed.
         var pinnedURLs: [String] = []
@@ -377,7 +377,7 @@ struct LoreAPI {
         // (its live read still works online); the pack keeps going.
         var titles: Set<String> = []
         var audioURLs: Set<URL> = []
-        try await withThrowingTaskGroup(of: (urls: [String], title: String?, audio: URL?).self) { group in
+        try await withThrowingTaskGroup(of: (urls: [String], titles: [String], audio: URL?).self) { group in
             var iterator = result.places.makeIterator()
             var inFlight = 0
 
@@ -386,7 +386,7 @@ struct LoreAPI {
                 inFlight += 1
                 group.addTask {
                     var urls: [String] = []
-                    var title: String?
+                    var mediaTitles: [String] = []
                     var audio: URL?
                     if let diveRequest = try? self.atlasRequest("dive", query: [
                         URLQueryItem(name: "place_id", value: "eq.\(place.id)"),
@@ -399,7 +399,7 @@ struct LoreAPI {
                         ) {
                             urls.append(diveRequest.url?.absoluteString ?? "")
                             let dives: [Dive]? = try? self.decodeBody(data)
-                            title = dives?.first?.media.wikipediaTitle
+                            mediaTitles = dives?.first?.media.wikipediaTitles ?? []
                             audio = dives?.first?.audioURL
                         }
                     }
@@ -415,7 +415,7 @@ struct LoreAPI {
                             urls.append(factsRequest.url?.absoluteString ?? "")
                         }
                     }
-                    return (urls, title, audio)
+                    return (urls, mediaTitles, audio)
                 }
             }
 
@@ -424,7 +424,9 @@ struct LoreAPI {
                 guard let outcome = try await group.next() else { break }
                 inFlight -= 1
                 result.pinnedURLs.append(contentsOf: outcome.urls)
-                if let title = outcome.title, !title.isEmpty { titles.insert(title) }
+                for title in outcome.titles where !title.isEmpty {
+                    titles.insert(title)
+                }
                 if let audio = outcome.audio { audioURLs.insert(audio) }
                 await onUnit()
                 addNext()

@@ -37,12 +37,13 @@ struct PlaceCardView: View {
     @State private var loreEditorEntry: VisitLogEntry?
     @State private var showSignIn = false
 
-    /// The place's lead photo (TestFlight feedback: "photo of the place should
-    /// be in the first tile"). Resolved from the dive's `media.wikipedia_title`
-    /// through the same Wikipedia summary API the culture portraits use; the
-    /// hero self-hides on a confirmed miss so a place without a photo leaves no
-    /// empty frame.
-    @State private var heroURL: URL?
+    /// The place's lead photo gallery (TestFlight feedback: "photo of the place
+    /// should be in the first tile"). Resolved from the place/dive Wikipedia
+    /// title references through the same Wikipedia summary API the culture
+    /// portraits use; the hero self-hides on a confirmed miss so a place
+    /// without photos leaves no empty frame.
+    @State private var heroURLs: [URL] = []
+    @State private var selectedHeroIndex = 0
     @State private var heroResolved = false
     /// The place's dive, loaded once for both the hero photo and a story teaser
     /// that fills the card for free users (TestFlight feedback: "wasted real
@@ -423,56 +424,61 @@ struct PlaceCardView: View {
     /// has no image. Kept to the light-card surface (no dark "Gallery" heading).
     @ViewBuilder
     private var heroPhoto: some View {
-        if !heroResolved || heroURL != nil {
-            BlurUpAsyncImage(url: heroURL)
-                .frame(height: 200)
-                .frame(maxWidth: .infinity)
-                // Slow ambient drift on the hero (Reduce-Motion static). A
-                // fully-built effect that rendered nowhere; gives the arrival
-                // card the premium "the photo is alive" feel.
-                .kenBurns()
-                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                .loreElevation(.elev1)
-                .accessibilityLabel(Text("Photo of \(place.name)"))
+        if !heroResolved || !heroURLs.isEmpty {
+            LoreImageCarousel(
+                urls: heroURLs,
+                title: place.name,
+                height: 200,
+                cornerRadius: 16,
+                background: LoreColor.bone200,
+                activeDot: accent,
+                inactiveDot: LoreColor.bone.opacity(0.78),
+                selection: $selectedHeroIndex
+            )
                 .task(id: place.id) { await resolveHero() }
         }
     }
 
-    /// Resolve the lead image from the already-projected `Place` when possible,
-    /// while the full dive loads in parallel for the story teaser. A miss (no
-    /// title, no dive, or no image) leaves `heroURL` nil and marks the hero
-    /// resolved so it hides.
+    /// Resolve the lead image from the already-projected `Place` quickly, then
+    /// fill in any extra gallery titles from the full dive. A miss (no title,
+    /// no dive, or no image) leaves `heroURLs` empty and marks the hero resolved
+    /// so it hides.
     private func resolveHero() async {
         heroResolved = false
-        heroURL = nil
+        heroURLs = []
+        selectedHeroIndex = 0
         dive = nil
         async let loadedDive: Dive? = (try? await LoreAPI.shared.dive(placeID: place.id)) ?? nil
-        if let title = cleanTitle(place.wikipediaTitle) {
-            async let resolvedURL = WikipediaService.shared.portraitURL(for: title)
-            let resolved = await resolvedURL
+        if let title = WikipediaTitleList.cleaned([place.wikipediaTitle]).first {
+            let resolved = await WikipediaService.shared.portraitURL(for: title)
             guard !Task.isCancelled else { return }
-            heroURL = resolved
-            heroResolved = true
-            let loaded = await loadedDive
-            guard !Task.isCancelled else { return }
-            dive = loaded
-            return
+            if let resolved {
+                heroURLs = [resolved]
+                heroResolved = true
+            }
         }
 
         let loaded = await loadedDive
         guard !Task.isCancelled else { return }
         dive = loaded
-        if let title = cleanTitle(loaded?.media.wikipediaTitle) {
-            let resolvedURL = await WikipediaService.shared.portraitURL(for: title)
-            guard !Task.isCancelled else { return }
-            heroURL = resolvedURL
+        let titles = heroImageTitles(placeTitle: place.wikipediaTitle, dive: loaded)
+        let resolvedURLs = await WikipediaService.shared.portraitURLs(for: titles)
+        guard !Task.isCancelled else { return }
+        if !resolvedURLs.isEmpty {
+            heroURLs = resolvedURLs
+            selectedHeroIndex = 0
         }
         heroResolved = true
     }
 
-    private func cleanTitle(_ value: String?) -> String? {
-        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return trimmed.isEmpty ? nil : trimmed
+    private func heroImageTitles(placeTitle: String?, dive: Dive?) -> [String] {
+        var values: [String?] = [placeTitle]
+        if let dive {
+            values += dive.media.wikipediaTitles.map { Optional($0) }
+            values.append(dive.media.wikipediaTitle)
+            values.append(dive.links.wikipediaTitle)
+        }
+        return WikipediaTitleList.cleaned(values)
     }
 
     // MARK: Dossier (morph target)

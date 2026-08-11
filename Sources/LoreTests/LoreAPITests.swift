@@ -80,6 +80,39 @@ final class LoreAPITests: XCTestCase {
         XCTAssertEqual(dive.links.wikipediaURL?.absoluteString, "https://en.wikipedia.org/wiki/Example_Place")
     }
 
+    func testDiveMediaRefDecodesOrderedGalleryTitles() throws {
+        let data = Data("""
+        {
+          "place_id": "place-1",
+          "narrative": "A sourced dossier.",
+          "timeline": [],
+          "links": {},
+          "media": {
+            "wikipedia_title": "Bengaluru Palace",
+            "wikipedia_titles": [
+              "Bengaluru Palace",
+              "Vidhana Soudha",
+              "  "
+            ],
+            "gallery_wikipedia_titles": [
+              "vidhana soudha",
+              "Tipu Sultan's Summer Palace"
+            ]
+          },
+          "source": "seed:dev"
+        }
+        """.utf8)
+
+        let dive = try JSONDecoder().decode(Dive.self, from: data)
+
+        XCTAssertEqual(dive.media.wikipediaTitle, "Bengaluru Palace")
+        XCTAssertEqual(dive.media.wikipediaTitles, [
+            "Bengaluru Palace",
+            "Vidhana Soudha",
+            "Tipu Sultan's Summer Palace",
+        ])
+    }
+
     func testDiveLinksRejectNonHTTPSSourceURLs() {
         let links = DiveLinks(
             website: "http://example.org/place",

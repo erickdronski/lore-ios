@@ -209,8 +209,8 @@ struct DiveView: View {
                 .diveEntrance(index: 0)
         }
 
-        if let wikipediaTitle = dive.media.wikipediaTitle {
-            DiveGallery(wikipediaTitle: wikipediaTitle)
+        if !dive.media.wikipediaTitles.isEmpty {
+            DiveGallery(wikipediaTitles: dive.media.wikipediaTitles)
                 .diveEntrance(index: 1)
         }
 
@@ -554,42 +554,52 @@ struct TimelineNode: View {
 
 // MARK: - Gallery
 
-/// The dossier's lead photo: resolved from `dive.media.wikipedia_title` through
-/// the same Wikipedia summary API the culture portraits use (no dependency, no
-/// key), then shown through `BlurUpAsyncImage` (shimmer placeholder →
-/// cross-fade to sharp, no pop-in, LUXURY-MOTION §3). Self-hides on a confirmed
-/// miss so a title without an image leaves no empty frame.
+/// The dossier's gallery photo(s): resolved from `dive.media` Wikipedia title
+/// references through the same Wikipedia summary API the culture portraits use
+/// (no dependency, no key), then shown through `BlurUpAsyncImage` (shimmer
+/// placeholder → cross-fade to sharp, no pop-in, LUXURY-MOTION §3). Self-hides
+/// on a confirmed miss so titles without images leave no empty frame.
 struct DiveGallery: View {
-    let wikipediaTitle: String
+    let wikipediaTitles: [String]
 
-    @State private var imageURL: URL?
+    @State private var imageURLs: [URL] = []
+    @State private var selection = 0
     @State private var resolved = false
+
+    init(wikipediaTitles: [String]) {
+        self.wikipediaTitles = WikipediaTitleList.cleaned(wikipediaTitles.map { Optional($0) })
+    }
 
     var body: some View {
         Group {
-            if !resolved || imageURL != nil {
+            if !resolved || !imageURLs.isEmpty {
                 VStack(alignment: .leading, spacing: 12) {
                     Text(L10n.t("dossier.gallery"))
                         .font(LoreType.displayM)
                         .foregroundStyle(LoreColor.bone)
 
-                    BlurUpAsyncImage(url: imageURL)
-                        .frame(height: 200)
-                        .frame(maxWidth: .infinity)
+                    LoreImageCarousel(
+                        urls: imageURLs,
+                        title: wikipediaTitles.first ?? "this place",
+                        height: 200,
+                        cornerRadius: 14,
+                        background: LoreColor.bone,
+                        activeDot: LoreColor.amber,
+                        inactiveDot: LoreColor.bone.opacity(0.72),
+                        selection: $selection
+                    )
                         // A light backing so a dark or transparent Wikipedia
                         // image (some pages return a dark logo, not a photo)
                         // stays legible on the Ink dossier instead of vanishing.
                         // Full-bleed photos cover it; only letterboxed/logo art
                         // shows the frame.
-                        .background(LoreColor.bone)
-                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                        .loreElevation(.elev1)
-                        .accessibilityLabel(Text("Photo of \(wikipediaTitle)"))
                 }
             }
         }
-        .task(id: wikipediaTitle) {
-            imageURL = await WikipediaService.shared.portraitURL(for: wikipediaTitle)
+        .task(id: wikipediaTitles) {
+            resolved = false
+            imageURLs = await WikipediaService.shared.portraitURLs(for: wikipediaTitles)
+            selection = 0
             resolved = true
         }
     }
