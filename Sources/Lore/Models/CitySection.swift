@@ -275,7 +275,7 @@ enum SectionKindMeta {
 
 /// A compact action plan synthesized from the richer city-section rows. It does
 /// not invent new facts; it only elevates already-loaded Lore notes into a
-/// first screen brief so "Meet City" feels guided instead of just full.
+/// traveler brief so "Meet City" feels guided instead of just full.
 struct CityFieldBrief: Equatable {
     struct Item: Identifiable, Equatable {
         let id: String

@@ -49,9 +49,9 @@ struct CityFlavorShelf: View {
     }
 }
 
-/// First-screen synthesis for the rich local-expert rows. The long shelves are
-/// still below; this gives travelers the immediate "what should I notice?"
-/// briefing that makes a city page feel curated instead of encyclopedic.
+/// Synthesis for the rich local-expert rows. The individual culture modules
+/// lead the page; this later brief gives travelers a practical "what should I
+/// notice?" plan before they continue into the deeper shelves.
 struct CityFieldBriefCard: View {
     let brief: CityFieldBrief
     let accent: Color

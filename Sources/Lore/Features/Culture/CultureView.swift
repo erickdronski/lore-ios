@@ -165,12 +165,6 @@ struct CultureView: View {
                         .staggerChild(index: 1)
                 }
 
-                if let fieldBrief = model.fieldBrief {
-                    CityFieldBriefCard(brief: fieldBrief, accent: accent ?? LoreColor.brass300)
-                        .padding(.horizontal, 16)
-                        .staggerChild(index: 1)
-                }
-
                 if !model.quotes.isEmpty {
                     CultureQuoteCard(quotes: model.quotes)
                         .padding(.horizontal, 16)
@@ -224,6 +218,12 @@ struct CultureView: View {
                     .staggerChild(index: 6)
                 }
 
+                if let fieldBrief = model.fieldBrief {
+                    CityFieldBriefCard(brief: fieldBrief, accent: accent ?? LoreColor.brass300)
+                        .padding(.horizontal, 16)
+                        .staggerChild(index: 7)
+                }
+
                 if !model.flavor.isEmpty {
                     // The flavor layer: dish/sound/etiquette/… shelves, any kind
                     // the server sends. One block in the cascade so indices of
@@ -238,7 +238,7 @@ struct CultureView: View {
                             }
                         }
                     }
-                    .staggerChild(index: 7)
+                    .staggerChild(index: 8)
                 }
 
                 Color.clear.frame(height: 24)
@@ -505,8 +505,8 @@ final class CultureModel {
     /// Flavor sections grouped by kind, in `SectionKindMeta` order. Any kind
     /// the server sends renders; old kinds never break.
     private(set) var flavor: [(kind: String, entries: [CitySection])] = []
-    /// The first-screen traveler brief, synthesized from the richest loaded
-    /// section kinds when enough of them exist.
+    /// The traveler brief, synthesized from the richest loaded section kinds
+    /// when enough of them exist.
     private(set) var fieldBrief: CityFieldBrief?
 
     /// Human-friendly city name. Falls back to a title-cased slug when the
