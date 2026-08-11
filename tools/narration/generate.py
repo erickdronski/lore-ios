@@ -9,6 +9,9 @@ Providers:
 - Chatterbox: local Apple-Silicon MPS, no per-run cost, useful for drafts.
 - ElevenLabs: paid studio voice, production default when ELEVENLABS_API_KEY is
   present. API keys stay on the workstation/CI and are never shipped in the app.
+- Voicebox: local open-source workstation TTS server. Preferred no-cost studio
+  path when the Voicebox app/server is running and VOICEBOX_PROFILE points to a
+  rights-cleared house narrator profile.
 
 Single place (audition):
   .venv/bin/python generate.py --provider elevenlabs --city austin \
@@ -26,13 +29,18 @@ Machine notes (work laptop):
   without written consent.
 """
 
+from __future__ import annotations
+
 import argparse
+import base64
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.parse
 from datetime import datetime, timezone
 from pathlib import Path
@@ -51,6 +59,10 @@ CHATTERBOX_VOICE_TAG = "chatterbox-default"
 ELEVENLABS_VOICE_ID = "30fc8796-ceb6-4a66-b3a7-4a145ef7f346"
 ELEVENLABS_MODEL = "eleven_multilingual_v2"
 ELEVENLABS_OUTPUT_FORMAT = "mp3_44100_128"
+VOICEBOX_API_URL = "http://127.0.0.1:17493"
+VOICEBOX_CLIENT_ID = "lore-narration"
+VOICEBOX_LANGUAGE = "en"
+VOICEBOX_MAX_CHARS = 6_000
 MAX_CHUNK = 280
 SILENCE_S = 0.35
 
@@ -62,6 +74,26 @@ def curl_json(url: str, headers: dict[str, str]) -> object:
         cmd += ["-H", f"{key}: {value}"]
     result = subprocess.run(cmd, capture_output=True, text=True, check=True)
     return json.loads(result.stdout)
+
+
+def curl_json_request(
+    method: str,
+    url: str,
+    headers: dict[str, str],
+    payload: dict | None = None,
+) -> object:
+    """JSON request via curl. Used for local Voicebox too, so the narration
+    tool has one audited HTTP path and avoids python urllib TLS drift."""
+    cmd = ["curl", "-sS", "--http1.1", "--fail-with-body", "-X", method, url]
+    for key, value in headers.items():
+        cmd += ["-H", f"{key}: {value}"]
+    if payload is not None:
+        cmd += ["-H", "Content-Type: application/json", "-d", json.dumps(payload)]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        body = result.stdout.strip() or result.stderr.strip()
+        raise RuntimeError(f"curl {method} {url} failed: {body[:500]}")
+    return json.loads(result.stdout or "{}")
 
 
 def service_key() -> str:
@@ -246,6 +278,135 @@ def synthesize_elevenlabs(text: str, out: Path, args) -> float:
     return duration_seconds(out, text)
 
 
+def _voicebox_url(args, path: str) -> str:
+    return f"{args.voicebox_api_url.rstrip('/')}/{path.lstrip('/')}"
+
+
+def _voicebox_headers(args) -> dict[str, str]:
+    return {
+        "Accept": "application/json",
+        "X-Voicebox-Client-Id": args.voicebox_client_id,
+    }
+
+
+def _voicebox_generation_id(payload: dict) -> str:
+    generation_id = payload.get("generation_id") or payload.get("id") or payload.get("audio_id")
+    if not generation_id:
+        raise RuntimeError(f"Voicebox response did not include a generation id: {payload}")
+    return str(generation_id)
+
+
+def _write_voicebox_audio(payload: dict, out: Path, args) -> bool:
+    """Write Voicebox audio when the response already contains bytes or an
+    accessible file reference. Returns false when the generation still needs to
+    be polled/downloaded."""
+    out.parent.mkdir(parents=True, exist_ok=True)
+
+    audio_b64 = payload.get("audio_base64")
+    if isinstance(audio_b64, str) and audio_b64:
+        out.write_bytes(base64.b64decode(audio_b64))
+        return True
+
+    audio_path = payload.get("audio_path")
+    if isinstance(audio_path, str) and audio_path:
+        path = Path(audio_path).expanduser()
+        if path.exists():
+            shutil.copyfile(path, out)
+            return True
+
+    audio_url = payload.get("audio_url")
+    if isinstance(audio_url, str) and audio_url:
+        _curl_retry_output([audio_url], out)
+        return True
+
+    generation_id = payload.get("generation_id") or payload.get("id") or payload.get("audio_id")
+    if generation_id and payload.get("status") in {"completed", "complete", "done", "succeeded", "success"}:
+        _curl_retry_output([_voicebox_url(args, f"/audio/{generation_id}")], out)
+        return True
+
+    return False
+
+
+def synthesize_voicebox(text: str, out: Path, args) -> float:
+    """Generate a local Voicebox studio read and write it to `out`.
+
+    Voicebox runs as a localhost workstation service. No model, key, or voice
+    profile data is embedded in the iOS app; this tool only creates hosted
+    narration files that the app already knows how to play.
+    """
+    if len(text) > args.voicebox_max_chars:
+        raise RuntimeError(
+            f"Voicebox text is {len(text)} characters, above "
+            f"--voicebox-max-chars={args.voicebox_max_chars}. Shorten or split "
+            "this dive before generating studio audio."
+        )
+
+    payload: dict[str, object] = {
+        "text": text,
+        "language": args.voicebox_language,
+        "personality": args.voicebox_personality,
+    }
+    if args.voicebox_profile:
+        payload["profile"] = args.voicebox_profile
+    if args.voicebox_engine:
+        payload["engine"] = args.voicebox_engine
+
+    try:
+        response = curl_json_request(
+            "POST",
+            _voicebox_url(args, "/speak"),
+            _voicebox_headers(args),
+            payload,
+        )
+    except RuntimeError as first_error:
+        # Some API-only deployments expose the older synchronous /generate
+        # route. Try it once before treating the local service as unavailable.
+        try:
+            generate_payload = {
+                "text": text,
+                "language": args.voicebox_language,
+                "model_size": args.voicebox_model_size,
+            }
+            if args.voicebox_profile:
+                generate_payload["profile_id"] = args.voicebox_profile
+            response = curl_json_request(
+                "POST",
+                _voicebox_url(args, "/generate"),
+                _voicebox_headers(args),
+                generate_payload,
+            )
+        except RuntimeError as second_error:
+            raise RuntimeError(
+                "Voicebox did not answer /speak or /generate. Start the "
+                f"Voicebox app/server at {args.voicebox_api_url}. "
+                f"First error: {first_error}; fallback error: {second_error}"
+            ) from second_error
+
+    if _write_voicebox_audio(response, out, args):
+        return duration_seconds(out, text)
+
+    generation_id = _voicebox_generation_id(response)
+    # Voicebox's /generate/{id}/status is an SSE stream. The JSON-safe polling
+    # surface is /history/{id}; once the row is completed, /audio/{id} serves
+    # the default version's audio bytes.
+    poll_url = _voicebox_url(args, f"/history/{generation_id}")
+    deadline = time.monotonic() + args.voicebox_timeout
+    last_status = response.get("status")
+    while time.monotonic() < deadline:
+        time.sleep(args.voicebox_poll_interval)
+        status_payload = curl_json_request("GET", poll_url, _voicebox_headers(args))
+        if _write_voicebox_audio(status_payload, out, args):
+            return duration_seconds(out, text)
+        last_status = status_payload.get("status") or last_status
+        if last_status in {"failed", "error", "cancelled", "canceled"}:
+            raise RuntimeError(f"Voicebox generation failed: {status_payload}")
+
+    raise RuntimeError(
+        f"Voicebox generation {generation_id} timed out after "
+        f"{args.voicebox_timeout}s; last status={last_status!r}"
+    )
+
+
 def _curl_retry(args: list[str], attempts: int = 4) -> None:
     """Run curl with retries: the work-laptop TLS proxy intermittently drops
     POST bodies (curl exit 56, the same trap that kills big git pushes), so a
@@ -331,6 +492,8 @@ def load_model(model_dir: str | None):
 def output_extension(provider: str) -> str:
     if provider == "elevenlabs":
         return "mp3"
+    if provider == "voicebox":
+        return "wav"
     return "m4a"
 
 
@@ -338,6 +501,10 @@ def voice_tag(args) -> str:
     if args.provider == "elevenlabs":
         voice_id = args.voice_id or ELEVENLABS_VOICE_ID
         return f"elevenlabs:{args.eleven_model}:{voice_id}"
+    if args.provider == "voicebox":
+        profile = args.voicebox_profile or "client-default"
+        engine = args.voicebox_engine or "profile-default"
+        return f"voicebox:{engine}:{profile}"
     return CHATTERBOX_VOICE_TAG
 
 
@@ -349,7 +516,7 @@ def main() -> None:
     parser.add_argument("--out", help="output file (single-place mode)")
     parser.add_argument("--upload", action="store_true",
                         help="upload to Storage + stamp the dive row")
-    parser.add_argument("--provider", choices=["chatterbox", "elevenlabs"],
+    parser.add_argument("--provider", choices=["chatterbox", "elevenlabs", "voicebox"],
                         default=os.getenv("LORE_NARRATION_PROVIDER", "chatterbox"))
 
     # Chatterbox draft/local controls.
@@ -371,6 +538,31 @@ def main() -> None:
     parser.add_argument("--similarity-boost", type=float, default=0.62)
     parser.add_argument("--style", type=float, default=0.08)
     parser.add_argument("--no-speaker-boost", action="store_true")
+
+    # Voicebox local studio controls. Keep personality off by default so source
+    # backed Lore copy is read, not rewritten.
+    parser.add_argument("--voicebox-api-url", default=os.getenv("VOICEBOX_API_URL", VOICEBOX_API_URL))
+    parser.add_argument("--voicebox-client-id", default=os.getenv("VOICEBOX_CLIENT_ID", VOICEBOX_CLIENT_ID))
+    parser.add_argument("--voicebox-profile", default=os.getenv("VOICEBOX_PROFILE"))
+    parser.add_argument("--voicebox-engine", default=os.getenv("VOICEBOX_ENGINE"))
+    parser.add_argument("--voicebox-language", default=os.getenv("VOICEBOX_LANGUAGE", VOICEBOX_LANGUAGE))
+    parser.add_argument("--voicebox-model-size", default=os.getenv("VOICEBOX_MODEL_SIZE", "1.7B"))
+    parser.add_argument(
+        "--voicebox-max-chars",
+        type=int,
+        default=int(os.getenv("VOICEBOX_MAX_CHARS", VOICEBOX_MAX_CHARS)),
+    )
+    parser.add_argument("--voicebox-timeout", type=int, default=int(os.getenv("VOICEBOX_TIMEOUT", "900")))
+    parser.add_argument(
+        "--voicebox-poll-interval",
+        type=float,
+        default=float(os.getenv("VOICEBOX_POLL_INTERVAL", "2.0")),
+    )
+    parser.add_argument(
+        "--voicebox-personality",
+        action="store_true",
+        help="allow Voicebox personality processing; off keeps Lore's exact narration script",
+    )
     args = parser.parse_args()
 
     if args.batch_city:
@@ -404,6 +596,8 @@ def main() -> None:
             text = row["narrative"].strip()
             if args.provider == "elevenlabs":
                 seconds = synthesize_elevenlabs(text, out, args)
+            elif args.provider == "voicebox":
+                seconds = synthesize_voicebox(text, out, args)
             else:
                 seconds = synthesize_chatterbox(model, text, out,
                                                 args.voice, args.exaggeration, args.cfg_weight)
