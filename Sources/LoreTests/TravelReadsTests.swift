@@ -200,6 +200,137 @@ final class TravelReadsTests: XCTestCase {
         XCTAssertEqual(calls[2], "DELETE /storage/v1/object/journal-photos")
     }
 
+    func testRemoveVisitPhotoDeletesStorageBeforeDroppingVisitReference() async throws {
+        let placeID = "7c26d345-a8c0-43b9-b56b-f7c58b6da972"
+        let path = "user-123/\(placeID)/photo.jpg"
+        let lock = NSLock()
+        var calls: [String] = []
+
+        TravelReadsURLProtocol.handler = { request in
+            let method = try XCTUnwrap(request.httpMethod)
+            let requestPath = try XCTUnwrap(request.url?.path)
+            lock.lock()
+            calls.append("\(method) \(requestPath)")
+            lock.unlock()
+
+            let status: Int
+            let responseData: Data
+            if method == "DELETE", requestPath == "/storage/v1/object/journal-photos" {
+                let body = try self.requestBody(request)
+                let json = try XCTUnwrap(
+                    JSONSerialization.jsonObject(with: body) as? [String: [String]]
+                )
+                XCTAssertEqual(json["prefixes"], [path])
+                status = 200
+                responseData = Data("[]".utf8)
+            } else if method == "POST", requestPath == "/rest/v1/rpc/remove_visit_photo" {
+                let body = try self.requestBody(request)
+                let json = try XCTUnwrap(
+                    JSONSerialization.jsonObject(with: body) as? [String: String]
+                )
+                XCTAssertEqual(json, ["p_place_id": placeID, "p_path": path])
+                status = 200
+                responseData = Data("[]".utf8)
+            } else {
+                XCTFail("Unexpected request: \(method) \(requestPath)")
+                status = 404
+                responseData = Data()
+            }
+
+            let response = try XCTUnwrap(HTTPURLResponse(
+                url: try XCTUnwrap(request.url),
+                statusCode: status,
+                httpVersion: nil,
+                headerFields: ["Content-Type": "application/json"]
+            ))
+            return (response, responseData)
+        }
+
+        try await TravelReads.removeVisitPhoto(
+            placeID: placeID,
+            path: path,
+            accessToken: "token-123",
+            session: makeSession()
+        )
+
+        XCTAssertEqual(calls, [
+            "DELETE /storage/v1/object/journal-photos",
+            "POST /rest/v1/rpc/remove_visit_photo",
+        ])
+    }
+
+    func testRemoveVisitPhotoDoesNotDropVisitReferenceWhenStorageDeleteFails() async throws {
+        let placeID = "7c26d345-a8c0-43b9-b56b-f7c58b6da972"
+        let lock = NSLock()
+        var calls: [String] = []
+
+        TravelReadsURLProtocol.handler = { request in
+            let method = try XCTUnwrap(request.httpMethod)
+            let requestPath = try XCTUnwrap(request.url?.path)
+            lock.lock()
+            calls.append("\(method) \(requestPath)")
+            lock.unlock()
+
+            let response = try XCTUnwrap(HTTPURLResponse(
+                url: try XCTUnwrap(request.url),
+                statusCode: 500,
+                httpVersion: nil,
+                headerFields: ["Content-Type": "application/json"]
+            ))
+            return (response, Data(#"{"message":"storage failed"}"#.utf8))
+        }
+
+        do {
+            try await TravelReads.removeVisitPhoto(
+                placeID: placeID,
+                path: "user-123/\(placeID)/photo.jpg",
+                accessToken: "token-123",
+                session: makeSession()
+            )
+            XCTFail("A storage cleanup failure must keep the UI in a failed state")
+        } catch TravelReads.TravelError.http(let status, _) {
+            XCTAssertEqual(status, 500)
+        }
+
+        XCTAssertEqual(calls, ["DELETE /storage/v1/object/journal-photos"])
+    }
+
+    func testDeleteVisitDoesNotDeleteRowWhenPhotoStorageDeleteFails() async throws {
+        let placeID = "7c26d345-a8c0-43b9-b56b-f7c58b6da972"
+        let lock = NSLock()
+        var calls: [String] = []
+
+        TravelReadsURLProtocol.handler = { request in
+            let method = try XCTUnwrap(request.httpMethod)
+            let requestPath = try XCTUnwrap(request.url?.path)
+            lock.lock()
+            calls.append("\(method) \(requestPath)")
+            lock.unlock()
+
+            let response = try XCTUnwrap(HTTPURLResponse(
+                url: try XCTUnwrap(request.url),
+                statusCode: 503,
+                httpVersion: nil,
+                headerFields: ["Content-Type": "application/json"]
+            ))
+            return (response, Data(#"{"message":"storage unavailable"}"#.utf8))
+        }
+
+        do {
+            try await TravelReads.deleteVisit(
+                placeID: placeID,
+                photoPaths: ["user-123/\(placeID)/photo.jpg"],
+                accessToken: "token-123",
+                session: makeSession()
+            )
+            XCTFail("A memory delete must not hide private photo cleanup failure")
+        } catch TravelReads.TravelError.http(let status, _) {
+            XCTAssertEqual(status, 503)
+        }
+
+        XCTAssertEqual(calls, ["DELETE /storage/v1/object/journal-photos"])
+    }
+
     func testVisitHistoryPagesUntilTheServerReturnsAShortPage() async throws {
         let lock = NSLock()
         var requestedRanges: [String] = []

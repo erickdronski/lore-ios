@@ -381,6 +381,7 @@ final class VisitStore {
         historyLoaded = false
         historyLoadGeneration &+= 1
         photoURLCache = [:]
+        photoPreviewCache = [:]
         lastError = nil
     }
 }

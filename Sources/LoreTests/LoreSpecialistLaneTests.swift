@@ -205,6 +205,13 @@ final class LoreSpecialistLaneTests: XCTestCase {
     }
 
     @MainActor
+    func testShareHeroImageRejectsOversizedBytesBeforeDecode() {
+        let oversized = Data(repeating: 0, count: ShareHeroImageLoader.maximumHeroImageBytes + 1)
+
+        XCTAssertNil(ShareHeroImageLoader.downsampledImage(from: oversized))
+    }
+
+    @MainActor
     func testShareRendererRendersPreloadedPlaceImageCard() {
         let hero = UIGraphicsImageRenderer(size: CGSize(width: 160, height: 120)).image { context in
             UIColor.systemOrange.setFill()

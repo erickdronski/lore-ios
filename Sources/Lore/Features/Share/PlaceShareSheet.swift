@@ -1,3 +1,4 @@
+import ImageIO
 import SwiftUI
 import UIKit
 
@@ -197,26 +198,78 @@ struct ActivityView: UIViewControllerRepresentable {
 }
 
 enum ShareHeroImageLoader {
+    static let maximumHeroImageBytes = 6 * 1_024 * 1_024
+    static let maximumHeroImageDimension: CGFloat = 900
+
     static func image(for place: Place) async -> UIImage? {
         guard let title = cleanTitle(place.wikipediaTitle),
               let remote = await WikipediaService.shared.portraitURL(for: title) else { return nil }
         let resolved = PackImageStore.localURL(for: remote) ?? remote
 
         do {
-            let data: Data
-            if resolved.isFileURL {
-                data = try Data(contentsOf: resolved)
-            } else {
-                let (loaded, response) = try await URLSession.shared.data(from: resolved)
-                if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-                    return nil
-                }
-                data = loaded
-            }
-            return UIImage(data: data)
+            let data = try await imageData(from: resolved)
+            return downsampledImage(from: data)
         } catch {
             return nil
         }
+    }
+
+    static func downsampledImage(
+        from data: Data,
+        maxDimension: CGFloat = maximumHeroImageDimension
+    ) -> UIImage? {
+        guard !data.isEmpty,
+              data.count <= maximumHeroImageBytes,
+              maxDimension.isFinite,
+              maxDimension > 0 else { return nil }
+
+        let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
+        guard let source = CGImageSourceCreateWithData(data as CFData, sourceOptions) else { return nil }
+        let thumbnailOptions: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: Int(maxDimension.rounded(.down)),
+            kCGImageSourceShouldCacheImmediately: true,
+        ]
+        guard let thumbnail = CGImageSourceCreateThumbnailAtIndex(
+            source,
+            0,
+            thumbnailOptions as CFDictionary
+        ) else { return nil }
+        return UIImage(cgImage: thumbnail)
+    }
+
+    private static func imageData(from url: URL) async throws -> Data {
+        if url.isFileURL {
+            let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize
+            guard (size ?? 0) <= maximumHeroImageBytes else { throw URLError(.dataLengthExceedsMaximum) }
+            let data = try Data(contentsOf: url, options: [.mappedIfSafe])
+            guard data.count <= maximumHeroImageBytes else { throw URLError(.dataLengthExceedsMaximum) }
+            return data
+        }
+
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 12
+        let (bytes, response) = try await URLSession.shared.bytes(for: request)
+        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            throw URLError(.badServerResponse)
+        }
+        if response.expectedContentLength > Int64(maximumHeroImageBytes) {
+            throw URLError(.dataLengthExceedsMaximum)
+        }
+
+        var data = Data()
+        data.reserveCapacity(min(
+            maximumHeroImageBytes,
+            max(0, Int(response.expectedContentLength))
+        ))
+        for try await byte in bytes {
+            data.append(byte)
+            if data.count > maximumHeroImageBytes {
+                throw URLError(.dataLengthExceedsMaximum)
+            }
+        }
+        return data
     }
 
     private static func cleanTitle(_ value: String?) -> String? {

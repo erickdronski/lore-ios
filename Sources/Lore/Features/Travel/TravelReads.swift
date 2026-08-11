@@ -327,8 +327,9 @@ enum TravelReads {
         try ensureOK(response, data: data)
     }
 
-    /// Remove one private photo from a visit atomically (array + storage). The
-    /// RPC is owner-scoped; the storage delete is limited to the caller's folder.
+    /// Remove one private photo from a visit. Storage cleanup is the privacy
+    /// boundary, so it must complete before the visit row drops the reference.
+    /// The RPC is owner-scoped; the storage delete is limited to the caller's folder.
     /// `POST /rest/v1/rpc/remove_visit_photo`
     static func removeVisitPhoto(
         placeID: String,
@@ -336,6 +337,8 @@ enum TravelReads {
         accessToken: String,
         session: URLSession = .shared
     ) async throws {
+        try await removeJournalPhoto(path: path, accessToken: accessToken, session: session)
+
         let url = Config.restURL.appending(path: "rpc/remove_visit_photo")
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -348,8 +351,6 @@ enum TravelReads {
         ])
         let (data, response) = try await session.data(for: request)
         try ensureOK(response, data: data)
-        // Best-effort storage cleanup; the visit.photos array drives display.
-        try? await removeJournalPhoto(path: path, accessToken: accessToken, session: session)
     }
 
     /// Delete a whole memory — the visit row and its private photos. RLS scopes
@@ -367,12 +368,11 @@ enum TravelReads {
         request.httpMethod = "DELETE"
         apply(&request, accessToken: accessToken)
         request.setValue("return=minimal", forHTTPHeaderField: "Prefer")
+        for path in photoPaths {
+            try await removeJournalPhoto(path: path, accessToken: accessToken, session: session)
+        }
         let (data, response) = try await session.data(for: request)
         try ensureOK(response, data: data)
-        // Clean up the entry's private photos (best-effort; the row is gone).
-        for path in photoPaths {
-            try? await removeJournalPhoto(path: path, accessToken: accessToken, session: session)
-        }
     }
 
     /// Clear a stale public flag left by a pre-launch client. This deliberately
