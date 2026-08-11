@@ -152,109 +152,179 @@ struct CultureView: View {
     // MARK: - Loaded content
 
     private var content: some View {
-        ScrollView {
-            // The sections cascade in with the shared 40 ms fade+rise so the
-            // surface assembles itself (LUXURY-MOTION §6). Conditional sections
-            // make static indices awkward, so we cascade the ones that exist.
-            StaggeredReveal(spacing: 32) {
-                header.staggerChild(index: 0)
+        ScrollViewReader { proxy in
+            let navItems = navigatorItems
+            ScrollView {
+                // The sections cascade in with the shared 40 ms fade+rise so the
+                // surface assembles itself (LUXURY-MOTION §6). Conditional sections
+                // make static indices awkward, so we cascade the ones that exist.
+                StaggeredReveal(spacing: 32) {
+                    header.staggerChild(index: 0)
 
-                if let warning = model.loadWarning {
-                    partialDataNotice(warning)
-                        .padding(.horizontal, 16)
-                        .staggerChild(index: 1)
-                }
-
-                if !model.quotes.isEmpty {
-                    CultureQuoteCard(quotes: model.quotes)
-                        .padding(.horizontal, 16)
-                        .staggerChild(index: 1)
-                }
-
-                if !model.facts.isEmpty {
-                    VStack(alignment: .leading, spacing: 14) {
-                        CultureSectionHeader(eyebrow: "Wait, Really?", title: "Did You Know", accent: accent)
-                            .padding(.horizontal, 16)
-                        DidYouKnowDeck(facts: model.facts)
-                    }
-                    .staggerChild(index: 2)
-                }
-
-                if !model.stats.isEmpty {
-                    VStack(alignment: .leading, spacing: 14) {
-                        CultureSectionHeader(eyebrow: "The Big Figures", title: "By the Numbers", accent: accent)
-                            .padding(.horizontal, 16)
-                        ByTheNumbersStrip(stats: model.stats)
-                    }
-                    .staggerChild(index: 3)
-                }
-
-                if !model.people.isEmpty {
-                    VStack(alignment: .leading, spacing: 14) {
-                        CultureSectionHeader(eyebrow: "The Locals", title: "Famous Faces", accent: accent)
-                            .padding(.horizontal, 16)
-                        FamousFacesRow(people: model.people) { person in
-                            model.selectedPerson = person
-                        }
-                    }
-                    .staggerChild(index: 4)
-                }
-
-                if !model.lingo.isEmpty {
-                    VStack(alignment: .leading, spacing: 14) {
-                        CultureSectionHeader(eyebrow: "Talk Like a Local", title: "Local Lingo", accent: accent)
-                            .padding(.horizontal, 16)
-                        lingoGrid
-                    }
-                    .staggerChild(index: 5)
-                }
-
-                if !model.sayings.isEmpty {
-                    VStack(alignment: .leading, spacing: 14) {
-                        CultureSectionHeader(eyebrow: "How We Say It", title: "Sayings", accent: accent)
-                            .padding(.horizontal, 16)
-                        sayingsRow
-                    }
-                    .staggerChild(index: 6)
-                }
-
-                if let fieldBrief = model.fieldBrief {
-                    CityFieldBriefCard(brief: fieldBrief, accent: accent ?? LoreColor.brass300)
-                        .padding(.horizontal, 16)
-                        .staggerChild(index: 7)
-                }
-
-                if !model.flavor.isEmpty {
-                    // The flavor layer: dish/sound/etiquette/… shelves, any kind
-                    // the server sends. One block in the cascade so indices of
-                    // the culture sections above stay stable.
-                    VStack(alignment: .leading, spacing: 32) {
-                        ForEach(model.flavor, id: \.kind) { group in
-                            let meta = SectionKindMeta.header(for: group.kind)
-                            VStack(alignment: .leading, spacing: 14) {
-                                CultureSectionHeader(eyebrow: meta.eyebrow, title: meta.title, accent: accent)
-                                    .padding(.horizontal, 16)
-                                CityFlavorShelf(entries: group.entries, accent: accent ?? LoreColor.brass300)
+                    if !navItems.isEmpty {
+                        CultureIntelNavigator(items: navItems) { item in
+                            withAnimation(LoreSpring.smooth(reduceMotion: reduceMotion)) {
+                                proxy.scrollTo(item.anchorID, anchor: .top)
                             }
                         }
+                        .staggerChild(index: 1)
                     }
-                    .staggerChild(index: 8)
-                }
 
-                Color.clear.frame(height: 24)
-            }
-            .padding(.top, 8)
-            .frame(maxWidth: 980)
-            .frame(maxWidth: .infinity)
-            .background(alignment: .top) {
-                // The city's signature wash, scrolling away with the header.
-                CityThemeWash(theme: model.theme)
+                    if let warning = model.loadWarning {
+                        partialDataNotice(warning)
+                            .padding(.horizontal, 16)
+                            .staggerChild(index: 1)
+                    }
+
+                    if !model.quotes.isEmpty {
+                        CultureQuoteCard(quotes: model.quotes)
+                            .padding(.horizontal, 16)
+                            .staggerChild(index: 1)
+                    }
+
+                    if !model.facts.isEmpty {
+                        VStack(alignment: .leading, spacing: 14) {
+                            CultureSectionHeader(eyebrow: "Wait, Really?", title: "Did You Know", accent: accent)
+                                .padding(.horizontal, 16)
+                            DidYouKnowDeck(facts: model.facts)
+                        }
+                        .staggerChild(index: 2)
+                    }
+
+                    if !model.stats.isEmpty {
+                        VStack(alignment: .leading, spacing: 14) {
+                            CultureSectionHeader(eyebrow: "The Big Figures", title: "By the Numbers", accent: accent)
+                                .padding(.horizontal, 16)
+                            ByTheNumbersStrip(stats: model.stats)
+                        }
+                        .staggerChild(index: 3)
+                    }
+
+                    if !model.people.isEmpty {
+                        VStack(alignment: .leading, spacing: 14) {
+                            CultureSectionHeader(eyebrow: "The Locals", title: "Famous Faces", accent: accent)
+                                .padding(.horizontal, 16)
+                            FamousFacesRow(people: model.people) { person in
+                                model.selectedPerson = person
+                            }
+                        }
+                        .staggerChild(index: 4)
+                    }
+
+                    if !model.lingo.isEmpty {
+                        VStack(alignment: .leading, spacing: 14) {
+                            CultureSectionHeader(eyebrow: "Talk Like a Local", title: "Local Lingo", accent: accent)
+                                .padding(.horizontal, 16)
+                            lingoGrid
+                        }
+                        .id(CultureAnchor.lingo)
+                        .staggerChild(index: 5)
+                    }
+
+                    if !model.sayings.isEmpty {
+                        VStack(alignment: .leading, spacing: 14) {
+                            CultureSectionHeader(eyebrow: "How We Say It", title: "Sayings", accent: accent)
+                                .padding(.horizontal, 16)
+                            sayingsRow
+                        }
+                        .id(CultureAnchor.sayings)
+                        .staggerChild(index: 6)
+                    }
+
+                    if let fieldBrief = model.fieldBrief {
+                        CityFieldBriefCard(brief: fieldBrief, accent: accent ?? LoreColor.brass300)
+                            .padding(.horizontal, 16)
+                            .id(CultureAnchor.fieldBrief)
+                            .staggerChild(index: 7)
+                    }
+
+                    if !model.flavor.isEmpty {
+                        // The flavor layer: dish/sound/etiquette/… shelves, any kind
+                        // the server sends. One block in the cascade so indices of
+                        // the culture sections above stay stable.
+                        VStack(alignment: .leading, spacing: 32) {
+                            ForEach(model.flavor, id: \.kind) { group in
+                                let meta = SectionKindMeta.header(for: group.kind)
+                                VStack(alignment: .leading, spacing: 14) {
+                                    CultureSectionHeader(eyebrow: meta.eyebrow, title: meta.title, accent: accent)
+                                        .padding(.horizontal, 16)
+                                    CityFlavorShelf(entries: group.entries, accent: accent ?? LoreColor.brass300)
+                                }
+                                .id(CultureAnchor.flavor(group.kind))
+                            }
+                        }
+                        .staggerChild(index: 8)
+                    }
+
+                    Color.clear.frame(height: 24)
+                }
+                .padding(.top, 8)
+                .frame(maxWidth: 980)
+                .frame(maxWidth: .infinity)
+                .background(alignment: .top) {
+                    // The city's signature wash, scrolling away with the header.
+                    CityThemeWash(theme: model.theme)
+                }
             }
         }
     }
 
     /// The city accent for section eyebrows and card rules; nil = house brass.
     private var accent: Color? { model.theme?.accentColor }
+
+    private var navigatorItems: [CultureIntelNavItem] {
+        var items: [CultureIntelNavItem] = []
+
+        func addFlavor(_ kind: String, title: String, symbol: String) {
+            guard let count = model.flavor.first(where: { $0.kind == kind })?.entries.count,
+                  count > 0
+            else { return }
+            items.append(
+                CultureIntelNavItem(
+                    id: kind,
+                    title: title,
+                    count: count,
+                    systemImage: symbol,
+                    anchorID: CultureAnchor.flavor(kind)
+                )
+            )
+        }
+
+        addFlavor("name_origin", title: "Why named", symbol: "textformat.abc")
+        addFlavor("screen", title: "Movies", symbol: "film.fill")
+        if !model.lingo.isEmpty {
+            items.append(
+                CultureIntelNavItem(
+                    id: "lingo",
+                    title: "Lingo",
+                    count: model.lingo.count,
+                    systemImage: "text.bubble.fill",
+                    anchorID: CultureAnchor.lingo
+                )
+            )
+        }
+        if !model.sayings.isEmpty {
+            items.append(
+                CultureIntelNavItem(
+                    id: "sayings",
+                    title: "Sayings",
+                    count: model.sayings.count,
+                    systemImage: "quote.bubble.fill",
+                    anchorID: CultureAnchor.sayings
+                )
+            )
+        }
+        addFlavor("phrase", title: "Phrases", symbol: "speaker.wave.2.fill")
+        addFlavor("first_timer_mistake", title: "Mistakes", symbol: "exclamationmark.triangle.fill")
+        addFlavor("neighborhood_decode", title: "Areas", symbol: "map.fill")
+        addFlavor("watch", title: "Watch", symbol: "play.rectangle.fill")
+        addFlavor("hashtag", title: "Searches", symbol: "number")
+        addFlavor("local_legend", title: "Legends", symbol: "book.closed.fill")
+        addFlavor("photo_prompt", title: "Photos", symbol: "camera.viewfinder")
+        addFlavor("seasonal", title: "Timing", symbol: "calendar.badge.clock")
+
+        return items
+    }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -269,6 +339,84 @@ struct CultureView: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.horizontal, 16)
+    }
+
+    private struct CultureAnchor {
+        static let lingo = "culture-lingo"
+        static let sayings = "culture-sayings"
+        static let fieldBrief = "culture-field-brief"
+
+        static func flavor(_ kind: String) -> String {
+            "culture-flavor-\(kind)"
+        }
+    }
+
+    private struct CultureIntelNavItem: Identifiable, Equatable {
+        let id: String
+        let title: String
+        let count: Int
+        let systemImage: String
+        let anchorID: String
+    }
+
+    private struct CultureIntelNavigator: View {
+        let items: [CultureIntelNavItem]
+        let onSelect: (CultureIntelNavItem) -> Void
+
+        @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+        private var chipMinWidth: CGFloat {
+            dynamicTypeSize.isAccessibilitySize ? 128 : 104
+        }
+
+        var body: some View {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("LOCAL INTEL")
+                    .loreLabelStyle()
+                    .foregroundStyle(LoreColor.brass300)
+                    .padding(.horizontal, 16)
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(items) { item in
+                            Button {
+                                Haptics.play(.chipTap)
+                                onSelect(item)
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Image(systemName: item.systemImage)
+                                        .font(.system(size: 13, weight: .semibold))
+                                        .foregroundStyle(LoreColor.brass300)
+                                        .frame(width: 18)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(item.title)
+                                            .font(LoreType.button)
+                                            .lineLimit(1)
+                                            .minimumScaleFactor(0.82)
+                                            .foregroundStyle(LoreColor.bone)
+                                        Text("\(item.count) \(item.count == 1 ? "note" : "notes")")
+                                            .font(LoreType.micro)
+                                            .foregroundStyle(LoreColor.bone.opacity(0.62))
+                                            .lineLimit(1)
+                                    }
+                                }
+                                .padding(.horizontal, 12)
+                                .frame(minWidth: chipMinWidth, minHeight: 54, alignment: .leading)
+                                .background(LoreColor.ink800.opacity(0.92), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                        .strokeBorder(LoreColor.brass300.opacity(0.20), lineWidth: 1)
+                                )
+                            }
+                            .buttonStyle(.pressable)
+                            .accessibilityLabel("\(item.title), \(item.count) \(item.count == 1 ? "note" : "notes")")
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                }
+                .scrollClipDisabled()
+            }
+        }
     }
 
     private func partialDataNotice(_ message: String) -> some View {

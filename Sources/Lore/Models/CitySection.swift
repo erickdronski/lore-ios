@@ -147,6 +147,8 @@ struct CitySection: Decodable, Identifiable, Hashable {
             let platform = meta?.platform?.trimmingCharacters(in: .whitespacesAndNewlines)
             let name = platform?.isEmpty == false ? platform! : "video"
             return ("Watch \(name)", "play.rectangle.fill")
+        case "screen":
+            return primaryExternalURL == nil ? nil : ("Open screen note", "film.fill")
         case "hashtag":
             return ("Open hashtag", "number")
         default:
@@ -217,6 +219,7 @@ enum SectionKindMeta {
         switch kind {
         case "name_origin": return ("First, the Name", "Why It's Called That")
         case "phrase": return ("Carry These Words", "Traveler Phrases")
+        case "screen": return ("Seen Before", "Movies & Shows")
         case "watch": return ("Watch Before You Go", "City Video Trail")
         case "hashtag": return ("Follow the Locals", "Hashtags & Searches")
         case "dish": return ("Eat Like a Local", "Taste of the City")
@@ -230,7 +233,6 @@ enum SectionKindMeta {
         case "soundmark": return ("Eyes Closed", "The City's Sound")
         case "material": return ("Look Closer", "What It's Made Of")
         case "sound": return ("Turn It Up", "The City's Sound")
-        case "screen": return ("As Seen On", "Screen & Page")
         case "etiquette": return ("Blend In", "Local Code")
         case "number": return ("The Big Figures", "City in Numbers")
         case "market": return ("Go Where They Go", "Markets & Streets")
@@ -247,21 +249,21 @@ enum SectionKindMeta {
     static func order(for kind: String) -> Int {
         switch kind {
         case "name_origin": return 0   // identity first
-        case "phrase": return 1
-        case "watch": return 2
-        case "hashtag": return 3
-        case "dish": return 4
-        case "drink": return 5
-        case "ritual": return 6
-        case "local_legend": return 7
-        case "first_timer_mistake": return 8
-        case "neighborhood_decode": return 9
-        case "photo_prompt": return 10
-        case "seasonal": return 11
-        case "soundmark": return 12
-        case "material": return 13
-        case "sound": return 14
-        case "screen": return 15
+        case "screen": return 1
+        case "phrase": return 2
+        case "watch": return 3
+        case "hashtag": return 4
+        case "local_legend": return 5
+        case "first_timer_mistake": return 6
+        case "neighborhood_decode": return 7
+        case "photo_prompt": return 8
+        case "seasonal": return 9
+        case "dish": return 10
+        case "drink": return 11
+        case "ritual": return 12
+        case "soundmark": return 13
+        case "material": return 14
+        case "sound": return 15
         case "etiquette": return 16
         case "market": return 17
         case "number": return 18
@@ -308,8 +310,17 @@ struct CityFieldBrief: Equatable {
         }
 
         var nextItems: [Item] = []
+        if let section = first("name_origin") {
+            nextItems.append(Self.item(from: section, label: "Name decoded", systemImage: "textformat.abc"))
+        }
+        if let section = first("phrase") {
+            nextItems.append(Self.item(from: section, label: "Say first", systemImage: "quote.bubble.fill"))
+        }
+        if let section = first("screen") {
+            nextItems.append(Self.item(from: section, label: "On screen", systemImage: "film.fill"))
+        }
         if let section = first("watch") {
-            nextItems.append(Self.item(from: section, label: "Prime the lens", systemImage: "play.rectangle.fill"))
+            nextItems.append(Self.item(from: section, label: "Prime lens", systemImage: "play.rectangle.fill"))
         }
         if let section = first("hashtag") {
             nextItems.append(Self.item(from: section, label: "Search", systemImage: "number"))
@@ -331,10 +342,10 @@ struct CityFieldBrief: Equatable {
         }
 
         guard nextItems.count >= 3 else { return nil }
-        items = Array(nextItems.prefix(7))
+        items = Array(nextItems.prefix(8))
 
         if let actionable = orderedSections.first(where: {
-            ($0.kind == "watch" || $0.kind == "hashtag") && $0.primaryExternalURL != nil
+            ($0.kind == "watch" || $0.kind == "screen" || $0.kind == "hashtag") && $0.primaryExternalURL != nil
         }),
            let url = actionable.primaryExternalURL,
            let action = actionable.primaryExternalAction {

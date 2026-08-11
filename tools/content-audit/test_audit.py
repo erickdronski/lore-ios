@@ -145,6 +145,25 @@ class ContentAuditTests(unittest.TestCase):
         self.assertEqual(alpha["section_kind_checks"]["watch"]["minimum"], 2)
         self.assertFalse(alpha["passed"])
 
+    def test_requires_useful_lingo_and_sayings_not_only_total_culture_rows(self) -> None:
+        dataset = {metric: [] for metric in audit.METRICS}
+        dataset["city"] = [{"slug": "alpha", "name": "Alpha", "status": "live"}]
+        dataset["city_culture"] = [
+            {"id": f"person-{index}", "city": "alpha", "kind": "person"}
+            for index in range(8)
+        ]
+        minimums = {metric: 0 for metric in audit.METRICS}
+        minimums["city_culture"] = 8
+
+        report = audit.build_report(dataset, minimums)
+
+        alpha = report["cities"][0]
+        self.assertIn("city_culture.slang", alpha["gaps"])
+        self.assertIn("city_culture.saying", alpha["gaps"])
+        self.assertEqual(alpha["culture_kind_checks"]["slang"]["minimum"], 3)
+        self.assertEqual(alpha["culture_kind_checks"]["saying"]["minimum"], 2)
+        self.assertFalse(alpha["passed"])
+
     def test_flags_low_quality_local_expert_rows(self) -> None:
         dataset = {metric: [] for metric in audit.METRICS}
         dataset["city"] = [{"slug": "alpha", "name": "Alpha", "status": "live"}]
@@ -171,6 +190,17 @@ class ContentAuditTests(unittest.TestCase):
                 "source": "https://example.org/source",
                 "provenance_state": "reference_only",
             },
+            {
+                "id": "screen-1",
+                "city": "alpha",
+                "kind": "screen",
+                "title": "The station in a classic film",
+                "body": "A sourced screen reference for a recognizable public place.",
+                "links": {"website": "https://example.org/screen"},
+                "meta": {},
+                "source": "https://example.org/source",
+                "provenance_state": "reference_only",
+            },
         ]
         minimums = {metric: 0 for metric in audit.METRICS}
         minimums["city_section"] = 1
@@ -185,7 +215,9 @@ class ContentAuditTests(unittest.TestCase):
         self.assertIn("unfinished_review_state", reasons)
         self.assertIn("missing_literal_hashtag", reasons)
         self.assertIn("missing_https_hashtag_link", reasons)
+        self.assertIn("missing_screen_medium", reasons)
         self.assertIn("city_section.quality.watch", alpha["gaps"])
+        self.assertIn("city_section.quality.screen", alpha["gaps"])
         self.assertFalse(alpha["passed"])
 
     def test_accepts_sourced_local_expert_rows(self) -> None:
@@ -211,6 +243,17 @@ class ContentAuditTests(unittest.TestCase):
                 "body": "A search trail for local architecture and food.",
                 "links": {"hashtag_url": "https://www.tiktok.com/tag/hiddenalpha"},
                 "meta": {"hashtag": "#HiddenAlpha"},
+                "source": "https://example.org/source",
+                "provenance_state": "reviewed",
+            },
+            {
+                "id": "screen-1",
+                "city": "alpha",
+                "kind": "screen",
+                "title": "The station in a classic film",
+                "body": "A sourced screen reference for a recognizable public place.",
+                "links": {"website": "https://example.org/screen"},
+                "meta": {"platform": "Classic film"},
                 "source": "https://example.org/source",
                 "provenance_state": "reviewed",
             },

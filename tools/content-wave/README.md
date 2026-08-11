@@ -23,8 +23,9 @@ separate, authenticated review step.
 
 For the richer city pages, compile the same shape with the stricter
 `local-expert-kit` profile. It keeps the traveler kit and additionally requires
-2 watch/video links, 3 hashtags, 2 local legends, 2 first-timer mistakes,
-2 neighborhood decoders, 2 photo prompts, and 1 seasonal hook per city:
+1 name-origin note, 2 movie/show screen references, 2 watch/video links,
+3 hashtags, 2 local legends, 2 first-timer mistakes, 2 neighborhood decoders,
+2 photo prompts, and 1 seasonal hook per city:
 
 ```sh
 python3 tools/content-wave/build_sql.py \
@@ -38,7 +39,7 @@ python3 tools/content-wave/build_sql.py \
 ```
 
 When a city already has the traveler kit, use `local-expert-addons` for a
-14-row append-only wave containing only the richer local-expert kinds.
+17-row append-only wave containing only the richer local-expert kinds.
 
 Compile the missing place dossiers without touching existing audio fields:
 

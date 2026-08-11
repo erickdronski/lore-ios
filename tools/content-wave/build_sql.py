@@ -15,6 +15,8 @@ from urllib.parse import urlsplit
 
 TRAVELER_KIND_COUNTS = {"phrase": 6, "drink": 2, "etiquette": 4, "market": 1}
 LOCAL_EXPERT_ADDON_KIND_COUNTS = {
+    "name_origin": 1,
+    "screen": 2,
     "watch": 2,
     "hashtag": 3,
     "local_legend": 2,
@@ -49,11 +51,13 @@ REQUIRED_FIELDS = {
     "provenance_state",
 }
 EXPECTED_SORTS = {
+    "name_origin": 110,
     "phrase": 120,
     "drink": 130,
     "etiquette": 140,
     "market": 150,
     "watch": 160,
+    "screen": 165,
     "hashtag": 170,
     "local_legend": 180,
     "first_timer_mistake": 190,
@@ -262,6 +266,11 @@ def validate_rows(
             if not _first_https_link(links, "video_url", "youtube_url", "tiktok_url", "website"):
                 errors.append(
                     f"row {index} ({city}/watch): links must include an HTTPS video URL"
+                )
+        if kind == "screen" and isinstance(meta, dict):
+            if not isinstance(meta.get("platform"), str) or not meta["platform"].strip():
+                errors.append(
+                    f"row {index} ({city}/screen): meta.platform must name the movie, show, book, or game"
                 )
         if kind == "hashtag" and isinstance(links, dict) and isinstance(meta, dict):
             hashtag = _first_text(meta, "hashtag") or (title.strip() if isinstance(title, str) else None)

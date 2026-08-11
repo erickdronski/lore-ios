@@ -30,6 +30,10 @@ def row(city: str, kind: str, sequence: int = 0) -> dict:
     elif kind == "watch":
         links = {"youtube_url": "https://www.youtube.com/watch?v=alpha123"}
         meta = {"platform": "YouTube"}
+    elif kind == "screen":
+        title = f"{city} on screen {sequence}"
+        links = {"website": "https://example.org/screen"}
+        meta = {"platform": "Classic film"}
     elif kind == "hashtag":
         title = f"#{city.title()}Lore{sequence}"
         links = {"hashtag_url": "https://www.tiktok.com/tag/example"}
@@ -79,8 +83,10 @@ class ContentWaveTests(unittest.TestCase):
             profile="local-expert-kit",
         )
 
-        self.assertEqual(summary["rows"], 27)
+        self.assertEqual(summary["rows"], 30)
         self.assertEqual(summary["profile"], "local-expert-kit")
+        self.assertEqual(summary["kinds"]["name_origin"], 1)
+        self.assertEqual(summary["kinds"]["screen"], 2)
         self.assertEqual(summary["kinds"]["watch"], 2)
         self.assertEqual(summary["kinds"]["hashtag"], 3)
 
@@ -93,7 +99,9 @@ class ContentWaveTests(unittest.TestCase):
             profile="local-expert-addons",
         )
 
-        self.assertEqual(summary["rows"], 14)
+        self.assertEqual(summary["rows"], 17)
+        self.assertEqual(summary["kinds"]["name_origin"], 1)
+        self.assertEqual(summary["kinds"]["screen"], 2)
         self.assertNotIn("phrase", summary["kinds"])
         self.assertEqual(summary["kinds"]["seasonal"], 1)
 
@@ -123,6 +131,19 @@ class ContentWaveTests(unittest.TestCase):
         hashtag["title"] = "not a tag"
         hashtag["links"] = {}
         hashtag["meta"] = {}
+
+        with self.assertRaises(wave.WaveError):
+            wave.validate_rows(
+                rows,
+                expected_city_count=1,
+                profile="local-expert-kit",
+            )
+
+    def test_rejects_screen_reference_without_medium(self) -> None:
+        rows = self.city_rows("alpha", profile="local-expert-kit")
+        rows = [dict(item) for item in rows]
+        screen = next(item for item in rows if item["kind"] == "screen")
+        screen["meta"] = {}
 
         with self.assertRaises(wave.WaveError):
             wave.validate_rows(

@@ -88,15 +88,42 @@ struct CitySectionTests {
 
     @Test("Rich city section kinds have stable editorial ordering")
     func richSectionOrdering() {
+        #expect(SectionKindMeta.order(for: "name_origin") < SectionKindMeta.order(for: "screen"))
+        #expect(SectionKindMeta.order(for: "screen") < SectionKindMeta.order(for: "watch"))
         #expect(SectionKindMeta.order(for: "watch") < SectionKindMeta.order(for: "dish"))
         #expect(SectionKindMeta.order(for: "hashtag") < SectionKindMeta.order(for: "dish"))
         #expect(SectionKindMeta.order(for: "local_legend") < SectionKindMeta.order(for: "number"))
         #expect(SectionKindMeta.header(for: "photo_prompt").title == "Photo Field Prompts")
+        #expect(SectionKindMeta.header(for: "screen").title == "Movies & Shows")
     }
 
     @Test("Field brief synthesizes a traveler plan from rich city sections")
     func fieldBriefUsesRichLocalExpertKinds() throws {
         let sections = try [
+            decode(
+                id: "name",
+                kind: "name_origin",
+                title: "The name points to the old crossing",
+                body: "The place name helps visitors read the geography before they arrive.",
+                sort: 110
+            ),
+            decode(
+                id: "phrase",
+                kind: "phrase",
+                title: "Start with a local hello",
+                body: "Use the everyday greeting before asking for directions or a recommendation.",
+                sort: 120
+            ),
+            decode(
+                id: "screen",
+                kind: "screen",
+                title: "Spot the station from the classic film",
+                body: "Look for the public concourse rather than interrupting working areas.",
+                links: #"{"website":"https://example.org/screen"}"#,
+                meta: #"{"platform":"Classic film"}"#,
+                source: "https://example.org/screen",
+                sort: 165
+            ),
             decode(
                 id: "mistake",
                 kind: "first_timer_mistake",
@@ -156,10 +183,11 @@ struct CitySectionTests {
 
         let brief = try #require(CityFieldBrief(sections: sections))
 
-        #expect(brief.items.map(\.label) == ["Prime the lens", "Search", "Ask about", "Avoid", "Decode", "Frame", "Time it"])
-        #expect(brief.items.first?.title == "Watch the waterfront first")
+        #expect(brief.items.map(\.label) == ["Name decoded", "Say first", "On screen", "Prime lens", "Search", "Ask about", "Avoid", "Decode"])
+        #expect(brief.items.first?.title == "The name points to the old crossing")
+        #expect(brief.items.map(\.title).contains("Spot the station from the classic film"))
+        #expect(brief.items.map(\.title).contains("Watch the waterfront first"))
         #expect(brief.items.map(\.title).contains("#BackstreetCity"))
-        #expect(brief.items.last?.title == "Come back at dusk")
         #expect(brief.action?.label == "Watch YouTube")
         #expect(brief.action?.url.absoluteString == "https://www.youtube.com/watch?v=city")
     }
@@ -178,6 +206,27 @@ struct CitySectionTests {
     func placeCityFieldKitCapsBriefForPlaceCards() throws {
         let sections = try [
             decode(
+                id: "name",
+                kind: "name_origin",
+                title: "The name points to the old crossing",
+                sort: 110
+            ),
+            decode(
+                id: "phrase",
+                kind: "phrase",
+                title: "Start with a local hello",
+                sort: 120
+            ),
+            decode(
+                id: "screen",
+                kind: "screen",
+                title: "Spot the station from the classic film",
+                links: #"{"website":"https://example.org/screen"}"#,
+                meta: #"{"platform":"Classic film"}"#,
+                source: "https://example.org/screen",
+                sort: 165
+            ),
+            decode(
                 id: "watch",
                 kind: "watch",
                 title: "Watch the waterfront first",
@@ -193,8 +242,8 @@ struct CitySectionTests {
         let brief = try #require(CityFieldBrief(sections: sections))
         let kit = try #require(PlaceCityFieldKit(brief: brief))
 
-        #expect(kit.items.map(\.label) == ["Prime the lens", "Search", "Ask about"])
-        #expect(kit.items.map(\.title).contains("Do not sprint the market") == false)
+        #expect(kit.items.map(\.label) == ["Name decoded", "Say first", "On screen"])
+        #expect(kit.items.map(\.title).contains("Watch the waterfront first") == false)
         #expect(kit.action?.label == "Watch YouTube")
         #expect(kit.action?.url.absoluteString == "https://www.youtube.com/watch?v=city")
     }

@@ -30,7 +30,9 @@ METRICS = (
 )
 
 SECTION_KIND_MINIMUMS = {
+    "name_origin": 1,
     "phrase": 6,
+    "screen": 2,
     "drink": 2,
     "etiquette": 4,
     "market": 1,
@@ -42,8 +44,14 @@ SECTION_KIND_MINIMUMS = {
     "photo_prompt": 2,
     "seasonal": 1,
 }
+CULTURE_KIND_MINIMUMS = {
+    "slang": 3,
+    "saying": 2,
+}
 LOCAL_EXPERT_KINDS = frozenset(
     {
+        "name_origin",
+        "screen",
         "watch",
         "hashtag",
         "local_legend",
@@ -91,7 +99,7 @@ ENDPOINTS = {
     "place_explore": {"select": "id,city", "order": "id.asc"},
     "dive": {"select": "place_id", "order": "place_id.asc"},
     "story": {"select": "id,city", "order": "id.asc"},
-    "city_culture": {"select": "id,city", "order": "id.asc"},
+    "city_culture": {"select": "id,city,kind", "order": "id.asc"},
     "city_fact": {"select": "id,city", "order": "id.asc"},
     "city_theme": {"select": "city", "order": "city.asc"},
     "city_section": {
@@ -373,6 +381,9 @@ def build_report(
     }
     availability = {metric: metric not in errors for metric in METRICS}
     counts = {slug: {metric: 0 for metric in METRICS} for slug in scoped_cities}
+    culture_kind_counts = {
+        slug: {kind: 0 for kind in CULTURE_KIND_MINIMUMS} for slug in scoped_cities
+    }
     section_kind_counts = {
         slug: {kind: 0 for kind in SECTION_KIND_MINIMUMS} for slug in scoped_cities
     }
@@ -406,6 +417,10 @@ def build_report(
             city = row.get("city")
             if city in scoped_cities:
                 counts[city][metric] += 1
+                if metric == "city_culture":
+                    kind = row.get("kind")
+                    if kind in CULTURE_KIND_MINIMUMS:
+                        culture_kind_counts[city][str(kind)] += 1
                 if metric == "city_section":
                     kind = row.get("kind")
                     if kind in SECTION_KIND_MINIMUMS:
@@ -453,6 +468,20 @@ def build_report(
             if not passed:
                 gaps.append(metric)
 
+        culture_kind_checks = {}
+        if minimums["city_culture"] > 0 and availability["city_culture"]:
+            for kind, required in CULTURE_KIND_MINIMUMS.items():
+                count = culture_kind_counts[slug][kind]
+                passed = count >= required
+                culture_kind_checks[kind] = {
+                    "count": count,
+                    "minimum": required,
+                    "passed": passed,
+                    "deficit": max(0, required - count),
+                }
+                if not passed:
+                    gaps.append(f"city_culture.{kind}")
+
         section_kind_checks = {}
         section_quality_checks = []
         if minimums["city_section"] > 0 and availability["city_section"]:
@@ -482,6 +511,7 @@ def build_report(
                 "status": metadata.get("status"),
                 "counts": city_counts,
                 "checks": checks,
+                "culture_kind_checks": culture_kind_checks,
                 "section_kind_checks": section_kind_checks,
                 "section_quality_checks": section_quality_checks,
                 "dive_linkage": {
@@ -568,6 +598,9 @@ def _city_section_quality_issues(row: Mapping[str, Any]) -> list[dict[str, str]]
         confidence = str(meta.get("confidence") or "").strip().casefold()
         if confidence not in {"legend", "oral tradition", "disputed", "documented"}:
             add("missing_legend_confidence_label")
+    elif kind == "screen":
+        if not _nonempty(meta.get("platform")):
+            add("missing_screen_medium")
     elif kind == "photo_prompt":
         body = str(row.get("body") or "").casefold()
         if any(marker in body for marker in UNSAFE_PHOTO_PROMPT_MARKERS):
@@ -647,6 +680,13 @@ def human_summary(report: Mapping[str, Any]) -> str:
                     ]
                     reason = quality_issues[0]["reason"] if quality_issues else "invalid"
                     details.append(f"{metric} {reason}")
+                    continue
+                if metric.startswith("city_culture."):
+                    kind = metric.split(".", 1)[1]
+                    check = city["culture_kind_checks"][kind]
+                    details.append(
+                        f"{metric} {check['count']}/{check['minimum']}"
+                    )
                     continue
                 if metric.startswith("city_section."):
                     kind = metric.split(".", 1)[1]
