@@ -9,6 +9,16 @@ Use Voicebox for the no-cost local studio path when the Voicebox app/server is
 running:
 
 ```sh
+mkdir -p "$HOME/Library/Application Support/LoreVoicebox"
+/Applications/Voicebox.app/Contents/MacOS/voicebox-server \
+  --host 127.0.0.1 \
+  --port 17493 \
+  --data-dir "$HOME/Library/Application Support/LoreVoicebox"
+```
+
+In another shell:
+
+```sh
 cd /Users/dron/Projects/lore-ios/tools/narration
 export LORE_NARRATION_PROVIDER=voicebox
 export VOICEBOX_API_URL=http://127.0.0.1:17493
