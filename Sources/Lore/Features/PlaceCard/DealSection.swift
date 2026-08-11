@@ -141,7 +141,7 @@ struct DealSection: View {
         isAvailable: Bool,
         badge: String? = nil
     ) -> some View {
-        ZStack(alignment: .topTrailing) {
+        ZStack {
             Circle()
                 .fill(isAvailable ? LoreColor.amber.opacity(0.95) : LoreColor.bone200)
             Circle()
@@ -158,6 +158,9 @@ struct DealSection: View {
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(isAvailable ? LoreColor.ink : LoreColor.brass700)
             }
+        }
+        .frame(width: 44, height: 44)
+        .overlay(alignment: .topTrailing) {
             if let badge {
                 Text(badge)
                     .font(.system(size: badge == "!" ? 10 : 9, weight: .bold))
@@ -167,7 +170,6 @@ struct DealSection: View {
                     .offset(x: 3, y: -3)
             }
         }
-        .frame(width: 44, height: 44)
         .contentShape(Circle())
     }
 
