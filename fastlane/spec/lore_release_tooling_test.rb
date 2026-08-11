@@ -190,6 +190,28 @@ class LoreReleaseToolingTest < Minitest::Test
     refute_includes body, "ensure_app_store_release_mutation_allowed!"
   end
 
+  def test_swap_latest_waits_for_review_cancellation_before_selecting_build
+    body = lane_body("swap_latest_build_and_resubmit")
+    cancel = body.index("existing.cancel_submission")
+    wait = body.index("wait_for_review_cancellation!")
+    select = body.index("version.select_build")
+
+    refute_nil cancel
+    refute_nil wait
+    refute_nil select
+    assert_operator cancel, :<, wait
+    assert_operator wait, :<, select
+    assert_includes body, "prepare_review_submission_for_version!"
+  end
+
+  def test_submission_helper_uses_ready_review_submission_and_item_verification
+    fastfile = File.read(File.expand_path("../Fastfile", __dir__))
+
+    assert_includes fastfile, "get_ready_review_submission"
+    assert_includes fastfile, "wait_for_review_submission_item!"
+    refute_match(/get_in_progress_review_submission\\(platform: platform\\)\\n\\s*submission = app.create_review_submission/, fastfile)
+  end
+
   private
 
   def provenance(path:, release_sha:, repository: FakeRepository.new)

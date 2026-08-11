@@ -17,6 +17,10 @@ BUNDLE_ID = "com.erickdronski.lore"
 WIDGET_ID = "com.erickdronski.lore.LoreWidget"
 TEAM_ID = "J9DMDH4S58"
 CERTS_REPO = "https://github.com/erickdronski/lore-certs.git"
+REVIEW_LOCKING_STATES = %w[WAITING_FOR_REVIEW IN_REVIEW UNRESOLVED_ISSUES].freeze
+VERSION_EDITABLE_AFTER_CANCEL_STATES = %w[
+  PREPARE_FOR_SUBMISSION DEVELOPER_REJECTED METADATA_REJECTED REJECTED READY_FOR_REVIEW
+].freeze
 
 # Authenticate Spaceship (the ASC API client) from the same secrets the other
 # lanes use. ASC_KEY_CONTENT is stored base64-encoded. Defined at the top level
@@ -61,6 +65,129 @@ def verify_preflight!(reporter)
   reporter.verify!
 rescue LoreReleaseTooling::PreflightFailed => e
   UI.user_error!(e.message)
+end
+
+def refetch_app_store_version!(version)
+  Spaceship::ConnectAPI::AppStoreVersion.get(
+    app_store_version_id: version.id,
+    includes: Spaceship::ConnectAPI::AppStoreVersion::ESSENTIAL_INCLUDES,
+  )
+end
+
+def wait_for_review_cancellation!(submission_id)
+  read_error = nil
+  36.times do
+    current = begin
+                Spaceship::ConnectAPI::ReviewSubmission.get(
+                  review_submission_id: submission_id,
+                  includes: "appStoreVersionForReview,items",
+                )
+              rescue => e
+                read_error = e
+                UI.message("Review-submission read failed; retrying: #{e.class}")
+                sleep(5)
+                next
+              end
+    if current&.state == "COMPLETE"
+      UI.success("Review submission #{submission_id} cancellation completed.")
+      return true
+    end
+    read_error = nil
+    UI.message("Waiting for review cancellation: submission state=#{current&.state || 'missing'}")
+    sleep(5)
+  end
+
+  detail = read_error.nil? ? "" : " Last read failed with #{read_error.class}."
+  UI.user_error!("Apple did not complete review cancellation within 3 minutes.#{detail}")
+end
+
+def wait_for_version_editable_after_review_cancel!(version)
+  final_version = nil
+  36.times do
+    final_version = refetch_app_store_version!(version)
+    break unless REVIEW_LOCKING_STATES.include?(final_version&.app_store_state)
+
+    UI.message("Waiting for version to leave review: state=#{final_version.app_store_state}")
+    sleep(5)
+  end
+
+  UI.user_error!("Apple no longer returned version #{version.version_string} after cancellation.") if final_version.nil?
+  UI.user_error!(
+    "Lore is not editable after cancellation; version #{version.version_string} is #{final_version.app_store_state}.",
+  ) unless VERSION_EDITABLE_AFTER_CANCEL_STATES.include?(final_version.app_store_state)
+  final_version
+end
+
+def review_submission_item_count(submission_id)
+  Spaceship::ConnectAPI::ReviewSubmissionItem.all(
+    review_submission_id: submission_id,
+    includes: "appStoreVersion",
+  ).length
+rescue => e
+  UI.message("Review-submission item read failed via items endpoint; falling back: #{e.class}")
+  submission = Spaceship::ConnectAPI::ReviewSubmission.get(
+    review_submission_id: submission_id,
+    includes: "items,appStoreVersionForReview",
+  )
+  submission&.items.to_a.length
+end
+
+def wait_for_review_submission_item!(submission_id)
+  current = nil
+  12.times do
+    current = Spaceship::ConnectAPI::ReviewSubmission.get(
+      review_submission_id: submission_id,
+      includes: "items,appStoreVersionForReview",
+    )
+    return current if review_submission_item_count(submission_id).positive?
+
+    UI.message("Waiting for review submission item to attach: submission=#{submission_id}")
+    sleep(5)
+  end
+
+  count = current&.items.to_a.length
+  UI.user_error!("Review submission #{submission_id} does not contain the App Store version item after waiting; item_count=#{count}.")
+end
+
+def wait_for_version_ready_for_review!(version)
+  10.times do
+    current = Spaceship::ConnectAPI::AppStoreVersion.get(app_store_version_id: version.id)
+    return current if current.app_store_state == "READY_FOR_REVIEW" || current.app_version_state == "READY_FOR_REVIEW"
+
+    UI.message("Waiting for version to become READY_FOR_REVIEW: state=#{current.app_store_state || current.app_version_state}")
+    sleep(15)
+  end
+
+  refetch_app_store_version!(version)
+end
+
+def prepare_review_submission_for_version!(app:, platform:, version:)
+  active = app.get_in_progress_review_submission(
+    platform: platform,
+    includes: "appStoreVersionForReview,items",
+  )
+  UI.user_error!(
+    "Cannot submit #{version.version_string}: review submission #{active.id} is still #{active.state}.",
+  ) unless active.nil?
+
+  submission = app.get_ready_review_submission(platform: platform, includes: "items")
+  if submission.nil?
+    submission = app.create_review_submission(platform: platform)
+  end
+
+  begin
+    submission.add_app_store_version_to_review_items(app_store_version_id: version.id)
+  rescue => e
+    raise e unless e.message =~ /already|exists|duplicate/i
+    UI.important("Version is already an item on this submission; continuing.")
+  end
+
+  wait_for_review_submission_item!(submission.id)
+  wait_for_version_ready_for_review!(version)
+  Spaceship::ConnectAPI::ReviewSubmission.get(
+    review_submission_id: submission.id,
+    includes: "items,appStoreVersionForReview",
+  )
 end
 
 platform :ios do
@@ -467,22 +594,11 @@ platform :ios do
     # carries one or more items (the version, and any IAPs) and is then sent as
     # a unit — which is also what the App Store Connect UI drives.
     platform = Spaceship::ConnectAPI::Platform::IOS
-    submission = app.get_in_progress_review_submission(platform: platform)
-    if submission.nil?
-      submission = app.create_review_submission(platform: platform)
-    else
-      UI.important("Reusing the in-progress review submission.")
-    end
-
-    # `items` is only populated when the request asked for it, so absence does
-    # not mean "not attached". Attempt the add and treat an already-attached
-    # complaint as success rather than gating on a value we may not have.
-    begin
-      submission.add_app_store_version_to_review_items(app_store_version_id: version.id)
-    rescue => e
-      raise e unless e.message =~ /already|exists|duplicate/i
-      UI.important("Version is already an item on this submission; continuing.")
-    end
+    submission = prepare_review_submission_for_version!(
+      app: app,
+      platform: platform,
+      version: version,
+    )
 
     submission.submit_for_review
     UI.success("Submitted #{version.version_string} build #{build.version} for App Store review.")
@@ -528,21 +644,29 @@ platform :ios do
       UI.important("Swapping build #{current&.version || 'none'} -> #{newest.version} on #{version.version_string}.")
       # An existing review submission locks the version's build; cancel it before
       # reselecting, then a fresh submission carries the new build in.
-      existing = app.get_in_progress_review_submission(platform: platform)
+      existing = app.get_in_progress_review_submission(
+        platform: platform,
+        includes: "appStoreVersionForReview,items",
+      )
       unless existing.nil?
         UI.important("Cancelling the in-progress review submission to unlock the build.")
         existing.cancel_submission
+        wait_for_review_cancellation!(existing.id)
       end
+      version = wait_for_version_editable_after_review_cancel!(version)
       version.select_build(build_id: newest.id)
+      version = refetch_app_store_version!(version)
+      selected = version.get_build
+      UI.user_error!(
+        "Build selection did not stick; expected #{newest.version}, Apple still has #{selected&.version || 'none'}.",
+      ) unless selected&.id == newest.id
     end
 
-    submission = app.get_in_progress_review_submission(platform: platform)
-    submission = app.create_review_submission(platform: platform) if submission.nil?
-    begin
-      submission.add_app_store_version_to_review_items(app_store_version_id: version.id)
-    rescue => e
-      raise e unless e.message =~ /already|exists|duplicate/i
-    end
+    submission = prepare_review_submission_for_version!(
+      app: app,
+      platform: platform,
+      version: version,
+    )
     submission.submit_for_review
     UI.success("Resubmitted #{version.version_string} build #{newest.version} for App Store review.")
   end
