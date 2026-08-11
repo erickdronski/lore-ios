@@ -20,7 +20,8 @@ enum ScreenshotSupport {
     /// Optional surface the capturer wants staged on launch, read from the
     /// `LORE_SHOW` launch environment. `LoreApp` opens it deterministically so
     /// captures do not depend on tab or map-pin automation. Values include
-    /// `"passport"`, `"dive"`, `"culture"`, `"paywall"`, and `"card"`.
+    /// `"tours"`, `"passport"`, `"profile"`, `"dive"`, `"culture"`,
+    /// `"paywall"`, and `"card"`.
     static var stage: String? {
         let value = ProcessInfo.processInfo.environment["LORE_SHOW"]
         return (value?.isEmpty ?? true) ? nil : value

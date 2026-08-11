@@ -694,8 +694,12 @@ struct RootTabView: View {
     private func presentScreenshotStageIfNeeded() {
         guard ScreenshotSupport.isActive, let stage = ScreenshotSupport.stage else { return }
         switch stage {
+        case "tours":
+            selection = .tours
         case "passport":
             selection = .passport
+        case "profile":
+            selection = .profile
         case "dive":
             selection = .map
             Task {

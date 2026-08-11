@@ -66,36 +66,34 @@ final class LoreScreenshots: XCTestCase {
         snapshot("01Map")
 
         // TOURS — curated walking tours.
-        tapTab(app, "Tours")
+        launchScreenshotStage(app, "tours")
+        waitForText(app, "Build a city walk", timeout: 20)
         sleep(6)
         snapshot("02Tours")
 
         // PASSPORT — the collection / reward wall.
-        tapTab(app, "Passport")
+        launchScreenshotStage(app, "passport")
+        waitForText(app, "Passport", timeout: 20)
         sleep(5)
         snapshot("05Passport")
 
-        // PROFILE — the no-account promise + membership.
-        tapTab(app, "Profile")
+        // PROFILE — account, membership, and preferences.
+        launchScreenshotStage(app, "profile")
+        waitForText(app, "Profile", timeout: 20)
         sleep(4)
         snapshot("06Profile")
 
-        app.terminate()
-
         // ── Launch 2: the deep-dive dossier (the sourced story) ─────────────
         // Replaces the paywall as the "go deep" showcase.
-        app.launchEnvironment["LORE_SHOW"] = "dive"
-        app.launch()
+        launchScreenshotStage(app, "dive")
         // Cold launch → fetch Chicago places → present the card → expand the
         // dossier → load the dive narrative + hero. Give the network room.
         sleep(15)
         dismissSystemPermissionAlertIfNeeded()
         snapshot("03Dive")
-        app.terminate()
 
         // ── Launch 3: Meet-the-City (culture: facts, faces, local lingo) ────
-        app.launchEnvironment["LORE_SHOW"] = "culture"
-        app.launch()
+        launchScreenshotStage(app, "culture")
         sleep(10)
         dismissSystemPermissionAlertIfNeeded()
         snapshot("04Culture")
@@ -115,6 +113,22 @@ final class LoreScreenshots: XCTestCase {
         if sidebar.waitForExistence(timeout: 15) {
             sidebar.tap()
         }
+    }
+
+    @MainActor
+    private func launchScreenshotStage(_ app: XCUIApplication, _ stage: String) {
+        app.terminate()
+        app.launchEnvironment["LORE_SHOW"] = stage
+        app.launch()
+        dismissSystemPermissionAlertIfNeeded()
+    }
+
+    @MainActor
+    private func waitForText(_ app: XCUIApplication, _ text: String, timeout: TimeInterval) {
+        XCTAssertTrue(
+            app.staticTexts[text].waitForExistence(timeout: timeout),
+            "Expected staged screenshot surface to show \(text)"
+        )
     }
 
     /// Sidebar buttons combine the section title and its editorial subtitle
