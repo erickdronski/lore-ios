@@ -50,6 +50,7 @@ struct ScannerScreen: View {
     @State private var showPaywall = false
     @State private var isVisible = false
     @State private var showCameraRationale = false
+    @State private var showImageMatchDisclosure = false
     @State private var guidanceToast: ScannerGuidanceToast?
     @State private var guidanceToastTask: Task<Void, Never>?
 
@@ -158,6 +159,10 @@ struct ScannerScreen: View {
                         scannerGuidanceToast(guidanceToast)
                             .padding(.bottom, 10)
                     }
+                    if model.identifyState != .idle, !model.preciseMode {
+                        imageMatchStatusCard(model.identifyState)
+                            .padding(.bottom, 10)
+                    }
                     if !model.preciseMode {
                         directionalRail
                     }
@@ -198,6 +203,15 @@ struct ScannerScreen: View {
         }
         .sheet(isPresented: $showPaywall) {
             PaywallView(entitlements: entitlements, store: store, auth: auth, context: .scanner)
+        }
+        .alert("Use image match?", isPresented: $showImageMatchDisclosure) {
+            Button("Send one frame") {
+                CloudLandmarkDisclosureConsent.accept(userID: auth.session?.user.id)
+                Task { await runImageMatch() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Lore will send one still camera frame to its image match service. Use this when local scanning cannot confidently match a real place.")
         }
         .task {
             model.apply(prefs: prefs)
@@ -514,6 +528,112 @@ struct ScannerScreen: View {
         .id(toast.id)
     }
 
+    private func imageMatchStatusCard(_ state: IdentifyState) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: imageMatchStatusIcon(state))
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(LoreColor.amber)
+                .frame(width: 32, height: 32)
+                .background(LoreColor.ink.opacity(0.65), in: Circle())
+                .overlay(Circle().strokeBorder(LoreColor.amber.opacity(0.45), lineWidth: 1))
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(imageMatchStatusTitle(state))
+                    .font(LoreType.button)
+                    .foregroundStyle(LoreColor.bone)
+                    .lineLimit(1)
+                Text(imageMatchStatusMessage(state))
+                    .font(LoreType.caption)
+                    .foregroundStyle(LoreColor.bone.opacity(0.78))
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 8)
+
+            if case .result(let landmark) = state,
+               landmark.slug != nil || landmark.placeID != nil {
+                Button {
+                    Task { await model.openIdentified(landmark) }
+                } label: {
+                    Image(systemName: "book.pages")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(LoreColor.amber)
+                        .frame(width: 36, height: 36)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text("Open Lore place"))
+            }
+
+            Button {
+                model.resetIdentification()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(LoreColor.bone.opacity(0.82))
+                    .frame(width: 34, height: 34)
+            }
+            .buttonStyle(.plain)
+            .disabled(state == .loading)
+            .accessibilityLabel(Text("Dismiss image match"))
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .frame(maxWidth: 350, alignment: .leading)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(LoreColor.amber.opacity(0.42), lineWidth: 1)
+        )
+        .padding(.horizontal, 16)
+        .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .bottom)))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Text("\(imageMatchStatusTitle(state)). \(imageMatchStatusMessage(state))"))
+        .id(String(describing: state))
+    }
+
+    private func imageMatchStatusIcon(_ state: IdentifyState) -> String {
+        switch state {
+        case .idle: return "viewfinder"
+        case .loading: return "camera.metering.center.weighted"
+        case .result(let landmark):
+            return landmark.slug != nil || landmark.placeID != nil ? "book.pages" : "mappin.and.ellipse"
+        case .none: return "viewfinder.trianglebadge.exclamationmark"
+        case .unavailable, .quotaReached: return "exclamationmark.triangle"
+        }
+    }
+
+    private func imageMatchStatusTitle(_ state: IdentifyState) -> String {
+        switch state {
+        case .idle: return "Image match"
+        case .loading: return "Checking one frame"
+        case .result(let landmark): return landmark.isAmbiguous ? "Possible match" : "Landmark identified"
+        case .none: return "Unable to read"
+        case .unavailable: return "Try again"
+        case .quotaReached: return "Limit reached"
+        }
+    }
+
+    private func imageMatchStatusMessage(_ state: IdentifyState) -> String {
+        switch state {
+        case .idle:
+            return "Tap Identify when local scanning needs help."
+        case .loading:
+            return "Matching this still frame to a known landmark."
+        case .result(let landmark):
+            if landmark.slug != nil || landmark.placeID != nil {
+                return "Opening the vetted Lore place for \(landmark.name)."
+            }
+            return "\(landmark.name) was recognized, but no Lore place is attached yet."
+        case .none:
+            return "No landmark matched. Aim at a clearer facade, sign, or landmark."
+        case .unavailable(let failure):
+            return failure.message
+        case .quotaReached:
+            return "Today's image match limit is used up. Try again tomorrow."
+        }
+    }
+
     private func showScannerGuidance(_ toast: ScannerGuidanceToast?) {
         guidanceToastTask?.cancel()
         guidanceToastTask = nil
@@ -595,6 +715,9 @@ struct ScannerScreen: View {
                 shutterButton
             }
             HStack {
+                if !model.preciseMode {
+                    imageMatchButton
+                }
                 Spacer()
                 if model.canLockOn
                     || model.preciseMode
@@ -606,6 +729,87 @@ struct ScannerScreen: View {
         }
         .padding(.horizontal, 16)
         .padding(.bottom, 16)
+    }
+
+    /// Opt-in image matching: one explicit tap, one still frame. The scanner
+    /// keeps local geometry as the default and uses this only as a user-requested
+    /// fallback when a real place needs disambiguation.
+    private var imageMatchButton: some View {
+        Button {
+            requestImageMatch()
+        } label: {
+            HStack(spacing: 6) {
+                if model.identifyState == .loading {
+                    ProgressView()
+                        .tint(LoreColor.bone)
+                        .controlSize(.small)
+                } else {
+                    Image(systemName: "viewfinder.circle")
+                        .font(.system(size: 13, weight: .semibold))
+                }
+                Text("Identify")
+                    .font(LoreType.button)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.84)
+            }
+            .foregroundStyle(LoreColor.bone)
+            .padding(.horizontal, 12)
+            .frame(height: 38)
+            .background(LoreColor.scrimFacade, in: Capsule())
+            .overlay(
+                Capsule().strokeBorder(LoreColor.amber.opacity(0.42), lineWidth: 1)
+            )
+            .opacity(model.canRequestImageMatch ? 1 : 0.5)
+        }
+        .buttonStyle(.plain)
+        .disabled(!model.canRequestImageMatch)
+        .accessibilityLabel(Text("Identify this place with one image match"))
+        .accessibilityHint(Text("Sends one still frame only after you confirm."))
+    }
+
+    private func requestImageMatch() {
+        guard auth.isSignedIn else {
+            showPaywall = true
+            return
+        }
+        guard entitlements.isPlus else {
+            showPaywall = true
+            return
+        }
+        Haptics.play(.scanAttempt)
+        if CloudLandmarkDisclosureConsent.hasAccepted(userID: auth.session?.user.id) {
+            Task { await runImageMatch() }
+        } else {
+            showImageMatchDisclosure = true
+        }
+    }
+
+    private func runImageMatch() async {
+        guard let token = await auth.validAccessToken() else {
+            showPaywall = true
+            return
+        }
+        let outcome = await model.identifyLandmark(accessToken: token)
+        if outcome == .unauthorized,
+           let refreshed = await auth.validAccessToken(forceRefresh: true) {
+            await handleImageMatchOutcome(
+                await model.identifyLandmark(accessToken: refreshed)
+            )
+        } else {
+            await handleImageMatchOutcome(outcome)
+        }
+    }
+
+    private func handleImageMatchOutcome(_ outcome: LandmarkRequestOutcome) async {
+        switch outcome {
+        case .completed:
+            if case .result(let landmark) = model.identifyState,
+               landmark.slug != nil || landmark.placeID != nil {
+                await model.openIdentified(landmark)
+            }
+        case .unauthorized, .plusRequired:
+            showPaywall = true
+        }
     }
 
     /// Contextual postcard capture: offered only after the scanner has resolved
@@ -1758,6 +1962,17 @@ final class ScannerModel {
             isLoadingContent: isLoadingContent,
             hasLockedPlace: lockedRanked != nil
         )
+    }
+
+    var canRequestImageMatch: Bool {
+        !preciseMode
+            && !isTransitioningToPreciseMode
+            && identifyState != .loading
+            && !permissionDenied
+            && !needsPreciseLocation
+            && !localContextBlocksScanning
+            && !isLoadingContent
+            && cameraUnavailableMessage == nil
     }
 
     /// Whether the "Lock on" upgrade is offered: coverage scouted available
