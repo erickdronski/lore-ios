@@ -394,7 +394,10 @@ private struct FlavorCard: View {
             .buttonStyle(.pressable)
             .disabled(completed)
 
-        case "watch", "hashtag":
+        case "watch", "hashtag", "screen", "name_origin",
+             "local_legend", "first_timer_mistake", "neighborhood_decode",
+             "photo_prompt", "seasonal", "drink", "etiquette", "market",
+             "dish", "ritual", "soundmark", "sound", "material", "number":
             if let url = entry.primaryExternalURL,
                let action = entry.primaryExternalAction {
                 Link(destination: url) {

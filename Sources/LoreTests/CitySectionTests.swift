@@ -70,6 +70,29 @@ struct CitySectionTests {
         #expect(section.sourceDisclosureURL?.absoluteString == "https://www.rome.net")
     }
 
+    @Test("Screen rows can open wikipedia-style source links")
+    func screenActionUsesWikipediaLinkShape() throws {
+        let section = try decode(
+            kind: "screen",
+            title: "Spot the old station from the classic film",
+            links: """
+            {
+              "wikipedia_url": "https://en.wikipedia.org/wiki/Example_Film"
+            }
+            """,
+            meta: """
+            {
+              "platform": "Classic film"
+            }
+            """,
+            source: "https://example.org/screen-source"
+        )
+
+        #expect(section.primaryExternalURL?.absoluteString == "https://en.wikipedia.org/wiki/Example_Film")
+        #expect(section.primaryExternalAction?.label == "Open screen note")
+        #expect(section.sourceDisclosureURL?.absoluteString == "https://example.org/screen-source")
+    }
+
     @Test("Non-HTTPS city section links are ignored")
     func rejectsNonHTTPSExternalLinks() throws {
         let section = try decode(

@@ -1,6 +1,79 @@
 [
   {
     "city": "rome",
+    "kind": "name_origin",
+    "title": "The name points back to Romulus",
+    "body": "Rome's name is traditionally tied to Romulus, the legendary founder raised in the city's origin story. Treat the etymology as civic myth with real staying power.",
+    "attribution": "Traditional origin noted by Encyclopaedia Britannica",
+    "emoji": "🐺",
+    "links": {
+      "source": "https://www.britannica.com/place/Rome"
+    },
+    "meta": {
+      "wave": "2026-08",
+      "profile": "local-expert-addons",
+      "confidence": "source-backed",
+      "rights": "original_lore_copy",
+      "review_state": "source_checked",
+      "accessed": "2026-08-10"
+    },
+    "source": "https://www.britannica.com/place/Rome",
+    "license": "cc0",
+    "sort": 110,
+    "provenance_state": "reference_only"
+  },
+  {
+    "city": "rome",
+    "kind": "screen",
+    "title": "Roman Holiday made the city a co-star",
+    "body": "Watch Roman Holiday for the Rome every visitor still imagines: scooters, fountains, stairways, and public squares treated like a romantic map.",
+    "attribution": "Classic film context",
+    "emoji": "🎞️",
+    "links": {
+      "website": "https://www.turismoroma.it/en/page/rome-movie-set",
+      "source": "https://www.turismoroma.it/en/page/rome-movie-set"
+    },
+    "meta": {
+      "wave": "2026-08",
+      "profile": "local-expert-addons",
+      "platform": "Film: Roman Holiday",
+      "rights": "external_reference_only",
+      "confidence": "source-backed",
+      "review_state": "source_checked",
+      "accessed": "2026-08-10"
+    },
+    "source": "https://www.turismoroma.it/en/page/rome-movie-set",
+    "license": "cc0",
+    "sort": 165,
+    "provenance_state": "reference_only"
+  },
+  {
+    "city": "rome",
+    "kind": "screen",
+    "title": "La Dolce Vita explains the flashbulb Rome",
+    "body": "Use La Dolce Vita as a field note for Via Veneto, celebrity drift, late nights, and the Rome that gave modern paparazzi culture its vocabulary.",
+    "attribution": "Classic film context",
+    "emoji": "📸",
+    "links": {
+      "website": "https://www.turismoroma.it/en/page/rome-movie-set",
+      "source": "https://www.turismoroma.it/en/page/rome-movie-set"
+    },
+    "meta": {
+      "wave": "2026-08",
+      "profile": "local-expert-addons",
+      "platform": "Film: La Dolce Vita",
+      "rights": "external_reference_only",
+      "confidence": "source-backed",
+      "review_state": "source_checked",
+      "accessed": "2026-08-10"
+    },
+    "source": "https://www.turismoroma.it/en/page/rome-movie-set",
+    "license": "cc0",
+    "sort": 166,
+    "provenance_state": "reference_only"
+  },
+  {
+    "city": "rome",
     "kind": "watch",
     "title": "Start with the official tourism channel",
     "body": "Use Turismo Roma's video channel as the first moving-image pass: look for the city's current campaign language, event clips, and neighborhood cues before chasing random influencer lists.",
@@ -358,6 +431,79 @@
     "source": "https://www.turismoroma.it/en/events/natale-di-roma-2026",
     "license": "cc0",
     "sort": 220,
+    "provenance_state": "reference_only"
+  },
+  {
+    "city": "mount-laurel",
+    "kind": "name_origin",
+    "title": "Laurel on the mount gave the town its name",
+    "body": "Local history says Hannah Gillingham suggested Mount Laurel because laurel grew around the mount. It is a small-town naming story you can still read in the landscape.",
+    "attribution": "Mount Laurel Historical Society",
+    "emoji": "🌿",
+    "links": {
+      "source": "https://www.mountlaurelhistoricalsociety.com/history"
+    },
+    "meta": {
+      "wave": "2026-08",
+      "profile": "local-expert-addons",
+      "confidence": "documented",
+      "rights": "original_lore_copy",
+      "review_state": "source_checked",
+      "accessed": "2026-08-10"
+    },
+    "source": "https://www.mountlaurelhistoricalsociety.com/history",
+    "license": "cc0",
+    "sort": 110,
+    "provenance_state": "reference_only"
+  },
+  {
+    "city": "mount-laurel",
+    "kind": "screen",
+    "title": "Iron Jawed Angels gives Paulsdale context",
+    "body": "Use Iron Jawed Angels as screen context for Alice Paul's suffrage fight before visiting Paulsdale. The house story lands harder when the national campaign is fresh.",
+    "attribution": "Alice Paul Institute context",
+    "emoji": "🎞️",
+    "links": {
+      "website": "https://www.alicepaul.org/about-alice-paul/",
+      "source": "https://www.alicepaul.org/about-alice-paul/"
+    },
+    "meta": {
+      "wave": "2026-08",
+      "profile": "local-expert-addons",
+      "platform": "Film: Iron Jawed Angels",
+      "rights": "external_reference_only",
+      "confidence": "source-backed",
+      "review_state": "source_checked",
+      "accessed": "2026-08-10"
+    },
+    "source": "https://www.alicepaul.org/about-alice-paul/",
+    "license": "cc0",
+    "sort": 165,
+    "provenance_state": "reference_only"
+  },
+  {
+    "city": "mount-laurel",
+    "kind": "screen",
+    "title": "The Paulsdale virtual tour is the local screen pass",
+    "body": "The Alice Paul virtual tour is not a movie location flex; it is the useful screen layer for this town, turning a quiet house into a mapped rights story.",
+    "attribution": "Alice Paul Institute virtual tour",
+    "emoji": "📺",
+    "links": {
+      "website": "https://suffrageandthemedia.org/source/virtual-tour-explore-alice-pauls-home/",
+      "source": "https://suffrageandthemedia.org/source/virtual-tour-explore-alice-pauls-home/"
+    },
+    "meta": {
+      "wave": "2026-08",
+      "profile": "local-expert-addons",
+      "platform": "Video series: Alice Paul virtual tour",
+      "rights": "external_reference_only",
+      "confidence": "source-backed",
+      "review_state": "source_checked",
+      "accessed": "2026-08-10"
+    },
+    "source": "https://suffrageandthemedia.org/source/virtual-tour-explore-alice-pauls-home/",
+    "license": "cc0",
+    "sort": 166,
     "provenance_state": "reference_only"
   },
   {

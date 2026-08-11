@@ -33,6 +33,7 @@ struct CitySection: Decodable, Identifiable, Hashable {
         let tiktokURL: String?
         let instagramURL: String?
         let hashtagURL: String?
+        let wikipediaURL: String?
 
         enum CodingKeys: String, CodingKey {
             case website
@@ -42,6 +43,7 @@ struct CitySection: Decodable, Identifiable, Hashable {
             case tiktokURL = "tiktok_url"
             case instagramURL = "instagram_url"
             case hashtagURL = "hashtag_url"
+            case wikipediaURL = "wikipedia_url"
         }
 
         init(
@@ -51,7 +53,8 @@ struct CitySection: Decodable, Identifiable, Hashable {
             youtubeURL: String? = nil,
             tiktokURL: String? = nil,
             instagramURL: String? = nil,
-            hashtagURL: String? = nil
+            hashtagURL: String? = nil,
+            wikipediaURL: String? = nil
         ) {
             self.website = website
             self.sourceURL = sourceURL
@@ -60,6 +63,7 @@ struct CitySection: Decodable, Identifiable, Hashable {
             self.tiktokURL = tiktokURL
             self.instagramURL = instagramURL
             self.hashtagURL = hashtagURL
+            self.wikipediaURL = wikipediaURL
         }
     }
 
@@ -137,6 +141,7 @@ struct CitySection: Decodable, Identifiable, Hashable {
         default:
             return Self.validHTTPSURL(links.website)
                 ?? Self.validHTTPSURL(links.sourceURL)
+                ?? Self.validHTTPSURL(links.wikipediaURL)
                 ?? sourceURL
         }
     }
