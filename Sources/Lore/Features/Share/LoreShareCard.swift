@@ -47,24 +47,24 @@ struct LoreShareCard: View {
 
             VStack(alignment: .leading, spacing: 0) {
                 header
-                Spacer(minLength: 12)
+                Spacer(minLength: format == .story ? 12 : 18)
                 nameBlock
                 if let hook = place.teaser, !hook.isEmpty {
                     Text(hook)
-                        .font(LoreType.display(size: format == .story ? 20 : 17, weight: .medium).italic())
+                        .font(LoreType.display(size: format == .story ? 20 : 15, weight: .medium).italic())
                         .foregroundStyle(LoreColor.bone.opacity(0.86))
-                        .lineSpacing(3)
-                        .lineLimit(format == .story ? 5 : 3)
+                        .lineSpacing(format == .story ? 3 : 2)
+                        .lineLimit(format == .story ? 5 : 2)
                         .minimumScaleFactor(0.78)
                         .fixedSize(horizontal: false, vertical: true)
-                        .padding(.top, 14)
+                        .padding(.top, format == .story ? 14 : 12)
                 }
                 factStrip
-                    .padding(.top, 16)
-                Spacer(minLength: 12)
+                    .padding(.top, format == .story ? 16 : 14)
+                Spacer(minLength: format == .story ? 12 : 20)
                 footer
             }
-            .padding(format == .story ? 34 : 28)
+            .padding(format == .story ? 34 : 30)
         }
         .frame(width: format.size.width, height: format.size.height)
         .clipShape(RoundedRectangle(cornerRadius: format == .story ? 0 : 28, style: .continuous))
@@ -100,11 +100,11 @@ struct LoreShareCard: View {
                 // The non-negotiable recognition anchor: the Amber-beacon "LORE."
                 // signature, fixed top-left on every share card (strategy synth).
                 Text("LORE.")
-                    .font(.system(size: 16, weight: .heavy))
+                    .font(.system(size: format == .story ? 16 : 15, weight: .heavy))
                     .tracking(2)
                     .foregroundStyle(LoreColor.amber)
                 Text(cityLabel.uppercased())
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: format == .story ? 11 : 10, weight: .semibold))
                     .tracking(2)
                     .foregroundStyle(LoreColor.bone.opacity(0.55))
                     .lineLimit(1)
@@ -125,8 +125,8 @@ struct LoreShareCard: View {
 
     @ViewBuilder
     private var assetPlate: some View {
-        let width: CGFloat = format == .story ? 82 : 68
-        let height: CGFloat = format == .story ? 94 : 76
+        let width: CGFloat = format == .story ? 82 : 58
+        let height: CGFloat = format == .story ? 94 : 66
         let radius: CGFloat = format == .story ? 25 : 21
         ZStack {
             RoundedRectangle(cornerRadius: radius, style: .continuous)
@@ -223,13 +223,13 @@ struct LoreShareCard: View {
     private var nameBlock: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(place.name)
-                .font(LoreType.display(size: format == .story ? 46 : 34, weight: .semibold))
+                .font(LoreType.display(size: format == .story ? 46 : 31, weight: .semibold))
                 .foregroundStyle(LoreColor.bone)
-                .lineLimit(4)
+                .lineLimit(format == .story ? 4 : 3)
                 .minimumScaleFactor(0.6)
                 .fixedSize(horizontal: false, vertical: true)
             Text(place.kind.replacingOccurrences(of: "_", with: " ").capitalized)
-                .font(.system(size: 12, weight: .semibold))
+                .font(.system(size: format == .story ? 12 : 10, weight: .semibold))
                 .tracking(1.5)
                 .foregroundStyle(LoreColor.amber)
                 .lineLimit(1)
@@ -247,16 +247,16 @@ struct LoreShareCard: View {
                 Rectangle()
                     .fill(LoreColor.brass300.opacity(0.35))
                     .frame(height: 1)
-                    .padding(.bottom, 14)
-                HStack(alignment: .top, spacing: 22) {
+                    .padding(.bottom, format == .story ? 14 : 10)
+                HStack(alignment: .top, spacing: format == .story ? 22 : 18) {
                     ForEach(facts, id: \.label) { fact in
                         VStack(alignment: .leading, spacing: 3) {
                             Text(fact.label.uppercased())
-                                .font(.system(size: 9, weight: .semibold))
+                                .font(.system(size: format == .story ? 9 : 8, weight: .semibold))
                                 .tracking(1.2)
                                 .foregroundStyle(LoreColor.bone.opacity(0.5))
                             Text(fact.value)
-                                .font(.system(size: 14, weight: .medium, design: .rounded))
+                                .font(.system(size: format == .story ? 14 : 12, weight: .medium, design: .rounded))
                                 .foregroundStyle(LoreColor.bone.opacity(0.92))
                                 .lineLimit(1)
                         }
@@ -282,16 +282,16 @@ struct LoreShareCard: View {
         HStack(spacing: 8) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Every place has a story.")
-                    .font(LoreType.display(size: 13, weight: .medium).italic())
+                    .font(LoreType.display(size: format == .story ? 13 : 11, weight: .medium).italic())
                     .foregroundStyle(LoreColor.bone.opacity(0.7))
                 Text("Discovered with Lore")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(size: format == .story ? 10 : 8.5, weight: .semibold))
                     .tracking(1)
                     .foregroundStyle(LoreColor.bone.opacity(0.4))
             }
             Spacer()
             Image(systemName: "location.north.circle.fill")
-                .font(.system(size: 22))
+                .font(.system(size: format == .story ? 22 : 18))
                 .foregroundStyle(LoreColor.brass300.opacity(0.8))
         }
     }
