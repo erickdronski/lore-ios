@@ -136,11 +136,26 @@ targets:
         # safe to enable now.
         NSSupportsLiveActivities: true
 
-        # Spoken tours keep playing when the screen locks or the app moves to
-        # the background. Location-driven stop advancement remains foreground.
-        UIBackgroundModes:
-          - audio
-          - remote-notification
+        # ── UIBackgroundModes: deliberately NOT declared ───────────────────
+        # App Review rejected 1.1 under guideline 2.5.4 for declaring `audio`
+        # without shipping a feature that plays audible content in the
+        # background. That declaration was aspirational, not real: narration
+        # configures its session with `.mixWithOthers` (a mixable secondary
+        # source) and there is no MPNowPlayingInfoCenter / MPRemoteCommandCenter
+        # wiring, so nothing keeps playing once the app leaves the foreground.
+        # Removing the key costs no shipping behaviour — narration works exactly
+        # as before in the foreground — it just stops claiming a capability the
+        # app does not have.
+        #
+        # `remote-notification` is removed for the same reason: push is compiled
+        # off (`Config.pushNotificationsEnabled = false`), so background pushes
+        # are a false declaration of the same class and would invite the next
+        # rejection.
+        #
+        # To reinstate `audio` later, real background playback must ship first:
+        # drop `.mixWithOthers`, publish now-playing info, handle remote commands,
+        # and verify on a physical device — App Review requires a screen
+        # recording of background playback in the review notes.
 
         # ── URL scheme (widget / Live Activity deep links) ─────────────────
         # `lore://place/{id}`, `lore://tour/{slug}`, `lore://map` — handled by

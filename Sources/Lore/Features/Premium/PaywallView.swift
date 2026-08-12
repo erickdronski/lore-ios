@@ -337,14 +337,15 @@ struct PaywallView: View {
                                     .tint(LoreColor.ink)
                             } else {
                                 VStack(spacing: 2) {
-                                    // Only promise the trial when the user is
-                                    // actually eligible for the intro offer;
-                                    // otherwise sell the plan straight (docs/16 §1).
-                                    Text(auth.isSignedIn ? model.ctaTitle : "Sign in to continue")
+                                    // Always the real plan copy. This used to read
+                                    // "Sign in to continue" when signed out, which
+                                    // is the forced-registration paywall App Review
+                                    // rejected under 5.1.1(v). Only promise the
+                                    // trial when the user is actually eligible for
+                                    // the intro offer (docs/16 §1).
+                                    Text(model.ctaTitle)
                                         .font(LoreType.button)
-                                    Text(auth.isSignedIn
-                                        ? model.ctaSubtitle
-                                        : "Keep your Lore+ access linked across devices")
+                                    Text(model.ctaSubtitle)
                                         .font(LoreType.caption)
                                         .opacity(0.85)
                                 }
@@ -357,21 +358,32 @@ struct PaywallView: View {
                 .buttonStyle(.plain)
                 .disabled(!model.canPurchaseSelectedPlan)
                 .opacity(model.canPurchaseSelectedPlan ? 1 : 0.62)
-                .accessibilityLabel(auth.isSignedIn
-                    ? model.purchaseAccessibilityLabel
-                    : model.canPurchaseSelectedPlan
-                        ? "Sign in to continue to Lore plus"
-                        : "Lore plus options unavailable")
+                .accessibilityLabel(model.purchaseAccessibilityLabel)
                 .accessibilityHint("Apple shows a confirmation sheet before any purchase is completed")
 
-                if auth.isSignedIn {
-                    Button("Restore purchases") {
-                        Task { await restore() }
+                // Restore is always available: it is an Apple-ID operation, and
+                // hiding it from signed-out users left a reinstalling buyer with
+                // no way back to access they already paid for (5.1.1(v)).
+                Button("Restore purchases") {
+                    Task { await restore() }
+                }
+                .font(LoreType.caption)
+                .foregroundStyle(LoreColor.bone.opacity(0.72))
+                .disabled(model.isPurchasing)
+                .frame(minHeight: 44)
+
+                // Registration is OFFERED, never required — Apple's own remedy:
+                // "explain to the user that registering will enable them to
+                // access the purchased content from any of their supported
+                // devices and provide them a way to register at any time."
+                if !auth.isSignedIn {
+                    Button("Sign in to sync Lore+ across your devices") {
+                        showSignIn = true
                     }
                     .font(LoreType.caption)
                     .foregroundStyle(LoreColor.bone.opacity(0.72))
-                    .disabled(model.isPurchasing)
                     .frame(minHeight: 44)
+                    .accessibilityHint("Optional. You can buy and use Lore plus without an account.")
                 }
 
                 if store.productLoadState == .partial, let message = store.lastError {
@@ -514,19 +526,24 @@ struct PaywallView: View {
             )
             return
         }
-        guard let userID = auth.session?.user.id,
-              let accountUUID = UUID(uuidString: userID) else {
-            showSignIn = true
-            return
-        }
-        store.accountUUID = accountUUID
+        // Lore+ is NOT account-based content: StoreKit grants it to the Apple ID,
+        // and `EntitlementStore.isPlus` unions the on-device
+        // `Transaction.currentEntitlements` read, so a signed-out buyer is fully
+        // unlocked. Requiring registration first was App Review guideline
+        // 5.1.1(v) — "Apps cannot require user registration prior to allowing
+        // access to app content and features that are not associated
+        // specifically to the user" — and is why 1.1 was rejected. Signing in is
+        // now offered (to sync across devices), never required.
+        let userID = auth.session?.user.id
+        store.accountUUID = userID.flatMap { UUID(uuidString: $0) }
         let outcome = await model.purchase(productID: productID)
         switch outcome {
         case .success(let trialing):
             // StoreKit's current entitlement read is the real on-device truth;
             // the Apple verifier writes the durable server row. Subscriptions
             // can present immediate trial framing from the returned outcome.
-            if StoreKitService.ProductID.requiredSubscriptions.contains(productID)
+            if let userID,
+               StoreKitService.ProductID.requiredSubscriptions.contains(productID)
                 || productID == StoreKitService.ProductID.lifetime {
                 entitlements.applyLocalPurchase(userID: userID, trialing: trialing)
             }
@@ -560,12 +577,15 @@ struct PaywallView: View {
     }
 
     private func restore() async {
-        guard let userID = auth.session?.user.id,
-              let accountUUID = UUID(uuidString: userID) else {
-            showSignIn = true
-            return
-        }
-        store.accountUUID = accountUUID
+        // Restore is an Apple-ID operation and must work signed out: a buyer who
+        // reinstalls has to recover access without first creating an account
+        // (guideline 5.1.1(v)). Previously this bounced to the sign-in sheet and
+        // the button was hidden entirely when signed out.
+        // Bind the id first: on `auth.session?.user.id` the optional chain makes
+        // `.flatMap` resolve to String's Sequence flatMap (over Characters),
+        // not Optional's, which does not compile.
+        let restoreUserID = auth.session?.user.id
+        store.accountUUID = restoreUserID.flatMap { UUID(uuidString: $0) }
         let outcome = await model.restore()
         if case .restored = outcome {
             let token = await auth.validAccessToken()
