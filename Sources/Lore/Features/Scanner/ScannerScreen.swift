@@ -48,6 +48,11 @@ struct ScannerScreen: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var model = ScannerModel()
     @State private var showPaywall = false
+    /// Shown to an entitled member who has no session yet. Cloud image match is
+    /// a server call that needs an authenticated token, so it genuinely requires
+    /// an account — but a signed-out buyer must be offered sign-in, never the
+    /// paywall they already bought from (guideline 5.1.1(v)).
+    @State private var showSignIn = false
     @State private var isVisible = false
     @State private var showCameraRationale = false
     @State private var showImageMatchDisclosure = false
@@ -203,6 +208,9 @@ struct ScannerScreen: View {
         }
         .sheet(isPresented: $showPaywall) {
             PaywallView(entitlements: entitlements, store: store, auth: auth, context: .scanner)
+        }
+        .sheet(isPresented: $showSignIn) {
+            SignInView()
         }
         .alert("Use image match?", isPresented: $showImageMatchDisclosure) {
             Button("Send one frame") {
@@ -768,12 +776,21 @@ struct ScannerScreen: View {
     }
 
     private func requestImageMatch() {
-        guard auth.isSignedIn else {
+        // Entitlement is checked BEFORE the session, and the order matters.
+        // Since the 5.1.1(v) fix a signed-out user can buy Lore+, and
+        // `EntitlementStore.isPlus` unions StoreKit's on-device read, so they
+        // are genuinely a member. Asking for the session first sent that paying
+        // member back to the paywall they had just bought from — the same
+        // forced-registration pattern App Review rejected, and a real lockout.
+        guard entitlements.isPlus else {
             showPaywall = true
             return
         }
-        guard entitlements.isPlus else {
-            showPaywall = true
+        // Cloud image match is a server call that needs an authenticated token,
+        // so an account is a technical requirement here, not a gate on content.
+        // Offer sign-in — never the paywall — to a member without a session.
+        guard auth.isSignedIn else {
+            showSignIn = true
             return
         }
         Haptics.play(.scanAttempt)
@@ -786,7 +803,9 @@ struct ScannerScreen: View {
 
     private func runImageMatch() async {
         guard let token = await auth.validAccessToken() else {
-            showPaywall = true
+            // No usable session. Sell only to a non-member; a member whose
+            // session lapsed needs to sign in again, not to buy twice.
+            if entitlements.isPlus { showSignIn = true } else { showPaywall = true }
             return
         }
         let outcome = await model.identifyLandmark(accessToken: token)
@@ -807,7 +826,11 @@ struct ScannerScreen: View {
                landmark.slug != nil || landmark.placeID != nil {
                 await model.openIdentified(landmark)
             }
-        case .unauthorized, .plusRequired:
+        case .unauthorized:
+            // The server rejected the token. A member re-authenticates; only a
+            // non-member is shown the paywall.
+            if entitlements.isPlus { showSignIn = true } else { showPaywall = true }
+        case .plusRequired:
             showPaywall = true
         }
     }

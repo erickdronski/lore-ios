@@ -35,22 +35,17 @@
 	<false/>
 	<key>NSCameraUsageDescription</key>
 	<string>Lore uses your camera to position nearby stories in the live scanner. Live scanning stays on your device, and Lore only opens a place when the local geospatial match earns it.</string>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Your precise location lets Lore know which block you're standing on, so it can load the stories around you and place them accurately in AR.</string>
 	<key>NSLocationTemporaryUsageDescriptionDictionary</key>
 	<dict>
 		<key>ScannerPrecision</key>
 		<string>Precise Location lets Lore place nearby stories on the correct block while the live scanner is open.</string>
 	</dict>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Your precise location lets Lore know which block you're standing on, so it can load the stories around you and place them accurately in AR.</string>
 	<key>NSMotionUsageDescription</key>
 	<string>Lore uses motion data to steady the compass, so nearby places stay pointed at the right spot as you move.</string>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
-	<key>UIBackgroundModes</key>
-	<array>
-		<string>audio</string>
-		<string>remote-notification</string>
-	</array>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UISupportedInterfaceOrientations</key>
