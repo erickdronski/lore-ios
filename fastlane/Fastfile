@@ -429,6 +429,52 @@ platform :ios do
       say.call("FAIL", "Existing submission", "lookup failed: #{e.message}")
     end
 
+    # --- Why Apple rejected: Resolution Center. Without this the audit can see
+    # that a version is REJECTED but never the reason, which is the only thing
+    # that tells you what to fix. Read-only, and individually rescued because
+    # the endpoint is absent for apps that were never rejected. ---
+    begin
+      # Unfiltered: a rejection thread can hang off a submission in any state,
+      # and filtering by state risks missing the one that carries the reason.
+      submissions = begin
+                      app.get_review_submissions(sort: "-submittedDate", limit: 20)
+                    rescue
+                      []
+                    end
+
+      messages_seen = 0
+      Array(submissions).each do |submission|
+        # Call fetch_resolution_center_threads directly rather than
+        # latest_resolution_center_messages: the latter does `threads.first
+        # .fetch_messages` with no empty guard and raises NoMethodError for
+        # every submission that was never rejected (i.e. the common case).
+        threads = begin
+                    submission.fetch_resolution_center_threads
+                  rescue
+                    []
+                  end
+        Array(threads).each do |thread|
+          notes = begin
+                    thread.fetch_messages
+                  rescue
+                    []
+                  end
+          Array(notes).each do |note|
+            body = note.respond_to?(:message_body) ? note.message_body : note.to_s
+            next if body.nil? || body.to_s.strip.empty?
+            messages_seen += 1
+            stamp = note.respond_to?(:created_date) ? note.created_date : nil
+            # Collapse newlines: the PF| contract is one finding per line.
+            flat = body.to_s.gsub(/\s+/, " ").strip[0, 1500]
+            say.call("FAIL", "App Review message", "#{stamp} #{flat}".strip)
+          end
+        end
+      end
+      say.call("INFO", "App Review message", "no resolution center messages found") if messages_seen.zero?
+    rescue => e
+      say.call("WARN", "App Review message", "resolution center unavailable via API: #{e.message}")
+    end
+
     say.call(
       "WARN", "Manual-only checks",
       "Paid Applications Agreement, tax and banking, subscription availability, offers, and review screenshots require App Store Connect UI confirmation",
