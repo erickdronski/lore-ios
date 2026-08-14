@@ -350,16 +350,30 @@ final class PremiumEntitlementTests: XCTestCase {
         XCTAssertTrue(model.finePrintText.contains("No purchase can begin"))
     }
 
-    func testSignedOutRestoreFailsBeforeContactingAppStore() async {
+    /// A signed-out purchase must never be refused for want of an account.
+    ///
+    /// This inverts a test that used to assert the opposite. The old guard
+    /// returned "Sign in to Lore before purchasing…" before StoreKit was ever
+    /// consulted, which is the forced registration App Review rejected under
+    /// guideline 5.1.1(v) on builds 45 AND 46 — the paywall UI was fixed first,
+    /// but this service-layer refusal was what the reviewer actually hit.
+    ///
+    /// The assertion is on the guideline property rather than an exact string so
+    /// it holds whatever the runner reports for `canMakePayments`. An unknown
+    /// product id keeps it deterministic and off the network.
+    func testSignedOutPurchaseNeverDemandsRegistration() async {
         let store = StoreKitService()
+        XCTAssertNil(store.accountUUID, "precondition: no account bound")
 
-        let outcome = await store.restore()
+        let outcome = await store.purchase(productID: "not_a_real_product")
 
-        XCTAssertEqual(
-            outcome,
-            .failed(message: "Sign in to Lore before restoring so Apple can link access to your account.")
-        )
-        XCTAssertFalse(store.isRestoreInProgress)
+        if case .failed(let message) = outcome {
+            XCTAssertFalse(
+                message.localizedCaseInsensitiveContains("sign in"),
+                "Signed-out purchase must never demand registration (5.1.1(v)). Got: \(message)"
+            )
+        }
+        XCTAssertFalse(store.isPurchaseInProgress)
     }
 
     func testStoreKitConfigurationMatchesRuntimeCoreProducts() throws {

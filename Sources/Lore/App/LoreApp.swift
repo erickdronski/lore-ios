@@ -90,7 +90,20 @@ struct LoreApp: App {
                     // failures leave the transaction replayable for restore.
                     store.onVerifiedTransaction = { [weak auth] signedJWS in
                         guard let auth else { return .failed }
-                        guard let token = await auth.validAccessToken() else { return .failed }
+                        guard let token = await auth.validAccessToken() else {
+                            // Signed out is a legitimate purchase state since the
+                            // 5.1.1(v) fix, not an error. Apple has already taken
+                            // payment and StoreKit's on-device entitlement is the
+                            // durable truth (it survives reinstall via restore),
+                            // so accept without a server row and let the
+                            // transaction finish. Returning .failed here would
+                            // leave it unfinished and tell a paying customer the
+                            // purchase failed.
+                            //
+                            // A session that exists but cannot mint a token IS a
+                            // real failure: stay replayable so restore recovers it.
+                            return auth.isSignedIn ? .failed : .acceptedWithoutServerGrant
+                        }
                         do {
                             let recorded = try await LoreAPI.shared.syncApplePurchase(
                                 signedTransaction: signedJWS,

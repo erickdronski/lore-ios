@@ -439,9 +439,13 @@ final class StoreKitService {
     /// Buy a product by identifier via the native StoreKit 2 purchase sheet.
     func purchase(productID: String) async -> PurchaseOutcome {
         guard !isPurchaseInProgress, !isRestoreInProgress else { return .inProgress }
-        guard accountUUID != nil else {
-            return .failed(message: "Sign in to Lore before purchasing so Apple can link access to your account.")
-        }
+        // No account requirement. Lore+ is not account-based content: StoreKit
+        // grants it to the Apple ID and `EntitlementStore.isPlus` unions the
+        // on-device `currentEntitlements` read. This guard used to reject the
+        // purchase outright with "Sign in to Lore before purchasing", which is
+        // the forced registration App Review rejected under 5.1.1(v) — twice.
+        // The paywall UI was fixed first; this service-layer guard was the one
+        // the reviewer actually hit, because it refuses before StoreKit opens.
         guard AppStore.canMakePayments else {
             return .failed(message: "Purchases are disabled on this device. Check Screen Time or Apple Account settings.")
         }
@@ -465,13 +469,18 @@ final class StoreKitService {
 
     private func purchase(product: Product) async -> PurchaseOutcome {
         do {
-            // Bind the transaction to the Lore account so Apple echoes the id
-            // back in the signed transaction and in every server notification.
-            // This is what makes the purchase attributable server-side.
-            guard let accountUUID else {
-                return .failed(message: "Sign in to Lore before purchasing so Apple can link access to your account.")
+            // Bind the transaction to the Lore account when there is one, so
+            // Apple echoes the id back in the signed transaction and in every
+            // server notification — that is what makes a purchase attributable
+            // server-side. It is an optimisation, never a requirement: a
+            // signed-out buyer must be able to complete the purchase (5.1.1(v)).
+            // When they sign in later, LoreApp rebinds accountUUID and calls
+            // refreshEntitlements(), which re-posts the verified transaction and
+            // reclaims attribution.
+            var options: Set<Product.PurchaseOption> = []
+            if let accountUUID {
+                options.insert(.appAccountToken(accountUUID))
             }
-            let options: Set<Product.PurchaseOption> = [.appAccountToken(accountUUID)]
             let result = try await product.purchase(options: options)
             switch result {
             case .success(let verification):
@@ -535,9 +544,10 @@ final class StoreKitService {
         guard !isRestoreInProgress, !isPurchaseInProgress else {
             return .failed(message: "Another App Store request is already in progress.")
         }
-        guard accountUUID != nil else {
-            return .failed(message: "Sign in to Lore before restoring so Apple can link access to your account.")
-        }
+        // Restore must work signed out. It is an Apple-ID operation, and a buyer
+        // who reinstalls has to recover access without first creating an account
+        // (5.1.1(v)). This guard previously refused with "Sign in to Lore before
+        // restoring", stranding exactly the person the guideline protects.
         isRestoreInProgress = true
         defer { isRestoreInProgress = false }
         lastError = nil
