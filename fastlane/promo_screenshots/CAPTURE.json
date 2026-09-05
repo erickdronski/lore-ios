@@ -1,0 +1,136 @@
+{
+  "source_sha": "261d633d277a9940b849b108df0f10776e657f76",
+  "source_tree": "354457ff27aa3d48680748f01ae8dbcd7cc50898",
+  "captured_at_utc": "2026-09-05T18:47:15Z/2026-09-05T18:52:55Z",
+  "content_stable_at_utc": "2026-09-05T18:45:05Z",
+  "content_review_epoch": 2026090501,
+  "content_enforcement_enabled": false,
+  "scheme": "LoreScreenshots",
+  "configuration": "Debug",
+  "snapfile": "fastlane/Snapfile",
+  "xcode_version": "26.6",
+  "xcode_build": "17F113",
+  "simulator_os": "iOS 26.5",
+  "simulator_build": "23F77",
+  "fastlane_version": "2.237.0",
+  "maplibre_version": "6.29.0",
+  "maplibre_revision": "86992aabad3e89ce8818adec2e8b9d03177d69da",
+  "app_version": "1.2",
+  "app_build": "48",
+  "fresh_app_installation": true,
+  "native_status_bar_override": "9:41, full reception and battery",
+  "edits": "None. Exact byte copies of original simulator captures.",
+  "visual_review": "All twelve inspected; no system dialogs, loaders, blank content surfaces, or blank iPad tab capsule. Passport/Profile show authentic signed-out views; no private records are fabricated.",
+  "native_source_inputs_verified": 184,
+  "native_source_input_changes": [],
+  "frames": [
+    {
+      "file": "iPad Pro 13-inch (M5)-01Map.png",
+      "width": 2064,
+      "height": 2752,
+      "png_color_type": 2,
+      "sha256": "2788e45e48df0f6142edb3026e5c6d1b9a624aed5acfaaa9fa8f38f1848d8398",
+      "bytes": 2678605,
+      "package_file": "en-US/ipad_01map.png"
+    },
+    {
+      "file": "iPad Pro 13-inch (M5)-02Tours.png",
+      "width": 2064,
+      "height": 2752,
+      "png_color_type": 2,
+      "sha256": "e2214a03067bb0e5a7c069d80e273c270331b90665b6eed6965935794fc45488",
+      "bytes": 1300616,
+      "package_file": "en-US/ipad_02tours.png"
+    },
+    {
+      "file": "iPad Pro 13-inch (M5)-03Dive.png",
+      "width": 2064,
+      "height": 2752,
+      "png_color_type": 2,
+      "sha256": "935532a45a81f0dcb7074088378c9e98c257bac2f57a086297d5a234518f33cd",
+      "bytes": 2944300,
+      "package_file": "en-US/ipad_03dive.png"
+    },
+    {
+      "file": "iPad Pro 13-inch (M5)-04Culture.png",
+      "width": 2064,
+      "height": 2752,
+      "png_color_type": 2,
+      "sha256": "2a5c69108ef196c6e64862105552bc76e2bcfef278388570a0966fc186734fca",
+      "bytes": 2057777,
+      "package_file": "en-US/ipad_04culture.png"
+    },
+    {
+      "file": "iPad Pro 13-inch (M5)-05Passport.png",
+      "width": 2064,
+      "height": 2752,
+      "png_color_type": 2,
+      "sha256": "cb14ce8b2e0f2e96ffcb4b46b772363290ee53e39d7a018510f0be4d0e703451",
+      "bytes": 1654072,
+      "package_file": "en-US/ipad_05passport.png"
+    },
+    {
+      "file": "iPad Pro 13-inch (M5)-06Profile.png",
+      "width": 2064,
+      "height": 2752,
+      "png_color_type": 2,
+      "sha256": "7a57462ac5c92cde93effe718b2f3d7ad875bef7a156de5611af30f2547eb34d",
+      "bytes": 1346011,
+      "package_file": "en-US/ipad_06profile.png"
+    },
+    {
+      "file": "iPhone 17 Pro Max-01Map.png",
+      "width": 1320,
+      "height": 2868,
+      "png_color_type": 2,
+      "sha256": "ead4b3b119ec901ad140756b191c52a843f4c944e0a95605e0e30fdb034bfb4e",
+      "bytes": 2915603,
+      "package_file": "en-US/01_map.png"
+    },
+    {
+      "file": "iPhone 17 Pro Max-02Tours.png",
+      "width": 1320,
+      "height": 2868,
+      "png_color_type": 2,
+      "sha256": "411e4ea4901c4e66313b5b77cf25e11f599ebcbe2410ed23aea6daf2b96e07aa",
+      "bytes": 1209924,
+      "package_file": "en-US/03_tours.png"
+    },
+    {
+      "file": "iPhone 17 Pro Max-03Dive.png",
+      "width": 1320,
+      "height": 2868,
+      "png_color_type": 2,
+      "sha256": "54e1faf1bd538468ac9ede52b0b5fa56490371cd47cc6abe672f157c5c2af9c8",
+      "bytes": 1938833,
+      "package_file": "en-US/02_dive.png"
+    },
+    {
+      "file": "iPhone 17 Pro Max-04Culture.png",
+      "width": 1320,
+      "height": 2868,
+      "png_color_type": 2,
+      "sha256": "1042898bd5a686ac023f86b29190e430da51eccd90b4282f9f8c485566c7b2fe",
+      "bytes": 1545687,
+      "package_file": "en-US/04_culture.png"
+    },
+    {
+      "file": "iPhone 17 Pro Max-05Passport.png",
+      "width": 1320,
+      "height": 2868,
+      "png_color_type": 2,
+      "sha256": "0d2d28a7fb9a74002d9a63ef622937ec0b08716c1f1484a23f09ec38acb31593",
+      "bytes": 1369241,
+      "package_file": "en-US/05_passport.png"
+    },
+    {
+      "file": "iPhone 17 Pro Max-06Profile.png",
+      "width": 1320,
+      "height": 2868,
+      "png_color_type": 2,
+      "sha256": "4abb10df7fd7a82463fc8ef2bf6acbb12a2d6984cbac2c7d9e413a18e9f82f1b",
+      "bytes": 1616743,
+      "package_file": "en-US/06_profile.png"
+    }
+  ]
+}
