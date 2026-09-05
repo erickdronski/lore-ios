@@ -706,7 +706,7 @@ platform :ios do
     )
   end
 
-  desc "Create the exact project version as manual release and set its release notes"
+  desc "Prepare the exact manual version with reviewed description and release notes"
   lane :prepare_version do |options|
     ensure_app_store_release_mutation_allowed!
     expected_version = expected_release_version!(options)
@@ -714,6 +714,12 @@ platform :ios do
     UI.user_error!("Missing release notes for #{expected_version}") unless File.file?(notes_path)
     notes = File.read(notes_path).strip
     UI.user_error!("Release notes must contain 1–4000 characters") unless (1..4000).cover?(notes.length)
+    description_path = File.expand_path("release_notes/#{expected_version}.description.en-US.txt", __dir__)
+    UI.user_error!("Missing reviewed description for #{expected_version}") unless File.file?(description_path)
+    description = File.read(description_path, encoding: "UTF-8")
+    UI.user_error!("Reviewed description must be valid UTF-8") unless description.valid_encoding?
+    description = description.strip
+    UI.user_error!("Reviewed description must contain 1–4000 characters") unless (1..4000).cover?(description.length)
     asc_token!
     platform = Spaceship::ConnectAPI::Platform::IOS
     app = Spaceship::ConnectAPI::App.find(BUNDLE_ID)
@@ -734,15 +740,19 @@ platform :ios do
     state = version.app_version_state || version.app_store_state
     UI.user_error!("Version #{expected_version} is not editable for metadata: #{state}") unless VERSION_EDITABLE_AFTER_CANCEL_STATES.include?(state)
     UI.user_error!("Version #{expected_version} is not held for manual release") unless version.release_type == "MANUAL"
-    localization = version.get_app_store_version_localizations.find { |row| row.locale == "en-US" }
-    if localization
-      localization.update(attributes: { whats_new: notes })
+    localizations = version.get_app_store_version_localizations.select { |row| row.locale == "en-US" }
+    UI.user_error!("Multiple en-US localizations for #{expected_version}") if localizations.length > 1
+    if (localization = localizations.first)
+      localization.update(attributes: { whats_new: notes, description: description })
     else
-      version.create_app_store_version_localization(attributes: { locale: "en-US", whatsNew: notes })
+      version.create_app_store_version_localization(attributes: { locale: "en-US", whatsNew: notes, description: description })
     end
-    saved = version.get_app_store_version_localizations.find { |row| row.locale == "en-US" }
-    UI.user_error!("Release notes did not match after saving") unless saved&.whats_new == notes
-    UI.success("Prepared #{expected_version} as MANUAL release. No build selected and no review submitted.")
+    saved_rows = version.get_app_store_version_localizations.select { |row| row.locale == "en-US" }
+    UI.user_error!("Apple did not return exactly one saved en-US localization") unless saved_rows.length == 1
+    saved = saved_rows.first
+    UI.user_error!("Release notes did not match after saving") unless saved.whats_new == notes
+    UI.user_error!("Reviewed description did not match after saving") unless saved.description == description
+    UI.success("Prepared #{expected_version} as MANUAL release with verified en-US description and release notes. No build selected and no review submitted.")
   end
 
   desc "Attach an explicitly selected VALID nonexpired build without submitting review"

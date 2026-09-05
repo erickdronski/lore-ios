@@ -319,7 +319,188 @@ class LoreReleaseToolingTest < Minitest::Test
     version = LoreReleaseTooling.release_version!(settings.fetch(:version), project_version: settings.fetch(:version))
     notes = File.read(File.expand_path("../release_notes/#{version}.en-US.txt", __dir__)).strip
     assert (1..4000).cover?(notes.length), "The project version needs nonempty App Store release notes of at most 4000 characters"
+    description = File.read(File.expand_path("../release_notes/#{version}.description.en-US.txt", __dir__), encoding: "UTF-8")
+    assert description.valid_encoding?, "The reviewed description must be UTF-8"
+    assert (1..4000).cover?(description.strip.length), "The exact project version needs a reviewed description of at most 4000 characters"
     assert_operator settings.fetch(:build_floor), :>, 0
+  end
+
+  # Execute the actual prepare_version lane with an isolated Spaceship surface.
+  # No Fastlane gem, credentials, network, or repository mutations are required.
+  class FakePreparationLocalization
+    attr_accessor :locale, :whats_new, :description, :ignored_fields
+    attr_reader :updates
+
+    def initialize(locale: "en-US", whats_new: "Old notes", description: "Old description")
+      @locale, @whats_new, @description = locale, whats_new, description
+      @updates, @ignored_fields = [], []
+    end
+
+    def update(attributes:)
+      @updates << attributes
+      attributes.each { |key, value| public_send("#{key}=", value) unless ignored_fields.include?(key) }
+    end
+  end
+
+  class FakePreparationVersion
+    attr_accessor :version_string, :platform, :app_version_state, :app_store_state, :release_type, :readback_rows
+    attr_reader :localizations, :reads, :created_localizations
+
+    def initialize(version: "1.2", localizations: [FakePreparationLocalization.new])
+      @version_string, @platform, @release_type = version, "IOS", "MANUAL"
+      @app_version_state = "PREPARE_FOR_SUBMISSION"
+      @localizations, @reads, @created_localizations = localizations, 0, []
+    end
+
+    def get_app_store_version_localizations
+      @reads += 1
+      return readback_rows if reads > 1 && !readback_rows.nil?
+      localizations
+    end
+
+    def create_app_store_version_localization(attributes:)
+      @created_localizations << attributes
+      localizations << FakePreparationLocalization.new(
+        locale: attributes.fetch(:locale), whats_new: attributes.fetch(:whatsNew),
+        description: attributes.fetch(:description),
+      )
+    end
+  end
+
+  def test_prepare_version_updates_only_exact_version_and_en_us_then_reads_back_both_fields
+    older = FakePreparationVersion.new(version: "1.1")
+    french = FakePreparationLocalization.new(locale: "fr-FR")
+    intended = FakePreparationVersion.new(localizations: [FakePreparationLocalization.new, french])
+    with_preparation_lane(versions: [older, intended], editable: intended) do |runner, calls|
+      runner.run(expected_version: "1.2")
+      assert_equal 1, calls[:auth]
+      assert_empty calls[:creates]
+      assert_equal 2, intended.reads, "The lane must make a fresh localization read after writing"
+      assert_equal [{ whats_new: "Reviewed notes", description: "Reviewed description" }], intended.localizations.first.updates
+      assert_empty french.updates
+      assert_equal "Old description", french.description
+      assert_equal 0, older.reads
+      assert_empty older.localizations.first.updates
+      assert_equal "Old description", older.localizations.first.description
+    end
+  end
+
+  def test_prepare_version_creates_only_requested_manual_version_and_both_localized_fields
+    older = FakePreparationVersion.new(version: "1.1")
+    created = FakePreparationVersion.new(localizations: [])
+    with_preparation_lane(versions: [older], created: created) do |runner, calls|
+      runner.run(expected_version: "1.2")
+      assert_equal [{ app_id: "app-id", attributes: { versionString: "1.2", platform: "IOS", releaseType: "MANUAL" } }], calls[:creates]
+      assert_equal [{ locale: "en-US", whatsNew: "Reviewed notes", description: "Reviewed description" }], created.created_localizations
+      assert_equal 2, created.reads
+      assert_equal 0, older.reads
+      assert_empty older.localizations.first.updates
+    end
+  end
+
+  def test_prepare_version_rejects_missing_empty_oversized_or_invalid_description_before_auth
+    [nil, " \n\t", "x" * 4001, "\xFF".b].each do |description|
+      with_preparation_lane(description: description) do |runner, calls|
+        assert_raises(LoreReleaseTooling::Error) { runner.run(expected_version: "1.2") }
+        assert_equal 0, calls[:auth]
+        assert_empty calls[:reads]
+        assert_empty calls[:creates]
+      end
+    end
+  end
+
+  def test_prepare_version_never_substitutes_another_versions_description
+    with_preparation_lane(description_version: "1.1") do |runner, calls|
+      error = assert_raises(LoreReleaseTooling::Error) { runner.run(expected_version: "1.2") }
+      assert_includes error.message, "Missing reviewed description for 1.2"
+      assert_equal 0, calls[:auth]
+      assert_empty calls[:reads]
+    end
+  end
+
+  def test_prepare_version_accepts_the_character_limit_without_truncating_unicode
+    intended = FakePreparationVersion.new
+    with_preparation_lane(description: "é" * 4000, versions: [intended]) do |runner, _calls|
+      runner.run(expected_version: "1.2")
+      assert_equal "é" * 4000, intended.localizations.first.description
+    end
+  end
+
+  def test_prepare_version_hold_and_wrong_expected_version_stop_before_authentication
+    [{ hold: "true", expected: "1.2" }, { hold: "false", expected: "1.1" },
+     { hold: "false", expected: "" }].each do |parameters|
+      with_preparation_lane(hold: parameters.fetch(:hold)) do |runner, calls|
+        assert_raises(LoreReleaseTooling::Error) { runner.run(expected_version: parameters.fetch(:expected)) }
+        assert_equal 0, calls[:auth]
+        assert_empty calls[:reads]
+        assert_empty calls[:creates]
+      end
+    end
+  end
+
+  def test_prepare_version_does_not_rename_another_editable_version
+    other = FakePreparationVersion.new(version: "1.3")
+    with_preparation_lane(versions: [other], editable: other) do |runner, calls|
+      assert_raises(LoreReleaseTooling::Error) { runner.run(expected_version: "1.2") }
+      assert_empty calls[:creates]
+      assert_equal 0, other.reads
+      assert_empty other.localizations.first.updates
+    end
+  end
+
+  def test_prepare_version_rejects_noneditable_or_automatic_version_before_localization_changes
+    [{ app_version_state: "IN_REVIEW" }, { release_type: "AFTER_APPROVAL" }].each do |attributes|
+      intended = FakePreparationVersion.new
+      attributes.each { |key, value| intended.public_send("#{key}=", value) }
+      with_preparation_lane(versions: [intended]) do |runner, calls|
+        assert_raises(LoreReleaseTooling::Error) { runner.run(expected_version: "1.2") }
+        assert_empty calls[:creates]
+        assert_equal 0, intended.reads
+        assert_empty intended.localizations.first.updates
+      end
+    end
+  end
+
+  def test_prepare_version_rejects_wrong_version_returned_by_creation_before_localization_write
+    wrong = FakePreparationVersion.new(version: "1.1")
+    with_preparation_lane(versions: [], created: wrong) do |runner, _calls|
+      assert_raises(LoreReleaseTooling::Error) { runner.run(expected_version: "1.2") }
+      assert_equal 0, wrong.reads
+      assert_empty wrong.localizations.first.updates
+    end
+  end
+
+  def test_prepare_version_fails_when_apple_does_not_retain_either_reviewed_field
+    %i[description whats_new].each do |field|
+      intended = FakePreparationVersion.new
+      intended.localizations.first.ignored_fields = [field]
+      with_preparation_lane(versions: [intended]) do |runner, calls|
+        error = assert_raises(LoreReleaseTooling::Error) { runner.run(expected_version: "1.2") }
+        assert_includes error.message, "did not match after saving"
+        assert_equal 2, intended.reads
+        assert_empty calls[:successes]
+      end
+    end
+  end
+
+  def test_prepare_version_rejects_missing_or_ambiguous_en_us_readback
+    [[], [FakePreparationLocalization.new(locale: "en-GB")],
+     [FakePreparationLocalization.new, FakePreparationLocalization.new]].each do |rows|
+      intended = FakePreparationVersion.new
+      intended.readback_rows = rows
+      with_preparation_lane(versions: [intended]) do |runner, calls|
+        assert_raises(LoreReleaseTooling::Error) { runner.run(expected_version: "1.2") }
+        assert_empty calls[:successes]
+      end
+    end
+  end
+
+  def test_prepare_version_rejects_duplicate_en_us_before_writing
+    intended = FakePreparationVersion.new(localizations: [FakePreparationLocalization.new, FakePreparationLocalization.new])
+    with_preparation_lane(versions: [intended]) do |runner, _calls|
+      assert_raises(LoreReleaseTooling::Error) { runner.run(expected_version: "1.2") }
+      intended.localizations.each { |row| assert_empty row.updates }
+    end
   end
 
   def test_submission_and_auto_release_require_exact_target_before_authentication
@@ -362,6 +543,47 @@ class LoreReleaseToolingTest < Minitest::Test
   end
 
   private
+
+  def with_preparation_lane(description: "Reviewed description", description_version: "1.2", hold: "false",
+                            versions: [FakePreparationVersion.new], editable: nil, created: FakePreparationVersion.new(localizations: []))
+    calls = { auth: 0, reads: [], creates: [], successes: [] }
+    app = Object.new
+    app.define_singleton_method(:id) { "app-id" }
+    app.define_singleton_method(:get_app_store_versions) { |**args| calls[:reads] << args; versions }
+    app.define_singleton_method(:get_edit_app_store_version) { |**args| calls[:reads] << args; editable }
+    app_model = Class.new
+    app_model.define_singleton_method(:find) { |bundle_id| calls[:reads] << bundle_id; app }
+    api = Module.new
+    api.const_set(:App, app_model)
+    api.const_set(:Platform, Module.new.tap { |platform| platform.const_set(:IOS, "IOS") })
+    api.define_singleton_method(:post_app_store_version) do |**args|
+      calls[:creates] << args
+      Struct.new(:to_models).new([created])
+    end
+    ui = Module.new
+    ui.define_singleton_method(:user_error!) { |message| raise LoreReleaseTooling::Error, message }
+    ui.define_singleton_method(:success) { |message| calls[:successes] << message }
+    runner_class = Class.new
+    runner_class.const_set(:Spaceship, Module.new.tap { |spaceship| spaceship.const_set(:ConnectAPI, api) })
+    runner_class.const_set(:UI, ui)
+    runner_class.const_set(:BUNDLE_ID, "com.erickdronski.lore")
+    runner_class.const_set(:VERSION_EDITABLE_AFTER_CANCEL_STATES, %w[PREPARE_FOR_SUBMISSION DEVELOPER_REJECTED METADATA_REJECTED REJECTED READY_FOR_REVIEW])
+    runner_class.define_singleton_method(:lane) { |_name, &body| define_method(:run, &body) }
+    runner_class.define_method(:ensure_app_store_release_mutation_allowed!) do
+      LoreReleaseTooling.ensure_release_mutation_allowed!("APP_REVIEW_HOLD" => hold)
+    end
+    runner_class.define_method(:expected_release_version!) do |options|
+      LoreReleaseTooling.release_version!(options[:expected_version], project_version: "1.2")
+    end
+    runner_class.define_method(:asc_token!) { calls[:auth] += 1 }
+    Dir.mktmpdir do |directory|
+      Dir.mkdir(File.join(directory, "release_notes"))
+      File.write(File.join(directory, "release_notes/1.2.en-US.txt"), "Reviewed notes\n")
+      File.binwrite(File.join(directory, "release_notes/#{description_version}.description.en-US.txt"), description) unless description.nil?
+      runner_class.class_eval(lane_body("prepare_version"), File.join(directory, "Fastfile"))
+      yield runner_class.new, calls
+    end
+  end
 
   def provenance(path:, release_sha:, repository: FakeRepository.new)
     LoreReleaseTooling::ScreenshotProvenance.new(
