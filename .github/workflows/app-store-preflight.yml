@@ -3,8 +3,10 @@ name: App Store · Preflight / Submit
 # Manual, API-only operations against App Store Connect:
 #   preflight   — READ-ONLY audit of the real submission state (changes nothing)
 #   hold-review — cancels the active review submission without changing a build
-#   submit      — submits the editable version for App Store review
-#   swap-latest — swaps the newest processed build onto the version and resubmits
+#   prepare-version — creates the exact project version and release notes
+#   select-build — attaches the exact expected build without submitting
+#   submit      — submits the exact expected version/build for App Store review
+#   swap-latest — swaps the exact expected processed build and resubmits
 #                 (cancels the in-progress submission first if one exists)
 # Runs on Linux: pure ASC API calls, no Xcode, no Simulator, 1x runner cost.
 
@@ -12,28 +14,30 @@ on:
   workflow_dispatch:
     inputs:
       action:
-        description: "Audit, hold review, submit, swap the build, or change release mode"
+        description: "Audit, prepare version, select exact build, submit, hold, or set release mode"
         required: true
         default: preflight
         type: choice
         options:
           - preflight
           - hold-review
+          - prepare-version
+          - select-build
           - submit
           - swap-latest
           - auto-release
       expected_version:
-        description: "Version to hold (guarded exact match)"
+        description: "Exact marketing version (must match project.yml for release actions)"
         required: true
-        default: "1.1"
+        default: "1.2"
         type: string
       expected_build:
-        description: "Attached build to hold (guarded exact match)"
+        description: "Exact build to audit/select/submit/release; never implicit latest"
         required: true
-        default: "7"
+        default: "48"
         type: string
       release_source_sha:
-        description: "Exact 40-character source SHA for submit/swap screenshot provenance (unused by preflight/hold)"
+        description: "Exact code commit M used by the binary/screenshots (required for select/submit/swap/auto-release)"
         required: false
         default: ""
         type: string
@@ -64,6 +68,9 @@ jobs:
           ruby-version: "3.2"
           bundler-cache: true
 
+      - name: Validate release guards before App Store access
+        run: ruby fastlane/spec/lore_release_tooling_test.rb
+
       - name: Run ${{ inputs.action }}
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
@@ -77,8 +84,11 @@ jobs:
         run: |
           case "$ACTION" in
             hold-review)  bundle exec fastlane hold_review expected_version:"$EXPECTED_VERSION" expected_build:"$EXPECTED_BUILD" ;;
-            submit)       bundle exec fastlane submit_for_review ;;
-            swap-latest)  bundle exec fastlane swap_latest_build_and_resubmit ;;
-            auto-release) bundle exec fastlane set_auto_release ;;
-            *)            bundle exec fastlane preflight ;;
+            prepare-version) bundle exec fastlane prepare_version expected_version:"$EXPECTED_VERSION" ;;
+            select-build) bundle exec fastlane select_release_build expected_version:"$EXPECTED_VERSION" expected_build:"$EXPECTED_BUILD" ;;
+            submit)       bundle exec fastlane submit_for_review expected_version:"$EXPECTED_VERSION" expected_build:"$EXPECTED_BUILD" ;;
+            swap-latest)  bundle exec fastlane swap_latest_build_and_resubmit expected_version:"$EXPECTED_VERSION" expected_build:"$EXPECTED_BUILD" ;;
+            auto-release) bundle exec fastlane set_auto_release expected_version:"$EXPECTED_VERSION" expected_build:"$EXPECTED_BUILD" ;;
+            preflight)    bundle exec fastlane preflight expected_version:"$EXPECTED_VERSION" expected_build:"$EXPECTED_BUILD" ;;
+            *)            printf "%s\n" "Unknown action: $ACTION" >&2; exit 2 ;;
           esac

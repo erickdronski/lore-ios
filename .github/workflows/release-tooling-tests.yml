@@ -9,6 +9,8 @@ on:
       - "fastlane/Fastfile"
       - "fastlane/lib/**"
       - "fastlane/spec/**"
+      - "fastlane/release_notes/**"
+      - "project.yml"
   push:
     branches:
       - main
@@ -19,6 +21,8 @@ on:
       - "fastlane/Fastfile"
       - "fastlane/lib/**"
       - "fastlane/spec/**"
+      - "fastlane/release_notes/**"
+      - "project.yml"
 
 permissions:
   contents: read
