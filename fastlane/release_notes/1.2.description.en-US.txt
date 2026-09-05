@@ -1,0 +1,32 @@
+Every place has a story. Lore helps you discover the history around you, from a building you pass every day to the next city you visit.
+
+Raise your camera on a city street to find nearby buildings, monuments, bridges and public places in Lore's catalog. Open a place card for key facts, then explore its story, timeline, gallery and available sources.
+
+EXPLORE YOUR WAY
+- Find nearby places with the live camera scanner, ranked by direction and distance.
+- Browse the map to explore from home or plan your next outing.
+- Read historical deep dives and follow available source and attribution links.
+- Follow self-guided tours with a story at each stop, including selected free walks.
+- Keep a private visit journal with notes and photos, and earn discovery badges.
+
+WALKS AND CITY OUTINGS
+Choose a compact walk or a wider city excursion. Tours that need transport are marked, with route notes to help you plan. Distances are estimates; an “at least” distance is a minimum, not the length of a mapped walking route. Time estimates appear where available. Check local access and travel options before setting out, and stay aware of your surroundings.
+
+FREE TO EXPLORE
+Scanning, maps, place cards, visits, journal features, badges, selected free walks and three deep dives per day are free. Browsing does not require an account.
+
+LORE+
+Lore+ adds unlimited deep dives in the app, access to additional self-guided tours and full-story narration. Listen to available recordings, with your device's voice reading stories where a recording is unavailable.
+
+Monthly and annual subscriptions, an optional lifetime purchase, and any introductory offer appear only when available in the App Store purchase sheet. Prices and eligibility are confirmed by Apple before payment.
+
+COVERAGE AND SOURCES
+Coverage varies by city and place. Lore helps you find places already in its catalog; it does not identify every building or object. Source links appear where available, and historical details may be incomplete or wrong. Scanner placement can also be approximate.
+
+YOUR CAMERA AND LOCATION
+Normal live scanning uses the camera, precise location while in use, heading, motion, and Apple frameworks on your device. Lore does not store a continuous camera feed or continuous location history. If you are signed in and explicitly choose Identify with Google, Lore asks before sending one current frame to Google Cloud Vision for that request. Lore does not use facial recognition, show third-party ads, track you across apps, or sell personal information.
+
+Terms of Use (EULA): https://www.apple.com/legal/internet-services/itunes/dev/stdeula/
+Privacy Policy: https://lore-web-liart.vercel.app/privacy
+
+Point. Learn. Wander.

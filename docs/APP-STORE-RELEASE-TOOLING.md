@@ -22,19 +22,35 @@ while held. App Store Connect UI changes are outside this lane guard.
 
 ## Release sequence
 
-1. Finish and test all app code, metadata, release notes and tooling. Commit that
-   source as **M**, retaining its full 40-character SHA. Run the beta workflow
+1. Finish and test all app code, and review the release metadata and tooling.
+   Commit the app source as **M**, retaining its full 40-character SHA. Run the beta workflow
    from M; record the marketing version and actual uploaded build. Wait for Apple
    to report the build `VALID` and nonexpired.
 2. Capture and review every screenshot from that same M source. Commit the
    reviewed screenshot package and `fastlane/promo_screenshots/SOURCE_SHA` in a
    child commit **A**. The file must contain M, not A. No app code changes belong
-   in A; any new code requires a new M, build and screenshot package.
+   in A; any new app code requires a new M, build and screenshot package.
+   A later child **B** may contain reviewed App Store copy, release tooling,
+   tests and tooling documentation only. It must preserve M's ancestry and A's
+   screenshot bytes and `SOURCE_SHA`; app source, project configuration and
+   bundled app assets remain frozen. Test B's tooling before using it.
 3. After the release owner clears the hold, run `prepare-version` from the
-   branch/tag pointing to A. It creates only the exact project version, with
-   `MANUAL` release mode, and sets en-US What's New from the committed
-   `fastlane/release_notes/1.2.en-US.txt`. It refuses to rename a different
-   editable version. Reruns reuse the exact existing manual, editable version.
+   branch/tag pointing to A, or B when that metadata/tooling child exists. It
+   creates only the exact project version with `MANUAL` release mode. The lane
+   reads the committed en-US What's New from
+   `fastlane/release_notes/1.2.en-US.txt` and full description from
+   `fastlane/release_notes/1.2.description.en-US.txt`. Both are required and must
+   contain 1–4000 characters after surrounding whitespace is removed; the
+   description must be valid UTF-8. Missing or invalid copy fails before Apple
+   authentication. No arbitrary file path, previous-version fallback or implicit
+   latest version is accepted.
+   The lane refuses to rename another editable version or change a noneditable
+   or automatic-release version. It writes both fields only to the exact
+   version's en-US localization, leaves other locales unchanged, then fetches
+   localizations again and requires exactly one en-US result matching both
+   reviewed fields. A readback mismatch fails the action; it does not declare
+   success or automatically replace Apple's result with older copy. Reruns use
+   the exact existing manual, editable version.
 4. Upload the reviewed screenshots, then run `select-build` with the actual
    expected build and `release_source_sha=M`. The lane accepts exactly one iOS
    build matching app ID, marketing version and build number, with `VALID`
@@ -48,7 +64,8 @@ while held. App Store Connect UI changes are outside this lane guard.
    when automatic release after approval is intended. Preparation starts manual;
    automatic release is a separate explicit action.
 
-Examples below assume `RELEASE_REF` points to A, `RELEASE_SOURCE_SHA` is M, and
+Examples below assume `RELEASE_REF` points to A or its reviewed tooling child B,
+`RELEASE_SOURCE_SHA` is M, and
 `EXPECTED_BUILD` is the actual processed build (initially 48). The GitHub
 workflow uses the configured environment credentials and hold value.
 
@@ -124,7 +141,11 @@ can rename the editable version, so preparation uses the supported
 API with explicit `versionString`, `IOS` platform and `MANUAL` release type.
 Build verification uses the pinned
 [`Build` model](https://github.com/fastlane/fastlane/blob/2.237.0/spaceship/lib/spaceship/connect_api/models/build.rb)
-with app and prerelease-version associations loaded. Product reads use Apple's
+with app and prerelease-version associations loaded. Localization updates use
+pinned Fastlane's
+[`AppStoreVersionLocalization`](https://github.com/fastlane/fastlane/blob/2.237.0/spaceship/lib/spaceship/connect_api/models/app_store_version_localization.rb)
+model: existing rows map `whats_new` to Apple's `whatsNew`, while new rows use
+`locale`, `whatsNew` and `description` directly. Product reads use Apple's
 [subscription groups](https://developer.apple.com/documentation/appstoreconnectapi/get-v1-apps-_id_-subscriptiongroups),
 [subscriptions](https://developer.apple.com/documentation/appstoreconnectapi/get-v1-subscriptiongroups-_id_-subscriptions)
 and [in-app purchases](https://developer.apple.com/documentation/appstoreconnectapi/get-v1-apps-_id_-inapppurchasesv2)
@@ -141,4 +162,9 @@ ruby -c fastlane/Fastfile
 The suite checks holds before authentication, exact version/build/app/platform,
 processing and expiry, build floors, version preparation without renaming,
 review-item binding, screenshot provenance, pagination, and read-only product
-lookup. `Release Tooling Tests` runs it on relevant pull requests and main pushes.
+lookup. Fake-API tests execute the actual `prepare_version` lane for both create
+and update: exact-version/locale isolation, held releases, missing/wrong-version
+or invalid description files, the Unicode character limit, manual/editable
+state, and matching/missing/ambiguous Apple readback. No credentials or Apple
+mutation are used by these tests. `Release Tooling Tests` runs on all pull
+requests and main pushes.
