@@ -285,10 +285,35 @@ schemes:
       storeKitConfiguration: StoreKit/Lore.storekit
     test:
       config: Debug
+      environmentVariables:
+        LORE_UNIT_TESTS: "1"
       targets:
-        - LoreTests
+        - name: LoreTests
+          parallelizable: false
+          skippedTests:
+            - StoreKitJourneyTests
     archive:
       config: Release
+
+  # Dedicated StoreKit engine journeys can also be run from Xcode when a
+  # simulator runtime cannot initialize StoreKitTest from xcodebuild alone.
+  LoreStoreKitTests:
+    build:
+      targets:
+        Lore: all
+        LoreTests: [test]
+    run:
+      config: Debug
+      storeKitConfiguration: StoreKit/Lore.storekit
+    test:
+      config: Debug
+      environmentVariables:
+        LORE_UNIT_TESTS: "1"
+      targets:
+        - name: LoreTests
+          parallelizable: false
+          selectedTests:
+            - StoreKitJourneyTests
 
   # Screenshot scheme, run by `fastlane screenshots` on the Simulator only.
   LoreScreenshots:

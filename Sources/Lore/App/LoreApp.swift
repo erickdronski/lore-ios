@@ -83,6 +83,11 @@ struct LoreApp: App {
                 // start the Transaction.updates listener once, at launch. Both
                 // are @MainActor app-lifetime singletons (docs/16 §1).
                 .task {
+                    #if DEBUG
+                    // Hosted StoreKit tests own the transaction listener. A
+                    // second app listener could finish their receipts early.
+                    guard ProcessInfo.processInfo.environment["LORE_UNIT_TESTS"] != "1" else { return }
+                    #endif
                     entitlements.storeKit = store
                     // Record verified purchases server-side before StoreKit
                     // transactions are finished. TestFlight/Sandbox receipts may
