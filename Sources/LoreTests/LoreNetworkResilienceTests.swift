@@ -183,6 +183,67 @@ final class LoreNetworkResilienceTests: XCTestCase {
         XCTAssertEqual(String(data: fallback, encoding: .utf8), "legacy")
     }
 
+    func testPublicEpochChangeInvalidatesFreshCacheAndPinnedBytesWithoutEnforcement() async throws {
+        let provider = TestContentContractProvider(enforcedContract(epoch: "public-1", enforcement: false))
+        let (cache, root) = try makeCache(provider: provider, clock: TestClock())
+        defer { try? FileManager.default.removeItem(at: root) }
+        let request = URLRequest(url: try XCTUnwrap(URL(string: "https://example.com/public")))
+        stubSuccess(body: "outdated tour")
+        _ = try await cache.pinData(for: request, session: makeSession())
+
+        await provider.set(enforcedContract(epoch: "public-2", enforcement: false))
+        stubOfflineFailure()
+
+        await XCTAssertThrowsAsyncError(try await cache.data(for: request, session: makeSession()))
+        for path in ["cache", "pins"] {
+            let files = try FileManager.default.contentsOfDirectory(at: root.appending(path: path), includingPropertiesForKeys: nil)
+            XCTAssertEqual(files.map(\.lastPathComponent), [".content-contract"])
+        }
+    }
+
+    func testFirstPublicEpochPurgesLegacyBytesWithoutEnablingOfflineAgeLimit() async throws {
+        let provider = TestContentContractProvider(.compatibility)
+        let clock = TestClock()
+        let (cache, root) = try makeCache(provider: provider, clock: clock)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let request = URLRequest(url: try XCTUnwrap(URL(string: "https://example.com/public-upgrade")))
+        stubSuccess(body: "legacy")
+        _ = try await cache.pinData(for: request, session: makeSession())
+        await provider.set(enforcedContract(epoch: "public-1", enforcement: false))
+        stubOfflineFailure()
+        await XCTAssertThrowsAsyncError(try await cache.data(for: request, session: makeSession()))
+
+        stubSuccess(body: "current public")
+        _ = try await cache.data(for: request, session: makeSession(), freshFor: -1)
+        clock.advance(hours: 96)
+        stubOfflineFailure()
+        let data = try await cache.data(for: request, session: makeSession(), freshFor: -1)
+        XCTAssertEqual(String(data: data, encoding: .utf8), "current public")
+    }
+
+    func testKnownPublicContractSurvivesLegacyResponseAndRelaunchOutage() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: "public-contract-\(UUID().uuidString)", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appending(path: "contract.json")
+        let store = ContentContractStore(persistedFile: file)
+        let expected = enforcedContract(epoch: "public-1", enforcement: false)
+        NetworkStubProtocol.handler = { request in
+            return (HTTPURLResponse(url: try XCTUnwrap(request.url), statusCode: 200, httpVersion: nil, headerFields: nil)!, try JSONEncoder().encode([expected]))
+        }
+        let initial = await store.current(session: makeSession(), forceRefresh: true)
+        XCTAssertEqual(initial, expected)
+        NetworkStubProtocol.handler = { request in
+            return (HTTPURLResponse(url: try XCTUnwrap(request.url), statusCode: 200, httpVersion: nil, headerFields: nil)!, try JSONEncoder().encode([ContentContract.compatibility]))
+        }
+        let downgrade = await store.current(session: makeSession(), forceRefresh: true)
+        XCTAssertEqual(downgrade, expected)
+        stubOfflineFailure()
+        let restarted = ContentContractStore(persistedFile: file)
+        let offline = await restarted.current(session: makeSession())
+        XCTAssertEqual(offline, expected)
+    }
+
     func testEnforcementRejectsAndPurgesLegacyURLCacheBytes() async throws {
         let provider = TestContentContractProvider(.compatibility)
         let clock = TestClock()
@@ -490,12 +551,13 @@ final class LoreNetworkResilienceTests: XCTestCase {
     private func enforcedContract(
         version: String = "2",
         epoch: String = "review-1",
-        maxAgeHours: Int = 24
+        maxAgeHours: Int = 24,
+        enforcement: Bool = true
     ) -> ContentContract {
         ContentContract(
             contractVersion: version,
             reviewEpoch: epoch,
-            enforcementEnabled: true,
+            enforcementEnabled: enforcement,
             offlineMaxAgeHours: maxAgeHours
         )
     }

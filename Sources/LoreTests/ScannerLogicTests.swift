@@ -907,6 +907,29 @@ final class SpecialistJourneyRegressionTests: XCTestCase {
     }
 
     @MainActor
+    func testPublicOfflinePackStillRequiresMatchingEpochWithoutAnAgeLimit() {
+        let contract = ContentContract(contractVersion: "2", reviewEpoch: "public-current", enforcementEnabled: false, offlineMaxAgeHours: 24)
+        let oldPack = CityPackStore.CityPack(downloadedAt: .distantPast, placeCount: 3, imageBytes: 0,
+            imageKeys: [], pinnedURLs: [], contractVersion: "2", reviewEpoch: "public-previous")
+        var currentPack = oldPack
+        currentPack.reviewEpoch = "public-current"
+        XCTAssertFalse(oldPack.isCompatible(with: contract))
+        XCTAssertTrue(currentPack.isCompatible(with: contract), "Disabled enforcement must not introduce an offline TTL")
+        XCTAssertFalse(currentPack.isCompatible(with: .compatibility), "A versioned pack must not downgrade to URL-only identity")
+    }
+
+    @MainActor
+    func testPublicPackedMediaKeysChangeWithoutEditorialEnforcement() throws {
+        let remote = try XCTUnwrap(URL(string: "https://example.com/public-lore-media.jpg"))
+        PackImageStore.activate(ContentContract(contractVersion: "2", reviewEpoch: "public-1", enforcementEnabled: false, offlineMaxAgeHours: 24))
+        let firstKey = try PackImageStore.store(Data("old image".utf8), for: remote)
+        XCTAssertNotNil(PackImageStore.localURL(for: remote))
+        PackImageStore.activate(ContentContract(contractVersion: "2", reviewEpoch: "public-2", enforcementEnabled: false, offlineMaxAgeHours: 24))
+        XCTAssertNotEqual(PackImageStore.key(for: remote), firstKey)
+        XCTAssertNil(PackImageStore.localURL(for: remote))
+    }
+
+    @MainActor
     func testPackedMediaKeysChangeWithReviewEpoch() throws {
         let remote = try XCTUnwrap(URL(string: "https://example.com/lore-media.jpg"))
         let first = contentContract()
