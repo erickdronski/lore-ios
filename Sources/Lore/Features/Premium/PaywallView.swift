@@ -538,15 +538,9 @@ struct PaywallView: View {
         store.accountUUID = userID.flatMap { UUID(uuidString: $0) }
         let outcome = await model.purchase(productID: productID)
         switch outcome {
-        case .success(let trialing):
-            // StoreKit's current entitlement read is the real on-device truth;
-            // the Apple verifier writes the durable server row. Subscriptions
-            // can present immediate trial framing from the returned outcome.
-            if let userID,
-               StoreKitService.ProductID.requiredSubscriptions.contains(productID)
-                || productID == StoreKitService.ProductID.lifetime {
-                entitlements.applyLocalPurchase(userID: userID, trialing: trialing)
-            }
+        case .success:
+            // Access comes only from verified StoreKit or server state. Do not
+            // synthesize an open-ended grant from the purchase sheet's outcome.
             let token = await auth.validAccessToken()
             await store.refreshEntitlements()
             await entitlements.refresh(accessToken: token)

@@ -784,20 +784,6 @@ final class SpecialistJourneyRegressionTests: XCTestCase {
         XCTAssertNil(LocationHeadingProvider.deviceHeadingOrientation(for: .unknown))
     }
 
-    func testCloudLandmarkDisclosureConsentIsAccountScoped() throws {
-        let suiteName = "CloudLandmarkDisclosureConsentTests.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-
-        XCTAssertFalse(CloudLandmarkDisclosureConsent.hasAccepted(userID: nil, defaults: defaults))
-        XCTAssertFalse(CloudLandmarkDisclosureConsent.hasAccepted(userID: "user-b", defaults: defaults))
-
-        CloudLandmarkDisclosureConsent.accept(userID: " USER-A ", defaults: defaults)
-
-        XCTAssertTrue(CloudLandmarkDisclosureConsent.hasAccepted(userID: "user-a", defaults: defaults))
-        XCTAssertFalse(CloudLandmarkDisclosureConsent.hasAccepted(userID: "user-b", defaults: defaults))
-    }
-
     func testPushDestinationRejectsExternalAndMalformedLinks() {
         XCTAssertNil(PushDestination.parse(["deep_link": "https://example.com/place/city-hall"]))
         XCTAssertNil(PushDestination.parse(["deep_link": "lore://place/city-hall/extra"]))

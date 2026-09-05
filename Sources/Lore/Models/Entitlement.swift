@@ -42,14 +42,35 @@ struct Entitlement: Codable, Identifiable, Hashable {
         entitlement = try container.decode(String.self, forKey: .entitlement)
         status = try container.decodeIfPresent(Status.self, forKey: .status) ?? .unknown
         environment = try container.decodeIfPresent(Environment.self, forKey: .environment)
-        // `expires_at` is an ISO-8601 timestamptz; decode leniently so a null,
-        // missing, or unparseable value never empties the whole entitlement.
-        if let raw = try container.decodeIfPresent(String.self, forKey: .expiresAt) {
-            expiresAt = Entitlement.iso8601.date(from: raw)
-                ?? ISO8601DateFormatter().date(from: raw)
-        } else {
+        // Null or missing expiration supports an open-ended grant; malformed
+        // timestamps fail closed instead of turning into lifetime access.
+        if let raw = try? container.decode(String.self, forKey: .expiresAt) {
+            guard let parsed = Entitlement.iso8601.date(from: raw)
+                ?? ISO8601DateFormatter().date(from: raw) else {
+                throw DecodingError.dataCorruptedError(
+                    forKey: .expiresAt, in: container, debugDescription: "Invalid entitlement expiration"
+                )
+            }
+            expiresAt = parsed
+        } else if let legacy = try? container.decode(Double.self, forKey: .expiresAt) {
+            // v2 cache records used JSONEncoder's numeric reference-date format.
+            expiresAt = Date(timeIntervalSinceReferenceDate: legacy)
+        } else if !container.contains(.expiresAt) || (try? container.decodeNil(forKey: .expiresAt)) == true {
             expiresAt = nil
+        } else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .expiresAt, in: container, debugDescription: "Invalid entitlement expiration"
+            )
         }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(userID, forKey: .userID)
+        try container.encode(entitlement, forKey: .entitlement)
+        try container.encode(status, forKey: .status)
+        try container.encodeIfPresent(environment, forKey: .environment)
+        try container.encodeIfPresent(expiresAt.map { Self.iso8601.string(from: $0) }, forKey: .expiresAt)
     }
 
     init(

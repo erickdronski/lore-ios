@@ -542,10 +542,8 @@ struct LoreAPI {
     /// Idempotent: safe to call on every purchase, restore, and refresh.
     /// `POST /functions/v1/sync-apple-purchase { "signed_transaction": "<JWS>" }`
     @discardableResult
-    func syncApplePurchase(signedTransaction: String, accessToken: String) async throws -> Bool {
-        guard let url = URL(string: "sync-apple-purchase", relativeTo: Config.functionsURL) else {
-            throw APIError.badURL
-        }
+    func syncApplePurchase(signedTransaction: String, accessToken: String) async throws -> ApplePurchaseSyncResponse {
+        let url = Config.functionsURL.appending(path: "sync-apple-purchase")
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         applyAuth(&request, accessToken: accessToken)
@@ -554,19 +552,29 @@ struct LoreAPI {
         request.httpBody = try encodeJSON(["signed_transaction": signedTransaction])
 
         let (data, response) = try await session.data(for: request)
-        guard let http = response as? HTTPURLResponse else { return false }
+        guard let http = response as? HTTPURLResponse else { throw APIError.invalidResponse }
         guard (200..<300).contains(http.statusCode) else {
             throw APIError.http(status: http.statusCode, body: String(data: data, encoding: .utf8) ?? "")
         }
         do {
-            return try decoder.decode(ApplePurchaseSyncResponse.self, from: data).recorded
+            return try decoder.decode(ApplePurchaseSyncResponse.self, from: data)
         } catch {
             throw APIError.decoding(error)
         }
     }
 
-    private struct ApplePurchaseSyncResponse: Decodable {
+    struct ApplePurchaseSyncResponse: Decodable, Equatable {
         let recorded: Bool
+        let originalTransactionID: String?
+        let boundUserID: UUID?
+        let grantsAccess: Bool?
+
+        enum CodingKeys: String, CodingKey {
+            case recorded
+            case originalTransactionID = "original_transaction_id"
+            case boundUserID = "bound_user_id"
+            case grantsAccess = "grants_access"
+        }
     }
 
     /// Recompute achievements for the signed-in user and return any newly

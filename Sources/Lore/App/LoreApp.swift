@@ -105,11 +105,11 @@ struct LoreApp: App {
                             return auth.isSignedIn ? .failed : .acceptedWithoutServerGrant
                         }
                         do {
-                            let recorded = try await LoreAPI.shared.syncApplePurchase(
+                            let response = try await LoreAPI.shared.syncApplePurchase(
                                 signedTransaction: signedJWS,
                                 accessToken: token
                             )
-                            return recorded ? .recorded : .acceptedWithoutServerGrant
+                            return StoreKitService.VerifiedTransactionSyncOutcome(response: response)
                         } catch {
                             return .failed
                         }
@@ -385,6 +385,8 @@ struct RootTabView: View {
         TabView(selection: $selection) {
             ForEach(Tab.allCases) { tab in
                 surface(for: tab)
+                    .tabItem { Label(tab.title, systemImage: tab.systemImage) }
+                    .toolbar(.hidden, for: .tabBar)
                     .tag(tab)
             }
         }

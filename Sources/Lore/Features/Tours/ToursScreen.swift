@@ -406,7 +406,7 @@ struct TourRow: View {
 
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 6) {
-                        Text(progress.isCompleted ? "TRAIL COMPLETE" : "CURATED FIELD WALK")
+                        Text(progress.isCompleted ? "TRAIL COMPLETE" : tour.routeTypeLabel)
                             .font(LoreType.micro)
                             .tracking(1)
                             .foregroundStyle(progress.isCompleted ? LoreColor.success : LoreColor.brass700)
@@ -466,12 +466,30 @@ struct TourRow: View {
 
     @ViewBuilder
     private var tourFacts: some View {
-        HStack(spacing: 10) {
-            if let duration = tour.durationMin {
-                Label("\(duration) min", systemImage: "clock")
+        if let transport = tour.transportLabel {
+            Label(transport, systemImage: "tram.fill")
+                .font(LoreType.caption)
+                .foregroundStyle(LoreColor.brass700)
+        }
+        ViewThatFits(in: .horizontal) {
+            tourFactLabels
+            VStack(alignment: .leading, spacing: 5) {
+                if let duration = tour.durationLabel { Text(duration) }
+                if let distance = tour.distanceLabel { Text(distance) }
+                if !tour.stops.isEmpty { Text("\(tour.stops.count) stops") }
             }
-            if let distance = tour.distanceKm {
-                Label(String(format: "%.1f km", distance), systemImage: "figure.walk")
+        }
+        .font(LoreType.micro)
+        .foregroundStyle(LoreColor.ink600)
+    }
+
+    private var tourFactLabels: some View {
+        HStack(spacing: 10) {
+            if let duration = tour.durationLabel {
+                Label(duration, systemImage: "clock")
+            }
+            if let distance = tour.distanceLabel {
+                Label(distance, systemImage: tour.distanceSystemImage)
             }
             if !tour.stops.isEmpty {
                 Label("\(tour.stops.count)", systemImage: "mappin.and.ellipse")

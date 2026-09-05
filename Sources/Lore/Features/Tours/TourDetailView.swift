@@ -201,7 +201,7 @@ struct TourDetailView: View {
                             .font(LoreType.micro)
                             .tracking(1.2)
                             .foregroundStyle(LoreColor.brass700)
-                        Text("\(tour.stops.count) checkpoints on this walk")
+                        Text("\(tour.stops.count) checkpoints on this tour")
                             .font(LoreType.button)
                             .foregroundStyle(LoreColor.ink)
                     }
@@ -301,7 +301,7 @@ struct TourDetailView: View {
                 }
 
                 Text(liveActivity.startFailure?.message ?? (liveActivity.isRunning
-                    ? "Your current stop now shows on the Lock Screen and Dynamic Island as you walk."
+                    ? "Your current stop now shows on the Lock Screen and Dynamic Island as you explore."
                     : (liveActivity.areActivitiesEnabled
                         ? "Optional. Keeps your current stop on the Lock Screen and Dynamic Island so you can glance at it without opening Lore. Shows on a real iPhone, not the Simulator."
                         : TourLiveActivityController.StartFailure.disabled.message)))
@@ -329,7 +329,7 @@ struct TourDetailView: View {
                 Haptics.play(.chipTap)
                 openDirections()
             } label: {
-                Label("Walking directions to this stop", systemImage: "figure.walk")
+                Label(tour.requiresTransport ? "Plan transport to this stop" : "Walking directions to this stop", systemImage: tour.requiresTransport ? "map" : "figure.walk")
                     .font(LoreType.button)
                     .frame(maxWidth: .infinity)
                     .frame(height: 44)
@@ -337,7 +337,7 @@ struct TourDetailView: View {
                     .overlay(Capsule().strokeBorder(LoreColor.ink, lineWidth: 1.5))
             }
             .buttonStyle(.pressable)
-            .accessibilityLabel(Text("Walking directions to this stop"))
+            .accessibilityLabel(Text(tour.requiresTransport ? "Plan transport to this stop" : "Walking directions to this stop"))
         }
     }
 
@@ -347,9 +347,10 @@ struct TourDetailView: View {
         guard let place = currentStopPlace else { return }
         let mapItem = MKMapItem(placemark: MKPlacemark(coordinate: place.coordinate))
         mapItem.name = place.name
-        mapItem.openInMaps(launchOptions: [
+        let options: [String: Any] = tour.requiresTransport ? [:] : [
             MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeWalking
-        ])
+        ]
+        mapItem.openInMaps(launchOptions: options)
     }
 
     // MARK: Route map (TestFlight feedback: "let me see the whole walk")
@@ -581,7 +582,7 @@ struct TourDetailView: View {
 
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
-                    Label(tour.isPremium ? "LORE+ FIELD WALK" : "CITY FIELD WALK", systemImage: "map")
+                    Label(tour.routeTypeLabel, systemImage: "map")
                         .font(LoreType.micro)
                         .tracking(1.2)
                         .foregroundStyle(LoreColor.brass300)
@@ -612,7 +613,26 @@ struct TourDetailView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
+                if let transport = tour.transportLabel {
+                    Label(transport, systemImage: "tram.fill")
+                        .font(LoreType.button)
+                        .foregroundStyle(LoreColor.amber)
+                }
                 tripFacts
+                if let note = tour.routeNote, !note.isEmpty {
+                    Text(note)
+                        .font(LoreType.caption)
+                        .foregroundStyle(LoreColor.bone.opacity(0.8))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if let source = tour.routeSourceURL {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Link("Route data: OpenStreetMap", destination: source)
+                        Link("Fix the map", destination: URL(string: "https://www.openstreetmap.org/fixthemap")!)
+                    }
+                    .font(LoreType.caption)
+                    .foregroundStyle(LoreColor.brass300)
+                }
             }
             .padding(18)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -622,11 +642,8 @@ struct TourDetailView: View {
 
     // MARK: Trip facts (TestFlight feedback: "Total distance? Total time?")
 
-    /// Total walking distance along the routed stops, in meters, once every
-    /// stop's place has resolved. Sums the consecutive stop-to-stop legs, a
-    /// close proxy for the on-foot route (Apple Maps gives the exact path when
-    /// the user taps directions). Nil until the stops load, so the strip only
-    /// ever shows real numbers.
+    /// Straight-line stop distances are only a lower bound. They cannot
+    /// establish a walkable route or a walking-time estimate.
     private var routeMeters: Double? {
         let locations = tour.stops.compactMap { model.place(id: $0.placeID)?.location }
         guard locations.count == tour.stops.count, locations.count >= 2 else { return nil }
@@ -634,43 +651,27 @@ struct TourDetailView: View {
             .reduce(0) { $0 + $1.0.distance(from: $1.1) }
     }
 
-    /// Estimated walking time for the route at a relaxed 1.3 m/s, whole minutes.
-    private var walkMinutes: Int? {
-        guard let routeMeters else { return nil }
-        return max(1, Int((routeMeters / 1.3) / 60))
-    }
-
-    /// One authoritative distance label: the tour's own curated distance when
-    /// set, otherwise the computed route. Nil until at least one is available.
     private var distanceText: String? {
-        if let km = tour.distanceKm { return String(format: "%.1f km", km) }
-        if let routeMeters { return BearingProjector.distanceLabel(meters: routeMeters) }
-        return nil
+        if let label = tour.distanceLabel { return label }
+        guard let routeMeters, routeMeters.isFinite, routeMeters > 0 else { return nil }
+        return String(format: "At least %.1f km", routeMeters / 1_000)
     }
 
-    /// One authoritative walking-time label: the tour's own curated duration
-    /// when set, otherwise the computed estimate.
-    private var minutesText: String? {
-        if let min = tour.durationMin { return "\(min) min" }
-        if let walkMinutes { return "\(walkMinutes) min" }
-        return nil
-    }
+    private var minutesText: String? { tour.durationLabel }
 
-    /// A compact facts strip under the tour title: total distance, walking
-    /// time, and stop count. A single source of truth, so the two numbers can
-    /// never disagree (they used to: a curated summary line above a recomputed
-    /// strip below).
+    /// Reuse the catalog's route classification and estimates in the detail.
+    /// An unmeasured route may show its geometric lower bound, never a walk time.
     @ViewBuilder
     private var tripFacts: some View {
         if distanceText != nil || minutesText != nil || !tour.stops.isEmpty {
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 16) {
-                    if let distanceText { tripFact(system: "figure.walk", text: distanceText) }
+                    if let distanceText { tripFact(system: tour.distanceSystemImage, text: distanceText) }
                     if let minutesText { tripFact(system: "clock", text: minutesText) }
                     tripFact(system: "mappin.and.ellipse", text: "\(tour.stops.count) stops")
                 }
                 VStack(alignment: .leading, spacing: 5) {
-                    if let distanceText { tripFact(system: "figure.walk", text: distanceText) }
+                    if let distanceText { tripFact(system: tour.distanceSystemImage, text: distanceText) }
                     if let minutesText { tripFact(system: "clock", text: minutesText) }
                     tripFact(system: "mappin.and.ellipse", text: "\(tour.stops.count) stops")
                 }
@@ -786,7 +787,7 @@ struct TourDetailView: View {
                 .font(.system(size: 24))
                 .foregroundStyle(LoreColor.success)
             VStack(alignment: .leading, spacing: 2) {
-                Text("Walk completed")
+                Text(tour.requiresTransport ? "Tour completed" : "Walk completed")
                     .font(LoreType.button)
                     .foregroundStyle(LoreColor.ink)
                 Text("Your trail seal is saved. Start again whenever you want a fresh guided pass.")
@@ -797,7 +798,7 @@ struct TourDetailView: View {
     }
 
     private var walkAgainButton: some View {
-        Button("Walk again") {
+        Button(tour.requiresTransport ? "Explore again" : "Walk again") {
             TourProgressStore.restart(tourSlug: tour.slug, userID: auth.session?.user.id)
             wasCompleted = false
             furthestReachedStopIndex = 0
@@ -1068,7 +1069,7 @@ struct TourDetailView: View {
         return model.place(id: tour.stops[guideTargetIndex].placeID)?.name
     }
 
-    /// "Auto-play as you walk": the toggle that turns the tour into a
+    /// "Auto-play at each stop": the toggle that turns the tour into a
     /// self-driving audio walk. Free users get the locked affordance.
     @ViewBuilder
     private var guideControl: some View {
@@ -1091,7 +1092,7 @@ struct TourDetailView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(walkGuide.isDenied
                         ? "Location needed for auto-play"
-                        : (walkGuide.isGuiding ? "Guiding — auto-play is on" : "Auto-play as you walk"))
+                        : (walkGuide.isGuiding ? "Guiding — auto-play is on" : "Auto-play at each stop"))
                         .font(LoreType.button)
                         .foregroundStyle(LoreColor.ink)
                     if walkGuide.isDenied {
@@ -1104,14 +1105,14 @@ struct TourDetailView: View {
                             Text("\(name) · \(BearingProjector.distanceLabel(meters: meters))")
                                 .font(LoreType.caption).foregroundStyle(LoreColor.ink600)
                         } else if guideTargetIndex == nil {
-                            Text("Final stop reached — that's the walk.")
+                            Text("Final stop reached — tour complete.")
                                 .font(LoreType.caption).foregroundStyle(LoreColor.ink600)
                         } else {
                             Text("Finding you…")
                                 .font(LoreType.caption).foregroundStyle(LoreColor.ink600)
                         }
                     } else {
-                        Text("Each stop plays itself as you walk up to it.")
+                        Text("Each stop plays itself when you arrive nearby.")
                             .font(LoreType.caption).foregroundStyle(LoreColor.ink600)
                     }
                 }
@@ -1135,9 +1136,9 @@ struct TourDetailView: View {
         .buttonStyle(.pressable)
         .accessibilityLabel(entitlements.isPlus
             ? (walkGuide.isDenied
-                ? "Location is off. Open Settings for walking auto-play"
-                : (walkGuide.isGuiding ? "Stop auto-play guiding" : "Auto-play each stop as you walk up to it"))
-            : "Auto-play as you walk, a Lore Plus feature")
+                ? "Location is off. Open Settings for arrival auto-play"
+                : (walkGuide.isGuiding ? "Stop auto-play guiding" : "Auto-play each stop when you arrive nearby"))
+            : "Auto-play at each stop, a Lore Plus feature")
     }
 
     private func toggleGuide() {
@@ -1399,7 +1400,7 @@ private struct TourCompletionView: View {
                 Text(tour.displayEmoji)
                     .font(.system(size: 58))
                     .scaleEffect(appeared ? 1 : 0.65)
-                Text("Walk complete")
+                Text(tour.requiresTransport ? "Tour complete" : "Walk complete")
                     .loreLabelStyle()
                     .tracking(1.2)
                     .foregroundStyle(LoreColor.brass300)

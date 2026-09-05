@@ -8,6 +8,69 @@ final class LoreNetworkResilienceTests: XCTestCase {
         super.tearDown()
     }
 
+    func testApplePurchaseSyncPreservesVersionedEndpointAndOwnershipResponse() async throws {
+        NetworkStubProtocol.handler = { request in
+            XCTAssertEqual(request.url?.path, "/functions/v1/sync-apple-purchase")
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer test-access")
+            let response = HTTPURLResponse(url: try XCTUnwrap(request.url), statusCode: 200, httpVersion: nil, headerFields: nil)!
+            return (response, Data(#"{"recorded":true,"original_transaction_id":"purchase-1","bound_user_id":"11111111-1111-4111-8111-111111111111","grants_access":true}"#.utf8))
+        }
+        let result = try await makeAPI().syncApplePurchase(signedTransaction: "test.signed.receipt", accessToken: "test-access")
+        XCTAssertTrue(result.recorded)
+        XCTAssertEqual(result.originalTransactionID, "purchase-1")
+        XCTAssertEqual(result.grantsAccess, true)
+    }
+
+    func testDeletionContinuesPendingBatchesWithSameAccessToken() async throws {
+        var requests = 0
+        NetworkStubProtocol.handler = { request in
+            requests += 1
+            XCTAssertEqual(request.url?.path, "/functions/v1/delete-account")
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer original-access")
+            let code = requests < 3 ? 202 : 200
+            return (HTTPURLResponse(url: try XCTUnwrap(request.url), statusCode: code, httpVersion: nil, headerFields: nil)!, Data())
+        }
+        let result = try await AccountDeletionClient.delete(accessToken: "original-access", session: makeSession(), retryDelay: .zero)
+        XCTAssertEqual(result.statusCode, 200)
+        XCTAssertEqual(requests, 3)
+    }
+
+    func testDeletionRemainsPendingAfterBoundedAttempts() async throws {
+        var requests = 0
+        NetworkStubProtocol.handler = { request in
+            requests += 1
+            return (HTTPURLResponse(url: try XCTUnwrap(request.url), statusCode: 202, httpVersion: nil, headerFields: nil)!, Data())
+        }
+        let result = try await AccountDeletionClient.delete(accessToken: "original-access", session: makeSession(), maximumAttempts: 2, retryDelay: .zero)
+        XCTAssertEqual(result.statusCode, 202)
+        XCTAssertEqual(requests, 2)
+    }
+
+    func testDeletionKeepsPendingStateWhenLaterCleanupRequestLosesNetwork() async throws {
+        var requests = 0
+        NetworkStubProtocol.handler = { request in
+            requests += 1
+            if requests > 1 { throw URLError(.notConnectedToInternet) }
+            return (HTTPURLResponse(url: try XCTUnwrap(request.url), statusCode: 202, httpVersion: nil, headerFields: nil)!, Data())
+        }
+        let result = try await AccountDeletionClient.delete(accessToken: "original-access", session: makeSession(), retryDelay: .zero)
+        XCTAssertEqual(result.statusCode, 202)
+        XCTAssertEqual(requests, 2)
+    }
+
+    func testDeletionStopsPollingAtTimeBudgetWithoutPretendingCompletion() async throws {
+        var requests = 0
+        NetworkStubProtocol.handler = { request in
+            requests += 1
+            return (HTTPURLResponse(url: try XCTUnwrap(request.url), statusCode: 202, httpVersion: nil, headerFields: nil)!, Data())
+        }
+        let result = try await AccountDeletionClient.delete(accessToken: "original-access", session: makeSession(), retryDelay: .zero, maximumDuration: .zero)
+        XCTAssertEqual(result.statusCode, 202)
+        XCTAssertEqual(requests, 1)
+    }
+
     func testSuccessfulResponseDecodes() async throws {
         NetworkStubProtocol.handler = { request in
             let response = try XCTUnwrap(HTTPURLResponse(

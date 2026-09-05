@@ -214,12 +214,11 @@ struct ScannerScreen: View {
         }
         .alert("Use image match?", isPresented: $showImageMatchDisclosure) {
             Button("Send one frame") {
-                CloudLandmarkDisclosureConsent.accept(userID: auth.session?.user.id)
                 Task { await runImageMatch() }
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Lore will send one still camera frame to its image match service. Use this when local scanning cannot confidently match a real place.")
+            Text("Lore will send one still camera frame to Google Cloud Vision to identify a landmark. Lore does not save this frame. Only continue if you want Google to process what is visible. You will confirm each image match.")
         }
         .task {
             model.apply(prefs: prefs)
@@ -755,7 +754,7 @@ struct ScannerScreen: View {
                     Image(systemName: "viewfinder.circle")
                         .font(.system(size: 13, weight: .semibold))
                 }
-                Text("Identify")
+                Text("Identify with Google")
                     .font(LoreType.button)
                     .lineLimit(1)
                     .minimumScaleFactor(0.84)
@@ -771,7 +770,7 @@ struct ScannerScreen: View {
         }
         .buttonStyle(.plain)
         .disabled(!model.canRequestImageMatch)
-        .accessibilityLabel(Text("Identify this place with one image match"))
+        .accessibilityLabel(Text("Identify this place with Google Cloud Vision"))
         .accessibilityHint(Text("Sends one still frame only after you confirm."))
     }
 
@@ -794,11 +793,7 @@ struct ScannerScreen: View {
             return
         }
         Haptics.play(.scanAttempt)
-        if CloudLandmarkDisclosureConsent.hasAccepted(userID: auth.session?.user.id) {
-            Task { await runImageMatch() }
-        } else {
-            showImageMatchDisclosure = true
-        }
+        showImageMatchDisclosure = true
     }
 
     private func runImageMatch() async {
@@ -1756,38 +1751,6 @@ struct LandmarkResponse: Decodable {
         case landmark, confidence, slug
         case placeID = "place_id"
         case placeCity = "place_city"
-    }
-}
-
-/// The opt-in is account-scoped, not device-scoped. A shared iPad or a sign-out
-/// followed by another Lore account must show Google's one-photo disclosure to
-/// the new person before any frame can leave the device.
-enum CloudLandmarkDisclosureConsent {
-    private static let keyPrefix = "lore.cloudLandmarkDisclosureAccepted.v2"
-
-    static func hasAccepted(
-        userID: String?,
-        defaults: UserDefaults = .standard
-    ) -> Bool {
-        guard let key = key(userID: userID) else { return false }
-        return defaults.bool(forKey: key)
-    }
-
-    static func accept(
-        userID: String?,
-        defaults: UserDefaults = .standard
-    ) {
-        guard let key = key(userID: userID) else { return }
-        defaults.set(true, forKey: key)
-    }
-
-    private static func key(userID: String?) -> String? {
-        guard let normalized = userID?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased(),
-            !normalized.isEmpty
-        else { return nil }
-        return "\(keyPrefix).\(normalized)"
     }
 }
 

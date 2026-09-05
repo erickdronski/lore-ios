@@ -14,6 +14,25 @@ struct Tour: Codable, Identifiable, Hashable {
     let blurb: String?
     let durationMin: Int?
     let distanceKm: Double?
+    let travelMode: TravelMode
+    let distanceKind: DistanceKind
+    let routeNote: String?
+    let routeSource: String?
+    let routeCheckedAt: String?
+
+    enum TravelMode: String, Codable, Hashable {
+        case walking, mixed
+        init(from decoder: Decoder) throws {
+            self = Self(rawValue: try decoder.singleValueContainer().decode(String.self)) ?? .mixed
+        }
+    }
+
+    enum DistanceKind: String, Codable, Hashable {
+        case estimated, walkingRoute = "walking_route", minimum
+        init(from decoder: Decoder) throws {
+            self = Self(rawValue: try decoder.singleValueContainer().decode(String.self)) ?? .minimum
+        }
+    }
     /// Whether this is a Lore+ curated walk (gated for free users). The
     /// generated "1 Hour In" walk is always free.
     let isPremium: Bool
@@ -24,6 +43,11 @@ struct Tour: Codable, Identifiable, Hashable {
         case id, slug, title, city, emoji, blurb
         case durationMin = "duration_min"
         case distanceKm = "distance_km"
+        case travelMode = "travel_mode"
+        case distanceKind = "distance_kind"
+        case routeNote = "route_note"
+        case routeSource = "route_source"
+        case routeCheckedAt = "route_checked_at"
         case isPremium = "is_premium"
         case stops = "tour_stop"
     }
@@ -33,7 +57,9 @@ struct Tour: Codable, Identifiable, Hashable {
     init(
         id: String, slug: String, title: String, city: String,
         emoji: String?, blurb: String?, durationMin: Int?, distanceKm: Double?,
-        isPremium: Bool = false, stops: [TourStop]
+        isPremium: Bool = false, stops: [TourStop],
+        travelMode: TravelMode = .walking, distanceKind: DistanceKind = .estimated,
+        routeNote: String? = nil, routeSource: String? = nil, routeCheckedAt: String? = nil
     ) {
         self.id = id
         self.slug = slug
@@ -43,6 +69,11 @@ struct Tour: Codable, Identifiable, Hashable {
         self.blurb = blurb
         self.durationMin = durationMin
         self.distanceKm = distanceKm
+        self.travelMode = travelMode
+        self.distanceKind = distanceKind
+        self.routeNote = routeNote
+        self.routeSource = routeSource
+        self.routeCheckedAt = routeCheckedAt
         self.isPremium = isPremium
         self.stops = stops
     }
@@ -57,18 +88,46 @@ struct Tour: Codable, Identifiable, Hashable {
         blurb = try container.decodeIfPresent(String.self, forKey: .blurb)
         durationMin = try container.decodeIfPresent(Int.self, forKey: .durationMin)
         distanceKm = try container.decodeIfPresent(Double.self, forKey: .distanceKm)
+        travelMode = try container.decodeIfPresent(TravelMode.self, forKey: .travelMode) ?? .walking
+        distanceKind = try container.decodeIfPresent(DistanceKind.self, forKey: .distanceKind) ?? .estimated
+        routeNote = try container.decodeIfPresent(String.self, forKey: .routeNote)
+        routeSource = try container.decodeIfPresent(String.self, forKey: .routeSource)
+        routeCheckedAt = try container.decodeIfPresent(String.self, forKey: .routeCheckedAt)
         isPremium = try container.decodeIfPresent(Bool.self, forKey: .isPremium) ?? false
         let embedded = try container.decodeIfPresent([TourStop].self, forKey: .stops) ?? []
         stops = embedded.sorted { $0.seq < $1.seq }
     }
 
-    var displayEmoji: String { emoji ?? "🚶" }
+    var requiresTransport: Bool { travelMode == .mixed }
+    var displayEmoji: String { emoji ?? (requiresTransport ? "🗺️" : "🚶") }
+    var transportLabel: String? { requiresTransport ? "Transport needed" : nil }
+    var distanceSystemImage: String { requiresTransport ? "point.topleft.down.to.point.bottomright.curvepath" : "figure.walk" }
+    var routeTypeLabel: String {
+        requiresTransport ? "CITY EXCURSION" : (isPremium ? "LORE+ FIELD WALK" : "CITY FIELD WALK")
+    }
 
-    /// "45 min · 2.5 km" style summary line.
+    var distanceLabel: String? {
+        guard let distanceKm, distanceKm.isFinite, distanceKm > 0 else { return nil }
+        return String(format: distanceKind == .minimum ? "At least %.1f km" : "About %.1f km", distanceKm)
+    }
+
+    /// A minimum straight-line distance cannot justify a walking time. Mixed
+    /// excursions also need an actual transport itinerary before quoting one.
+    var durationLabel: String? {
+        guard !requiresTransport, distanceKind != .minimum,
+              let durationMin, durationMin > 0 else { return nil }
+        return "About \(durationMin) min"
+    }
+
+    var routeSourceURL: URL? {
+        guard let routeSource, let url = URL(string: routeSource),
+              url.scheme?.lowercased() == "https", url.host?.isEmpty == false,
+              url.user == nil, url.password == nil else { return nil }
+        return url
+    }
+
     var summaryLine: String {
-        var parts: [String] = []
-        if let durationMin { parts.append("\(durationMin) min") }
-        if let distanceKm { parts.append(String(format: "%.1f km", distanceKm)) }
+        var parts = [transportLabel, durationLabel, distanceLabel].compactMap { $0 }
         if !stops.isEmpty { parts.append("\(stops.count) stops") }
         return parts.joined(separator: " · ")
     }
