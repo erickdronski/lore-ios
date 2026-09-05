@@ -8,6 +8,11 @@ name: App Store · Upload Screenshots
 on:
   workflow_dispatch:
     inputs:
+      expected_version:
+        description: "Exact editable marketing version that receives this screenshot package"
+        required: true
+        default: "1.2"
+        type: string
       release_source_sha:
         description: "Exact 40-character source SHA used to capture every screenshot"
         required: true
@@ -15,7 +20,7 @@ on:
 
 concurrency:
   group: app-store-screenshots-upload
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -45,6 +50,7 @@ jobs:
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_KEY_CONTENT: ${{ secrets.ASC_KEY_CONTENT }}
           APP_REVIEW_HOLD: ${{ vars.APP_REVIEW_HOLD }}
+          EXPECTED_VERSION: ${{ inputs.expected_version }}
           RELEASE_SOURCE_SHA: ${{ inputs.release_source_sha }}
         run: bundle exec fastlane screenshots_upload
 

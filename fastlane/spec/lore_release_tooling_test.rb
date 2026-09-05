@@ -173,6 +173,20 @@ class LoreReleaseToolingTest < Minitest::Test
     assert_includes preflight, "verify_preflight!(reporter)"
   end
 
+  def test_screenshot_upload_targets_and_verifies_the_exact_reviewed_package
+    fastfile = File.read(File.expand_path("../Fastfile", __dir__))
+    workflow = File.read(File.expand_path("../../.github/workflows/screenshots-upload.yml", __dir__))
+
+    upload = lane_body("screenshots_upload")
+    assert_includes upload, "EXPECTED_VERSION"
+    assert_includes upload, "exact_editable_app_store_version!"
+    assert_includes upload, "verify_submission_screenshot_sets!"
+    assert_includes fastfile, "source_file_checksum"
+    assert_includes fastfile, 'Screenshot set #{display_type}'
+    assert_includes workflow, "expected_version:"
+    assert_includes workflow, "cancel-in-progress: false"
+  end
+
   def test_manual_preflight_surfaces_remain_explicit_warnings
     preflight = lane_body("preflight")
 

@@ -51,7 +51,10 @@ while held. App Store Connect UI changes are outside this lane guard.
    reviewed fields. A readback mismatch fails the action; it does not declare
    success or automatically replace Apple's result with older copy. Reruns use
    the exact existing manual, editable version.
-4. Upload the reviewed screenshots, then run `select-build` with the actual
+4. Upload the reviewed screenshots. The upload lane targets the explicit
+   `EXPECTED_VERSION`, waits for Apple to publish checksums, and fails unless
+   the en-US sets contain exactly the reviewed filenames, order, MD5 checksums,
+   and `COMPLETE` state. Then run `select-build` with the actual
    expected build and `release_source_sha=M`. The lane accepts exactly one iOS
    build matching app ID, marketing version and build number, with `VALID`
    processing state, `expired=false` and no elapsed expiration date. It rereads
@@ -134,16 +137,18 @@ Read-only preflight and version preparation do not require screenshot assets.
 
 ## Pinned API behavior and offline verification
 
-Fastlane remains pinned at 2.237.0. Its
-[`App.ensure_version!`](https://github.com/fastlane/fastlane/blob/2.237.0/spaceship/lib/spaceship/connect_api/models/app.rb)
+Fastlane remains pinned at 2.239.0. This release includes the upstream fix for
+App Store Connect's delayed screenshot checksums, which otherwise lets a retry
+upload duplicate images while the original assets are still transitioning.
+Its [`App.ensure_version!`](https://github.com/fastlane/fastlane/blob/2.239.0/spaceship/lib/spaceship/connect_api/models/app.rb)
 can rename the editable version, so preparation uses the supported
-[`post_app_store_version`](https://github.com/fastlane/fastlane/blob/2.237.0/spaceship/lib/spaceship/connect_api/tunes/tunes.rb)
+[`post_app_store_version`](https://github.com/fastlane/fastlane/blob/2.239.0/spaceship/lib/spaceship/connect_api/tunes/tunes.rb)
 API with explicit `versionString`, `IOS` platform and `MANUAL` release type.
 Build verification uses the pinned
-[`Build` model](https://github.com/fastlane/fastlane/blob/2.237.0/spaceship/lib/spaceship/connect_api/models/build.rb)
+[`Build` model](https://github.com/fastlane/fastlane/blob/2.239.0/spaceship/lib/spaceship/connect_api/models/build.rb)
 with app and prerelease-version associations loaded. Localization updates use
 pinned Fastlane's
-[`AppStoreVersionLocalization`](https://github.com/fastlane/fastlane/blob/2.237.0/spaceship/lib/spaceship/connect_api/models/app_store_version_localization.rb)
+[`AppStoreVersionLocalization`](https://github.com/fastlane/fastlane/blob/2.239.0/spaceship/lib/spaceship/connect_api/models/app_store_version_localization.rb)
 model: existing rows map `whats_new` to Apple's `whatsNew`, while new rows use
 `locale`, `whatsNew` and `description` directly. Product reads use Apple's
 [subscription groups](https://developer.apple.com/documentation/appstoreconnectapi/get-v1-apps-_id_-subscriptiongroups),

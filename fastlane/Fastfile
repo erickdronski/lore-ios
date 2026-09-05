@@ -100,6 +100,76 @@ rescue LoreReleaseTooling::Error => e
   UI.user_error!(e.message)
 end
 
+def exact_editable_app_store_version!(app, expected_version)
+  versions = app.get_app_store_versions(filter: { platform: "IOS" }).select do |candidate|
+    candidate.version_string == expected_version
+  end
+  UI.user_error!("Multiple iOS records for version #{expected_version}.") if versions.length > 1
+  version = versions.first
+  UI.user_error!("No iOS version #{expected_version} found in App Store Connect.") if version.nil?
+  state = version.app_version_state || version.app_store_state
+  UI.user_error!("Version #{expected_version} is not editable for screenshots: #{state}") unless VERSION_EDITABLE_AFTER_CANCEL_STATES.include?(state)
+  version
+end
+
+def submission_screenshot_manifest
+  root = File.expand_path("promo_screenshots/en-US", __dir__)
+  files = Dir.glob(File.join(root, "*.png"))
+  iphone = files.reject { |path| File.basename(path).start_with?("ipad_") }.sort
+  ipad = files.select { |path| File.basename(path).start_with?("ipad_") }.sort
+  if iphone.empty? || ipad.empty?
+    raise LoreReleaseTooling::Error, "Screenshot package must contain both iPhone and iPad PNGs."
+  end
+
+  {
+    "APP_IPHONE_67" => iphone,
+    "APP_IPAD_PRO_3GEN_129" => ipad,
+  }
+end
+
+def verify_submission_screenshot_sets!(version)
+  require "digest/md5"
+  localizations = version.get_app_store_version_localizations.select { |row| row.locale == "en-US" }
+  raise LoreReleaseTooling::Error, "Expected exactly one en-US screenshot localization." unless localizations.length == 1
+
+  expected = submission_screenshot_manifest
+  sets = localizations.first.get_app_screenshot_sets
+  expected.each do |display_type, paths|
+    set = sets.find { |candidate| candidate.screenshot_display_type == display_type }
+    raise LoreReleaseTooling::Error, "Missing screenshot set #{display_type}." if set.nil?
+
+    screenshots = Array(set.app_screenshots)
+    unless screenshots.length == paths.length
+      raise LoreReleaseTooling::Error,
+            "Screenshot set #{display_type} has #{screenshots.length} image(s); expected exactly #{paths.length}."
+    end
+
+    unless screenshots.all?(&:complete?)
+      states = screenshots.map { |screenshot| screenshot.asset_delivery_state.to_h["state"] }
+      raise LoreReleaseTooling::Error, "Screenshot set #{display_type} is not fully COMPLETE: #{states.inspect}."
+    end
+
+    expected_names = paths.map { |path| File.basename(path) }
+    actual_names = screenshots.map(&:file_name)
+    expected_checksums = paths.map { |path| Digest::MD5.file(path).hexdigest }
+    actual_checksums = screenshots.map(&:source_file_checksum)
+    unless actual_names == expected_names && actual_checksums == expected_checksums
+      raise LoreReleaseTooling::Error,
+            "Screenshot set #{display_type} does not match the reviewed package order/checksums."
+    end
+  end
+
+  unexpected = sets.select do |set|
+    !expected.key?(set.screenshot_display_type) && Array(set.app_screenshots).any?
+  end
+  unless unexpected.empty?
+    raise LoreReleaseTooling::Error,
+          "Unexpected non-empty screenshot sets: #{unexpected.map(&:screenshot_display_type).inspect}."
+  end
+
+  true
+end
+
 def verify_attached_release_build!(app, version, target)
   target.verify_version!(version)
   attached = version.get_build
@@ -279,6 +349,7 @@ platform :ios do
     # (description/keywords stay exactly as set). Runs on Linux; no Xcode needed.
     ensure_app_store_release_mutation_allowed!
     verify_submission_screenshot_provenance!(options)
+    expected_version = expected_release_version!(expected_version: ENV.fetch("EXPECTED_VERSION", ""))
 
     api_key = app_store_connect_api_key(
       key_id: ENV.fetch("ASC_KEY_ID"),
@@ -286,6 +357,10 @@ platform :ios do
       key_content: ENV.fetch("ASC_KEY_CONTENT"),
       is_key_content_base64: true,
     )
+    asc_token!
+    app = Spaceship::ConnectAPI::App.find(BUNDLE_ID)
+    UI.user_error!("No app for #{BUNDLE_ID}") if app.nil?
+    version = exact_editable_app_store_version!(app, expected_version)
     upload_to_app_store(
       api_key: api_key,
       app_identifier: BUNDLE_ID,
@@ -297,6 +372,8 @@ platform :ios do
       run_precheck_before_submit: false,
       force: true,
     )
+    verify_submission_screenshot_sets!(version)
+    UI.success("Uploaded and verified the exact reviewed screenshot package for #{expected_version}.")
   end
 
   desc "READ-ONLY App Store submission preflight — reports the real ASC state"
@@ -420,6 +497,15 @@ platform :ios do
           end
         rescue => e
           say.call("FAIL", "Screenshots", "lookup failed: #{e.message}")
+        end
+
+        if version&.version_string == project_release_settings.fetch(:version)
+          begin
+            verify_submission_screenshot_sets!(version)
+            say.call("PASS", "Reviewed screenshot package", "exact en-US filenames, order, checksums, and COMPLETE state")
+          rescue LoreReleaseTooling::Error => e
+            say.call("FAIL", "Reviewed screenshot package", e.message)
+          end
         end
       end
     rescue => e
@@ -729,7 +815,7 @@ platform :ios do
       expected_version: expected_version, editable_version: app.get_edit_app_store_version(platform: platform),
     )
     if version.nil?
-      # Fastlane 2.237.0 App.ensure_version! can rename an unrelated version.
+      # Fastlane App.ensure_version! can rename an unrelated version.
       # Its raw creation endpoint supports an explicit new MANUAL version.
       version = Spaceship::ConnectAPI.post_app_store_version(
         app_id: app.id,
@@ -766,6 +852,7 @@ platform :ios do
     version = exact_app_store_version!(app, target)
     state = version.app_version_state || version.app_store_state
     UI.user_error!("Version is not editable for build selection: #{state}") unless VERSION_EDITABLE_AFTER_CANCEL_STATES.include?(state)
+    verify_submission_screenshot_sets!(version)
     build = exact_processed_build!(app, target)
     version.select_build(build_id: build.id)
     verify_attached_release_build!(app, refetch_app_store_version!(version), target)
@@ -781,6 +868,7 @@ platform :ios do
     app = Spaceship::ConnectAPI::App.find(BUNDLE_ID)
     UI.user_error!("No app for #{BUNDLE_ID}") if app.nil?
     version = exact_app_store_version!(app, target)
+    verify_submission_screenshot_sets!(version)
     build = verify_attached_release_build!(app, version, target)
     UI.important("Submitting #{app.name} #{target.version} (#{target.build_number}) for review…")
     # The modern reviewSubmissions API replaced appStoreVersionSubmissions.
@@ -803,6 +891,7 @@ platform :ios do
     app = Spaceship::ConnectAPI::App.find(BUNDLE_ID)
     UI.user_error!("No app for #{BUNDLE_ID}") if app.nil?
     version = exact_app_store_version!(app, target)
+    verify_submission_screenshot_sets!(version)
     selected_build = exact_processed_build!(app, target)
     current = version.get_build
     if current&.id == selected_build.id
@@ -841,6 +930,7 @@ platform :ios do
     app = Spaceship::ConnectAPI::App.find(BUNDLE_ID)
     UI.user_error!("No app for #{BUNDLE_ID}") if app.nil?
     version = exact_app_store_version!(app, target)
+    verify_submission_screenshot_sets!(version)
     verify_attached_release_build!(app, version, target)
     release_type = Spaceship::ConnectAPI::AppStoreVersion::ReleaseType::AFTER_APPROVAL
     version.update(attributes: { releaseType: release_type }) unless version.release_type == release_type
