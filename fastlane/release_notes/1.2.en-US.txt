@@ -1,0 +1,8 @@
+Lore 1.2 makes city exploring clearer and more reliable.
+
+• Clearer route information shows when transport is needed and identifies minimum distance estimates.
+• Updated public content replaces outdated saved routes when a new review version is available.
+• Improved purchase restoration and account handling.
+• More reliable source links and narration, with device voice where studio recordings are unavailable.
+
+Coverage and studio recordings vary by destination.

@@ -67,6 +67,58 @@ rescue LoreReleaseTooling::PreflightFailed => e
   UI.user_error!(e.message)
 end
 
+def project_release_settings
+  LoreReleaseTooling.project_release_settings(File.expand_path("../project.yml", __dir__))
+end
+
+def expected_release_version!(options)
+  value = options[:expected_version].to_s.strip
+  value = ENV.fetch("EXPECTED_VERSION", "") if value.empty?
+  LoreReleaseTooling.release_version!(value, project_version: project_release_settings.fetch(:version))
+rescue LoreReleaseTooling::Error => e
+  UI.user_error!(e.message)
+end
+
+def expected_release_target!(options)
+  expected_build = options[:expected_build].to_s.strip
+  expected_build = ENV.fetch("EXPECTED_BUILD", "") if expected_build.empty?
+  settings = project_release_settings
+  LoreReleaseTooling::ReleaseTarget.new(
+    expected_version: expected_release_version!(options), expected_build: expected_build,
+    project_version: settings.fetch(:version), build_floor: settings.fetch(:build_floor),
+  )
+rescue LoreReleaseTooling::Error => e
+  UI.user_error!(e.message)
+end
+
+def exact_app_store_version!(app, target)
+  version = app.get_app_store_versions(filter: { platform: "IOS" }).find do |candidate|
+    candidate.version_string == target.version
+  end
+  target.verify_version!(version)
+rescue LoreReleaseTooling::Error => e
+  UI.user_error!(e.message)
+end
+
+def verify_attached_release_build!(app, version, target)
+  target.verify_version!(version)
+  attached = version.get_build
+  build = attached && Spaceship::ConnectAPI::Build.get(build_id: attached.id)
+  target.verify_build!(build, app_id: app.id)
+rescue LoreReleaseTooling::Error => e
+  UI.user_error!(e.message)
+end
+
+def exact_processed_build!(app, target)
+  builds = Spaceship::ConnectAPI::Build.all(
+    app_id: app.id, version: target.version, build_number: target.build_number,
+    platform: "IOS", processing_states: "VALID",
+  )
+  target.select_build!(builds, app_id: app.id)
+rescue LoreReleaseTooling::Error => e
+  UI.user_error!(e.message)
+end
+
 def refetch_app_store_version!(version)
   Spaceship::ConnectAPI::AppStoreVersion.get(
     app_store_version_id: version.id,
@@ -118,28 +170,34 @@ def wait_for_version_editable_after_review_cancel!(version)
   final_version
 end
 
-def review_submission_item_count(submission_id)
-  Spaceship::ConnectAPI::ReviewSubmissionItem.all(
+def review_submission_version_ids(submission_id)
+  items = Spaceship::ConnectAPI::ReviewSubmissionItem.all(
     review_submission_id: submission_id,
     includes: "appStoreVersion",
-  ).length
-rescue => e
-  UI.message("Review-submission item read failed via items endpoint; falling back: #{e.class}")
-  submission = Spaceship::ConnectAPI::ReviewSubmission.get(
-    review_submission_id: submission_id,
-    includes: "items,appStoreVersionForReview",
   )
-  submission&.items.to_a.length
+  items.map { |item| item.app_store_version&.id }
 end
 
-def wait_for_review_submission_item!(submission_id)
+def verify_review_submission_version!(submission_id, version_id)
+  LoreReleaseTooling.verify_review_item_versions!(
+    review_submission_version_ids(submission_id), expected_version_id: version_id,
+  )
+rescue LoreReleaseTooling::Error => e
+  UI.user_error!(e.message)
+end
+
+def wait_for_review_submission_item!(submission_id, version_id)
   current = nil
   12.times do
     current = Spaceship::ConnectAPI::ReviewSubmission.get(
       review_submission_id: submission_id,
       includes: "items,appStoreVersionForReview",
     )
-    return current if review_submission_item_count(submission_id).positive?
+    ids = review_submission_version_ids(submission_id)
+    unless ids.empty?
+      LoreReleaseTooling.verify_review_item_versions!(ids, expected_version_id: version_id)
+      return current
+    end
 
     UI.message("Waiting for review submission item to attach: submission=#{submission_id}")
     sleep(5)
@@ -182,7 +240,7 @@ def prepare_review_submission_for_version!(app:, platform:, version:)
     UI.important("Version is already an item on this submission; continuing.")
   end
 
-  wait_for_review_submission_item!(submission.id)
+  wait_for_review_submission_item!(submission.id, version.id)
   wait_for_version_ready_for_review!(version)
   Spaceship::ConnectAPI::ReviewSubmission.get(
     review_submission_id: submission.id,
@@ -242,7 +300,7 @@ platform :ios do
   end
 
   desc "READ-ONLY App Store submission preflight — reports the real ASC state"
-  lane :preflight do
+  lane :preflight do |options|
     # Pure GET calls. Changes nothing. Every section is individually rescued so
     # one unsupported endpoint cannot blind the rest of the audit. Findings are
     # prefixed PF| so they can be grepped straight out of the CI log.
@@ -250,6 +308,9 @@ platform :ios do
       UI.message("PF|#{status}|#{label}|#{detail}")
     end
     say = ->(status, label, detail) { reporter.record(status, label, detail) }
+    target = if options[:expected_version] || !ENV.fetch("EXPECTED_VERSION", "").empty?
+               expected_release_target!(options)
+             end
 
     begin
       asc_token!
@@ -308,8 +369,12 @@ platform :ios do
 
     begin
       b = version&.get_build
+      b = Spaceship::ConnectAPI::Build.get(build_id: b.id) if b
       if b
-        say.call("PASS", "Build attached", "build #{b.version} state=#{b.processing_state}")
+        target&.verify_version!(version)
+        target&.verify_build!(b, app_id: app.id)
+        valid = b.processing_state == "VALID" && b.expired == false
+        say.call(valid ? "PASS" : "FAIL", "Build attached", "build #{b.version} state=#{b.processing_state} expired=#{b.expired}")
       else
         say.call("FAIL", "Build attached", "No build attached to the editable version")
       end
@@ -334,7 +399,9 @@ platform :ios do
 
     # --- Store listing text ---
     begin
-      version&.get_app_store_version_localizations&.each do |loc|
+      localizations = version&.get_app_store_version_localizations.to_a
+      say.call("FAIL", "Listing text", "No version localizations returned") if localizations.empty?
+      localizations.each do |loc|
         desc_len = loc.description.to_s.length
         say.call(desc_len > 10 ? "PASS" : "FAIL", "Description (#{loc.locale})", "#{desc_len} chars")
         say.call(loc.keywords.to_s.empty? ? "FAIL" : "PASS", "Keywords (#{loc.locale})", loc.keywords.to_s)
@@ -345,7 +412,9 @@ platform :ios do
 
         # Screenshots per device slot
         begin
-          loc.get_app_screenshot_sets.each do |set|
+          sets = loc.get_app_screenshot_sets
+          say.call("FAIL", "Screenshots (#{loc.locale})", "No screenshot sets returned") if sets.empty?
+          sets.each do |set|
             n = set.app_screenshots&.count.to_i
             say.call(n.zero? ? "FAIL" : "PASS", "Screenshots #{set.screenshot_display_type}", "#{n} image(s)")
           end
@@ -384,10 +453,28 @@ platform :ios do
       say.call("FAIL", "AppInfo", "lookup failed: #{e.message}")
     end
 
-    # --- Subscriptions (Lore+): each needs a review screenshot to be submittable ---
+    # --- Read actual subscription and one-time product status, without prices ---
+    begin
+      products = LoreReleaseTooling.product_catalog(Spaceship::ConnectAPI.tunes_request_client, app_id: app.id)
+      products.each do |product|
+        say.call("INFO", "Product", "#{product[:product_id]} type=#{product[:type]} state=#{product[:state]}")
+      end
+      %w[lore_plus_monthly lore_plus_annual lore_plus_lifetime].each do |identifier|
+        matches = products.select { |product| product[:product_id] == identifier }
+        if matches.length != 1
+          say.call("FAIL", "Product #{identifier}", "Expected one product; found #{matches.length}")
+        else
+          state = matches.first.fetch(:state)
+          say.call(state == "APPROVED" ? "PASS" : "FAIL", "Product #{identifier}", "state=#{state}")
+        end
+      end
+    rescue => e
+      say.call("FAIL", "Product catalog", "Read-only lookup failed: #{e.message}")
+    end
+
     say.call(
       "WARN", "Subscriptions",
-      "Pinned Fastlane does not expose subscription-group reads; confirm products and review screenshots in App Store Connect",
+      "Product states are checked above; review screenshots, availability and agreements still need App Store Connect verification",
     )
 
     say.call(
@@ -619,121 +706,138 @@ platform :ios do
     )
   end
 
-  desc "Submit the editable App Store version for review (guarded)"
-  lane :submit_for_review do |options|
+  desc "Create the exact project version as manual release and set its release notes"
+  lane :prepare_version do |options|
+    ensure_app_store_release_mutation_allowed!
+    expected_version = expected_release_version!(options)
+    notes_path = File.expand_path("release_notes/#{expected_version}.en-US.txt", __dir__)
+    UI.user_error!("Missing release notes for #{expected_version}") unless File.file?(notes_path)
+    notes = File.read(notes_path).strip
+    UI.user_error!("Release notes must contain 1–4000 characters") unless (1..4000).cover?(notes.length)
+    asc_token!
+    platform = Spaceship::ConnectAPI::Platform::IOS
+    app = Spaceship::ConnectAPI::App.find(BUNDLE_ID)
+    UI.user_error!("No app for #{BUNDLE_ID}") if app.nil?
+    version = LoreReleaseTooling.version_for_preparation!(
+      app.get_app_store_versions(filter: { platform: platform }),
+      expected_version: expected_version, editable_version: app.get_edit_app_store_version(platform: platform),
+    )
+    if version.nil?
+      # Fastlane 2.237.0 App.ensure_version! can rename an unrelated version.
+      # Its raw creation endpoint supports an explicit new MANUAL version.
+      version = Spaceship::ConnectAPI.post_app_store_version(
+        app_id: app.id,
+        attributes: { versionString: expected_version, platform: platform, releaseType: "MANUAL" },
+      ).to_models.first
+    end
+    UI.user_error!("Apple returned an unexpected version after preparation") unless version&.version_string == expected_version && version.platform == platform
+    state = version.app_version_state || version.app_store_state
+    UI.user_error!("Version #{expected_version} is not editable for metadata: #{state}") unless VERSION_EDITABLE_AFTER_CANCEL_STATES.include?(state)
+    UI.user_error!("Version #{expected_version} is not held for manual release") unless version.release_type == "MANUAL"
+    localization = version.get_app_store_version_localizations.find { |row| row.locale == "en-US" }
+    if localization
+      localization.update(attributes: { whats_new: notes })
+    else
+      version.create_app_store_version_localization(attributes: { locale: "en-US", whatsNew: notes })
+    end
+    saved = version.get_app_store_version_localizations.find { |row| row.locale == "en-US" }
+    UI.user_error!("Release notes did not match after saving") unless saved&.whats_new == notes
+    UI.success("Prepared #{expected_version} as MANUAL release. No build selected and no review submitted.")
+  end
+
+  desc "Attach an explicitly selected VALID nonexpired build without submitting review"
+  lane :select_release_build do |options|
     ensure_app_store_release_mutation_allowed!
     verify_submission_screenshot_provenance!(options)
+    target = expected_release_target!(options)
     asc_token!
     app = Spaceship::ConnectAPI::App.find(BUNDLE_ID)
     UI.user_error!("No app for #{BUNDLE_ID}") if app.nil?
-    version = app.get_edit_app_store_version
-    UI.user_error!("No editable version to submit") if version.nil?
-    build = version.get_build
-    UI.user_error!("Refusing to submit: no build attached to #{version.version_string}") if build.nil?
+    version = exact_app_store_version!(app, target)
+    state = version.app_version_state || version.app_store_state
+    UI.user_error!("Version is not editable for build selection: #{state}") unless VERSION_EDITABLE_AFTER_CANCEL_STATES.include?(state)
+    build = exact_processed_build!(app, target)
+    version.select_build(build_id: build.id)
+    verify_attached_release_build!(app, refetch_app_store_version!(version), target)
+    UI.success("Selected #{target.version} (#{target.build_number}); no review submitted.")
+  end
 
-    UI.important("Submitting #{app.name} #{version.version_string} (build #{build.version}) for review…")
-
-    # `version.create_app_store_version_submission` targets the retired
-    # appStoreVersionSubmissions endpoint, which Apple now answers with
-    # "does not allow 'CREATE'. Allowed operation is: DELETE". Submission moved
-    # to the reviewSubmissions model, where a submission is a container that
-    # carries one or more items (the version, and any IAPs) and is then sent as
-    # a unit — which is also what the App Store Connect UI drives.
-    platform = Spaceship::ConnectAPI::Platform::IOS
+  desc "Submit the exact expected version and attached VALID build for review"
+  lane :submit_for_review do |options|
+    ensure_app_store_release_mutation_allowed!
+    verify_submission_screenshot_provenance!(options)
+    target = expected_release_target!(options)
+    asc_token!
+    app = Spaceship::ConnectAPI::App.find(BUNDLE_ID)
+    UI.user_error!("No app for #{BUNDLE_ID}") if app.nil?
+    version = exact_app_store_version!(app, target)
+    build = verify_attached_release_build!(app, version, target)
+    UI.important("Submitting #{app.name} #{target.version} (#{target.build_number}) for review…")
+    # The modern reviewSubmissions API replaced appStoreVersionSubmissions.
     submission = prepare_review_submission_for_version!(
-      app: app,
-      platform: platform,
-      version: version,
+      app: app, platform: Spaceship::ConnectAPI::Platform::IOS, version: version,
     )
-
+    verify_attached_release_build!(app, refetch_app_store_version!(version), target)
+    verify_review_submission_version!(submission.id, version.id)
     submission.submit_for_review
     UI.success("Submitted #{version.version_string} build #{build.version} for App Store review.")
   end
 
-  desc "Swap the newest processed build onto the editable version and (re)submit"
+  desc "Swap the exact requested VALID build and resubmit; never select implicit latest"
   lane :swap_latest_build_and_resubmit do |options|
     ensure_app_store_release_mutation_allowed!
     verify_submission_screenshot_provenance!(options)
+    target = expected_release_target!(options)
     asc_token!
     platform = Spaceship::ConnectAPI::Platform::IOS
     app = Spaceship::ConnectAPI::App.find(BUNDLE_ID)
     UI.user_error!("No app for #{BUNDLE_ID}") if app.nil?
-    version = app.get_edit_app_store_version
-    UI.user_error!("No editable version to submit") if version.nil?
-
-    # Newest fully-processed build. A build still in PROCESSING cannot be
-    # attached, so require VALID and fail loudly rather than silently leaving
-    # the older build in place.
-    builds = Spaceship::ConnectAPI::Build.all(
-      app_id: app.id, version: version.version_string,
-      processing_states: "VALID", sort: "-uploadedDate", limit: 1,
-    )
-    newest = builds&.first
-    UI.user_error!(
-      "No VALID build for #{version.version_string} yet — it is still processing. Re-run once processing completes.",
-    ) if newest.nil?
-
+    version = exact_app_store_version!(app, target)
+    selected_build = exact_processed_build!(app, target)
     current = version.get_build
-    if current&.id == newest.id
-      # No build newer than the attached one is VALID yet. If the version is
-      # already in review, resubmitting would be a no-op at best, so stop and
-      # say so plainly rather than churn the submission. Re-run once the newer
-      # build finishes processing.
-      if %w[WAITING_FOR_REVIEW IN_REVIEW PENDING_DEVELOPER_RELEASE].include?(version.app_store_state)
-        UI.user_error!(
-          "Newest VALID build for #{version.version_string} is still #{newest.version} (the one already submitted). " \
-          "A newer build has not finished processing yet — re-run once it has.",
-        )
+    if current&.id == selected_build.id
+      if %w[WAITING_FOR_REVIEW IN_REVIEW PENDING_DEVELOPER_RELEASE].include?(version.app_version_state || version.app_store_state)
+        UI.user_error!("Expected build is already attached and version is in review or pending release; no resubmission performed.")
       end
-      UI.important("Version #{version.version_string} already carries build #{newest.version}; resubmitting.")
     else
-      UI.important("Swapping build #{current&.version || 'none'} -> #{newest.version} on #{version.version_string}.")
-      # An existing review submission locks the version's build; cancel it before
-      # reselecting, then a fresh submission carries the new build in.
       existing = app.get_in_progress_review_submission(
-        platform: platform,
-        includes: "appStoreVersionForReview,items",
+        platform: platform, includes: "appStoreVersionForReview,items",
       )
       unless existing.nil?
-        UI.important("Cancelling the in-progress review submission to unlock the build.")
+        bound = existing.app_store_version_for_review
+        UI.user_error!("Refusing to cancel a review submission for another version") unless bound&.id == version.id
         existing.cancel_submission
         wait_for_review_cancellation!(existing.id)
       end
       version = wait_for_version_editable_after_review_cancel!(version)
-      version.select_build(build_id: newest.id)
-      version = refetch_app_store_version!(version)
-      selected = version.get_build
-      UI.user_error!(
-        "Build selection did not stick; expected #{newest.version}, Apple still has #{selected&.version || 'none'}.",
-      ) unless selected&.id == newest.id
+      target.verify_version!(version)
+      version.select_build(build_id: selected_build.id)
     end
-
-    submission = prepare_review_submission_for_version!(
-      app: app,
-      platform: platform,
-      version: version,
-    )
+    version = refetch_app_store_version!(version)
+    verify_attached_release_build!(app, version, target)
+    submission = prepare_review_submission_for_version!(app: app, platform: platform, version: version)
+    verify_attached_release_build!(app, refetch_app_store_version!(version), target)
+    verify_review_submission_version!(submission.id, version.id)
     submission.submit_for_review
-    UI.success("Resubmitted #{version.version_string} build #{newest.version} for App Store review.")
+    UI.success("Submitted exact #{target.version} (#{target.build_number}) for App Store review.")
   end
 
-  desc "Set the editable version to release automatically after approval"
-  lane :set_auto_release do
+  desc "Set the exact expected version and build to release after approval"
+  lane :set_auto_release do |options|
     ensure_app_store_release_mutation_allowed!
+    verify_submission_screenshot_provenance!(options)
+    target = expected_release_target!(options)
     asc_token!
     app = Spaceship::ConnectAPI::App.find(BUNDLE_ID)
     UI.user_error!("No app for #{BUNDLE_ID}") if app.nil?
-    version = app.get_edit_app_store_version
-    UI.user_error!("No editable version") if version.nil?
-
-    target = Spaceship::ConnectAPI::AppStoreVersion::ReleaseType::AFTER_APPROVAL
-    if version.release_type == target
-      UI.important("#{version.version_string} is already set to auto-release after approval.")
-    else
-      UI.important("Setting #{version.version_string} release: #{version.release_type} -> #{target}.")
-      version.update(attributes: { releaseType: target })
-      UI.success("#{version.version_string} will now release automatically once approved.")
-    end
+    version = exact_app_store_version!(app, target)
+    verify_attached_release_build!(app, version, target)
+    release_type = Spaceship::ConnectAPI::AppStoreVersion::ReleaseType::AFTER_APPROVAL
+    version.update(attributes: { releaseType: release_type }) unless version.release_type == release_type
+    updated = refetch_app_store_version!(version)
+    verify_attached_release_build!(app, updated, target)
+    UI.user_error!("Apple did not retain automatic release mode") unless updated.release_type == release_type
+    UI.success("#{target.version} (#{target.build_number}) will release automatically after approval.")
   end
 
   desc "Build Lore and upload the build to TestFlight"
@@ -803,13 +907,16 @@ platform :ios do
       xcodeproj: "Lore.xcodeproj",
       target: "Lore",
     )
+    LoreReleaseTooling.release_version!(app_version, project_version: project_release_settings.fetch(:version))
     latest = latest_testflight_build_number(
       api_key: api_key,
       app_identifier: BUNDLE_ID,
       version: app_version,
       initial_build_number: 0,
     )
-    build_number = latest.to_i + 1
+    build_number = LoreReleaseTooling.next_build_number(
+      project_floor: project_release_settings.fetch(:build_floor), latest: latest,
+    )
     increment_build_number(
       xcodeproj: "Lore.xcodeproj",
       build_number: build_number,

@@ -8,6 +8,69 @@ final class LoreNetworkResilienceTests: XCTestCase {
         super.tearDown()
     }
 
+    func testApplePurchaseSyncPreservesVersionedEndpointAndOwnershipResponse() async throws {
+        NetworkStubProtocol.handler = { request in
+            XCTAssertEqual(request.url?.path, "/functions/v1/sync-apple-purchase")
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer test-access")
+            let response = HTTPURLResponse(url: try XCTUnwrap(request.url), statusCode: 200, httpVersion: nil, headerFields: nil)!
+            return (response, Data(#"{"recorded":true,"original_transaction_id":"purchase-1","bound_user_id":"11111111-1111-4111-8111-111111111111","grants_access":true}"#.utf8))
+        }
+        let result = try await makeAPI().syncApplePurchase(signedTransaction: "test.signed.receipt", accessToken: "test-access")
+        XCTAssertTrue(result.recorded)
+        XCTAssertEqual(result.originalTransactionID, "purchase-1")
+        XCTAssertEqual(result.grantsAccess, true)
+    }
+
+    func testDeletionContinuesPendingBatchesWithSameAccessToken() async throws {
+        var requests = 0
+        NetworkStubProtocol.handler = { request in
+            requests += 1
+            XCTAssertEqual(request.url?.path, "/functions/v1/delete-account")
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer original-access")
+            let code = requests < 3 ? 202 : 200
+            return (HTTPURLResponse(url: try XCTUnwrap(request.url), statusCode: code, httpVersion: nil, headerFields: nil)!, Data())
+        }
+        let result = try await AccountDeletionClient.delete(accessToken: "original-access", session: makeSession(), retryDelay: .zero)
+        XCTAssertEqual(result.statusCode, 200)
+        XCTAssertEqual(requests, 3)
+    }
+
+    func testDeletionRemainsPendingAfterBoundedAttempts() async throws {
+        var requests = 0
+        NetworkStubProtocol.handler = { request in
+            requests += 1
+            return (HTTPURLResponse(url: try XCTUnwrap(request.url), statusCode: 202, httpVersion: nil, headerFields: nil)!, Data())
+        }
+        let result = try await AccountDeletionClient.delete(accessToken: "original-access", session: makeSession(), maximumAttempts: 2, retryDelay: .zero)
+        XCTAssertEqual(result.statusCode, 202)
+        XCTAssertEqual(requests, 2)
+    }
+
+    func testDeletionKeepsPendingStateWhenLaterCleanupRequestLosesNetwork() async throws {
+        var requests = 0
+        NetworkStubProtocol.handler = { request in
+            requests += 1
+            if requests > 1 { throw URLError(.notConnectedToInternet) }
+            return (HTTPURLResponse(url: try XCTUnwrap(request.url), statusCode: 202, httpVersion: nil, headerFields: nil)!, Data())
+        }
+        let result = try await AccountDeletionClient.delete(accessToken: "original-access", session: makeSession(), retryDelay: .zero)
+        XCTAssertEqual(result.statusCode, 202)
+        XCTAssertEqual(requests, 2)
+    }
+
+    func testDeletionStopsPollingAtTimeBudgetWithoutPretendingCompletion() async throws {
+        var requests = 0
+        NetworkStubProtocol.handler = { request in
+            requests += 1
+            return (HTTPURLResponse(url: try XCTUnwrap(request.url), statusCode: 202, httpVersion: nil, headerFields: nil)!, Data())
+        }
+        let result = try await AccountDeletionClient.delete(accessToken: "original-access", session: makeSession(), retryDelay: .zero, maximumDuration: .zero)
+        XCTAssertEqual(result.statusCode, 202)
+        XCTAssertEqual(requests, 1)
+    }
+
     func testSuccessfulResponseDecodes() async throws {
         NetworkStubProtocol.handler = { request in
             let response = try XCTUnwrap(HTTPURLResponse(
@@ -118,6 +181,67 @@ final class LoreNetworkResilienceTests: XCTestCase {
 
         let fallback = try await cache.data(for: request, session: session, freshFor: -1)
         XCTAssertEqual(String(data: fallback, encoding: .utf8), "legacy")
+    }
+
+    func testPublicEpochChangeInvalidatesFreshCacheAndPinnedBytesWithoutEnforcement() async throws {
+        let provider = TestContentContractProvider(enforcedContract(epoch: "public-1", enforcement: false))
+        let (cache, root) = try makeCache(provider: provider, clock: TestClock())
+        defer { try? FileManager.default.removeItem(at: root) }
+        let request = URLRequest(url: try XCTUnwrap(URL(string: "https://example.com/public")))
+        stubSuccess(body: "outdated tour")
+        _ = try await cache.pinData(for: request, session: makeSession())
+
+        await provider.set(enforcedContract(epoch: "public-2", enforcement: false))
+        stubOfflineFailure()
+
+        await XCTAssertThrowsAsyncError(try await cache.data(for: request, session: makeSession()))
+        for path in ["cache", "pins"] {
+            let files = try FileManager.default.contentsOfDirectory(at: root.appending(path: path), includingPropertiesForKeys: nil)
+            XCTAssertEqual(files.map(\.lastPathComponent), [".content-contract"])
+        }
+    }
+
+    func testFirstPublicEpochPurgesLegacyBytesWithoutEnablingOfflineAgeLimit() async throws {
+        let provider = TestContentContractProvider(.compatibility)
+        let clock = TestClock()
+        let (cache, root) = try makeCache(provider: provider, clock: clock)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let request = URLRequest(url: try XCTUnwrap(URL(string: "https://example.com/public-upgrade")))
+        stubSuccess(body: "legacy")
+        _ = try await cache.pinData(for: request, session: makeSession())
+        await provider.set(enforcedContract(epoch: "public-1", enforcement: false))
+        stubOfflineFailure()
+        await XCTAssertThrowsAsyncError(try await cache.data(for: request, session: makeSession()))
+
+        stubSuccess(body: "current public")
+        _ = try await cache.data(for: request, session: makeSession(), freshFor: -1)
+        clock.advance(hours: 96)
+        stubOfflineFailure()
+        let data = try await cache.data(for: request, session: makeSession(), freshFor: -1)
+        XCTAssertEqual(String(data: data, encoding: .utf8), "current public")
+    }
+
+    func testKnownPublicContractSurvivesLegacyResponseAndRelaunchOutage() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: "public-contract-\(UUID().uuidString)", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appending(path: "contract.json")
+        let store = ContentContractStore(persistedFile: file)
+        let expected = enforcedContract(epoch: "public-1", enforcement: false)
+        NetworkStubProtocol.handler = { request in
+            return (HTTPURLResponse(url: try XCTUnwrap(request.url), statusCode: 200, httpVersion: nil, headerFields: nil)!, try JSONEncoder().encode([expected]))
+        }
+        let initial = await store.current(session: makeSession(), forceRefresh: true)
+        XCTAssertEqual(initial, expected)
+        NetworkStubProtocol.handler = { request in
+            return (HTTPURLResponse(url: try XCTUnwrap(request.url), statusCode: 200, httpVersion: nil, headerFields: nil)!, try JSONEncoder().encode([ContentContract.compatibility]))
+        }
+        let downgrade = await store.current(session: makeSession(), forceRefresh: true)
+        XCTAssertEqual(downgrade, expected)
+        stubOfflineFailure()
+        let restarted = ContentContractStore(persistedFile: file)
+        let offline = await restarted.current(session: makeSession())
+        XCTAssertEqual(offline, expected)
     }
 
     func testEnforcementRejectsAndPurgesLegacyURLCacheBytes() async throws {
@@ -427,12 +551,13 @@ final class LoreNetworkResilienceTests: XCTestCase {
     private func enforcedContract(
         version: String = "2",
         epoch: String = "review-1",
-        maxAgeHours: Int = 24
+        maxAgeHours: Int = 24,
+        enforcement: Bool = true
     ) -> ContentContract {
         ContentContract(
             contractVersion: version,
             reviewEpoch: epoch,
-            enforcementEnabled: true,
+            enforcementEnabled: enforcement,
             offlineMaxAgeHours: maxAgeHours
         )
     }

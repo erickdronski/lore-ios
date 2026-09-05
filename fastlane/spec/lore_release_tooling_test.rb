@@ -121,6 +121,8 @@ class LoreReleaseToolingTest < Minitest::Test
 
   def test_all_release_mutation_lanes_are_guarded_before_authentication
     expectations = {
+      "prepare_version" => "asc_token!",
+      "select_release_build" => "asc_token!",
       "screenshots_upload" => "app_store_connect_api_key",
       "submit_for_review" => "asc_token!",
       "swap_latest_build_and_resubmit" => "asc_token!",
@@ -145,13 +147,14 @@ class LoreReleaseToolingTest < Minitest::Test
       ".submit_for_review",
       ".select_build(",
       "releaseType:",
+      "post_app_store_version(",
     ]
     mutating_lanes = all_lane_bodies.each_with_object([]) do |(name, body), lanes|
       lanes << name if mutation_markers.any? { |marker| body.include?(marker) }
     end
 
     assert_equal(
-      %w[screenshots_upload set_auto_release submit_for_review swap_latest_build_and_resubmit],
+      %w[prepare_version screenshots_upload select_release_build set_auto_release submit_for_review swap_latest_build_and_resubmit],
       mutating_lanes.sort,
     )
     mutating_lanes.each do |lane|
@@ -160,7 +163,7 @@ class LoreReleaseToolingTest < Minitest::Test
   end
 
   def test_submission_actions_require_screenshot_provenance_but_preflight_does_not
-    %w[screenshots_upload submit_for_review swap_latest_build_and_resubmit].each do |lane|
+    %w[screenshots_upload select_release_build set_auto_release submit_for_review swap_latest_build_and_resubmit].each do |lane|
       assert_includes lane_body(lane), "verify_submission_screenshot_provenance!"
     end
 
@@ -210,6 +213,152 @@ class LoreReleaseToolingTest < Minitest::Test
     assert_includes fastfile, "get_ready_review_submission"
     assert_includes fastfile, "wait_for_review_submission_item!"
     refute_match(/get_in_progress_review_submission\\(platform: platform\\)\\n\\s*submission = app.create_review_submission/, fastfile)
+  end
+
+  FakeVersion = Struct.new(:version_string, :platform, keyword_init: true)
+  FakeBuild = Struct.new(:version, :app_version, :app_id, :platform, :processing_state, :expired, :expiration_date, keyword_init: true)
+
+  def release_target(version: "1.2", build: "48")
+    LoreReleaseTooling::ReleaseTarget.new(
+      expected_version: version, expected_build: build, project_version: "1.2", build_floor: 48,
+    )
+  end
+
+  def valid_build(**overrides)
+    FakeBuild.new(**{
+      version: "48", app_version: "1.2", app_id: "123", platform: "IOS",
+      processing_state: "VALID", expired: false, expiration_date: "2099-01-01T00:00:00Z",
+    }.merge(overrides))
+  end
+
+  def test_release_target_requires_explicit_project_version_and_build_floor
+    [["", "48"], ["1.1", "48"], ["1.2", ""], ["1.2", "47"], ["1.2", "latest"], ["1.2", "48.0"]].each do |version, build|
+      assert_raises(LoreReleaseTooling::Error) { release_target(version: version, build: build) }
+    end
+    assert_equal "48", release_target.build_number
+  end
+
+  def test_exact_version_guard_rejects_wrong_or_missing_platform_version
+    [nil, FakeVersion.new(version_string: "1.1", platform: "IOS"),
+     FakeVersion.new(version_string: "1.2", platform: "MAC_OS")].each do |version|
+      assert_raises(LoreReleaseTooling::Error) { release_target.verify_version!(version) }
+    end
+    assert release_target.verify_version!(FakeVersion.new(version_string: "1.2", platform: "IOS"))
+  end
+
+  def test_version_preparation_creates_new_record_without_renaming_live_version
+    live = FakeVersion.new(version_string: "1.1", platform: "IOS")
+    assert_nil LoreReleaseTooling.version_for_preparation!([live], expected_version: "1.2", editable_version: nil)
+    assert_raises(LoreReleaseTooling::Error) do
+      LoreReleaseTooling.version_for_preparation!([live], expected_version: "1.2", editable_version: live)
+    end
+    prepared = FakeVersion.new(version_string: "1.2", platform: "IOS")
+    assert_same prepared, LoreReleaseTooling.version_for_preparation!([live, prepared], expected_version: "1.2", editable_version: prepared)
+    assert_raises(LoreReleaseTooling::Error) do
+      LoreReleaseTooling.version_for_preparation!([prepared, prepared], expected_version: "1.2", editable_version: prepared)
+    end
+  end
+
+  def test_review_submission_requires_expected_item_instead_of_any_nonempty_submission
+    [[], ["older-version"], [nil], ["expected", "older-version"], ["expected", "expected"]].each do |ids|
+      assert_raises(LoreReleaseTooling::Error) do
+        LoreReleaseTooling.verify_review_item_versions!(ids, expected_version_id: "expected")
+      end
+    end
+    assert LoreReleaseTooling.verify_review_item_versions!(["expected"], expected_version_id: "expected")
+    %w[submit_for_review swap_latest_build_and_resubmit].each do |lane|
+      body = lane_body(lane)
+      assert_operator body.index("verify_review_submission_version!"), :<, body.index("submission.submit_for_review")
+    end
+  end
+
+  def test_build_selection_uses_exact_tuple_instead_of_newest
+    expected = valid_build
+    assert_same expected, release_target.select_build!([valid_build(version: "49"), expected], app_id: "123")
+    assert_raises(LoreReleaseTooling::Error) { release_target.select_build!([valid_build(version: "49")], app_id: "123") }
+    assert_raises(LoreReleaseTooling::Error) { release_target.select_build!([expected, valid_build], app_id: "123") }
+  end
+
+  def test_release_build_must_belong_to_same_app_platform_and_marketing_version
+    [{ version: "49" }, { app_version: "1.1" }, { app_id: "456" }, { platform: "MAC_OS" }].each do |override|
+      assert_raises(LoreReleaseTooling::Error) { release_target.verify_build!(valid_build(**override), app_id: "123") }
+    end
+  end
+
+  def test_release_build_must_be_valid_and_explicitly_nonexpired
+    [{ processing_state: "PROCESSING" }, { processing_state: "INVALID" }, { expired: true },
+     { expired: nil }, { expiration_date: "2020-01-01T00:00:00Z" }, { expiration_date: "bad-date" }].each do |override|
+      assert_raises(LoreReleaseTooling::Error) { release_target.verify_build!(valid_build(**override), app_id: "123") }
+    end
+    assert release_target.verify_build!(valid_build, app_id: "123")
+  end
+
+  def test_beta_build_is_monotonic_across_a_new_marketing_version
+    assert_equal 48, LoreReleaseTooling.next_build_number(project_floor: "48", latest: 0)
+    assert_equal 48, LoreReleaseTooling.next_build_number(project_floor: 48, latest: 47)
+    assert_equal 50, LoreReleaseTooling.next_build_number(project_floor: 48, latest: 49)
+    assert_raises(LoreReleaseTooling::Error) { LoreReleaseTooling.next_build_number(project_floor: 48, latest: "unknown") }
+  end
+
+  def test_app_and_widget_must_share_the_release_version_and_floor
+    Dir.mktmpdir do |directory|
+      path = File.join(directory, "project.yml")
+      target = { "settings" => { "base" => { "MARKETING_VERSION" => "1.2", "CURRENT_PROJECT_VERSION" => "48" } } }
+      File.write(path, { "targets" => { "Lore" => target, "LoreWidget" => Marshal.load(Marshal.dump(target)) } }.to_yaml)
+      assert_equal({ version: "1.2", build_floor: 48 }, LoreReleaseTooling.project_release_settings(path))
+      # Construct a clear mismatch without depending on YAML's quoting style.
+      data = YAML.load_file(path)
+      data["targets"]["LoreWidget"]["settings"]["base"]["CURRENT_PROJECT_VERSION"] = "47"
+      File.write(path, data.to_yaml)
+      assert_raises(LoreReleaseTooling::Error) { LoreReleaseTooling.project_release_settings(path) }
+    end
+  end
+
+  def test_checked_in_release_configuration_has_matching_targets_and_release_notes
+    settings = LoreReleaseTooling.project_release_settings(File.expand_path("../../project.yml", __dir__))
+    version = LoreReleaseTooling.release_version!(settings.fetch(:version), project_version: settings.fetch(:version))
+    notes = File.read(File.expand_path("../release_notes/#{version}.en-US.txt", __dir__)).strip
+    assert (1..4000).cover?(notes.length), "The project version needs nonempty App Store release notes of at most 4000 characters"
+    assert_operator settings.fetch(:build_floor), :>, 0
+  end
+
+  def test_submission_and_auto_release_require_exact_target_before_authentication
+    %w[select_release_build submit_for_review swap_latest_build_and_resubmit set_auto_release].each do |lane|
+      body = lane_body(lane)
+      assert_operator body.index("expected_release_target!"), :<, body.index("asc_token!")
+      assert_includes body, "verify_attached_release_build!"
+    end
+    refute_includes lane_body("swap_latest_build_and_resubmit"), 'limit: 1'
+    refute_match(/^\s*app\.ensure_version!/, lane_body("prepare_version"))
+  end
+
+  def test_product_catalog_uses_get_only_and_follows_pages
+    response_class = Struct.new(:body, :following_pages) do
+      def all_pages = [self] + Array(following_pages)
+    end
+    calls = []
+    client = Object.new
+    client.define_singleton_method(:get) do |path, _params|
+      calls << path
+      data = case path
+             when "v1/apps/123/subscriptionGroups"
+               [{ "id" => "group" }]
+             when "v1/subscriptionGroups/group/subscriptions"
+               [{ "id" => "monthly", "type" => "subscriptions", "attributes" => { "productId" => "lore_plus_monthly", "state" => "APPROVED" } }]
+             when "v1/apps/123/inAppPurchasesV2"
+               [{ "id" => "lifetime", "type" => "inAppPurchases", "attributes" => { "productId" => "lore_plus_lifetime", "state" => "READY_TO_SUBMIT" } }]
+             else raise "Unexpected endpoint #{path}"
+             end
+      following_pages = if path == "v1/subscriptionGroups/group/subscriptions"
+                          [response_class.new({ "data" => [{ "id" => "annual", "type" => "subscriptions", "attributes" => { "productId" => "lore_plus_annual", "state" => "APPROVED" } }] })]
+                        end
+      response_class.new({ "data" => data }, following_pages)
+    end
+    rows = LoreReleaseTooling.product_catalog(client, app_id: "123")
+    assert_equal %w[lore_plus_monthly lore_plus_annual lore_plus_lifetime], rows.map { |row| row[:product_id] }
+    assert_equal %w[APPROVED APPROVED READY_TO_SUBMIT], rows.map { |row| row[:state] }
+    assert_equal 3, calls.length
+    assert_includes lane_body("preflight"), "LoreReleaseTooling.product_catalog"
   end
 
   private

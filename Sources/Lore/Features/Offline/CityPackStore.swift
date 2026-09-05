@@ -29,7 +29,7 @@ enum PackImageStore {
     /// Switch generations before cleanup so interrupted deletion cannot make
     /// old URL-only media reachable under an enforced review epoch.
     static func activate(_ contract: ContentContract) {
-        guard contract.enforcementEnabled else { return }
+        guard contract.usesVersionedCache else { return }
         let marker = directory.appending(path: ".content-contract")
         let namespace = contract.cacheNamespace
         guard (try? String(contentsOf: marker, encoding: .utf8)) != namespace else {
@@ -136,12 +136,12 @@ final class CityPackStore {
         }
 
         func isCompatible(with contract: ContentContract, now: Date = Date()) -> Bool {
-            guard contract.enforcementEnabled else { return true }
+            guard contract.usesVersionedCache else { return contractVersion == nil && reviewEpoch == nil }
             guard contract.isValidForEnforcement,
                   contractVersion == contract.contractVersion,
-                  reviewEpoch == contract.reviewEpoch,
-                  let maximumAge = contract.maximumOfflineAge
+                  reviewEpoch == contract.reviewEpoch
             else { return false }
+            guard let maximumAge = contract.maximumOfflineAge else { return true }
             let age = now.timeIntervalSince(downloadedAt)
             return age >= -ContentContract.clockSkewTolerance && age <= maximumAge
         }
@@ -272,6 +272,7 @@ final class CityPackStore {
                 downloading[city] = 0.7 + (Double(index + 1) / Double(max(orderedMedia.count, 1))) * 0.3
             }
 
+            guard activeContentContract == pin.contentContract else { throw CancellationError() }
             let newPack = CityPack(
                 downloadedAt: Date(),
                 placeCount: pin.places.count,
@@ -280,10 +281,10 @@ final class CityPackStore {
                 pinnedURLs: pin.pinnedURLs,
                 mediaCount: orderedMedia.count,
                 missingMediaCount: missingMediaCount,
-                contractVersion: pin.contentContract.enforcementEnabled
+                contractVersion: pin.contentContract.usesVersionedCache
                     ? pin.contentContract.contractVersion
                     : nil,
-                reviewEpoch: pin.contentContract.enforcementEnabled
+                reviewEpoch: pin.contentContract.usesVersionedCache
                     ? pin.contentContract.reviewEpoch
                     : nil
             )
@@ -343,6 +344,7 @@ final class CityPackStore {
         guard let (data, response) = try? await URLSession.shared.data(from: url),
               (response as? HTTPURLResponse).map({ (200..<300).contains($0.statusCode) }) ?? false,
               !data.isEmpty,
+              key == PackImageStore.key(for: url),
               (try? PackImageStore.store(data, for: url)) != nil
         else { return nil }
         return (key, Int64(data.count))
@@ -363,7 +365,7 @@ final class CityPackStore {
         preservingPinnedURLs: Set<String> = []
     ) async {
         activeContentContract = contract
-        guard contract.enforcementEnabled else { return }
+        guard contract.usesVersionedCache else { return }
         PackImageStore.activate(contract)
 
         let invalid = packs.filter { !$0.value.isCompatible(with: contract) }

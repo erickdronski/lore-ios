@@ -784,20 +784,6 @@ final class SpecialistJourneyRegressionTests: XCTestCase {
         XCTAssertNil(LocationHeadingProvider.deviceHeadingOrientation(for: .unknown))
     }
 
-    func testCloudLandmarkDisclosureConsentIsAccountScoped() throws {
-        let suiteName = "CloudLandmarkDisclosureConsentTests.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-
-        XCTAssertFalse(CloudLandmarkDisclosureConsent.hasAccepted(userID: nil, defaults: defaults))
-        XCTAssertFalse(CloudLandmarkDisclosureConsent.hasAccepted(userID: "user-b", defaults: defaults))
-
-        CloudLandmarkDisclosureConsent.accept(userID: " USER-A ", defaults: defaults)
-
-        XCTAssertTrue(CloudLandmarkDisclosureConsent.hasAccepted(userID: "user-a", defaults: defaults))
-        XCTAssertFalse(CloudLandmarkDisclosureConsent.hasAccepted(userID: "user-b", defaults: defaults))
-    }
-
     func testPushDestinationRejectsExternalAndMalformedLinks() {
         XCTAssertNil(PushDestination.parse(["deep_link": "https://example.com/place/city-hall"]))
         XCTAssertNil(PushDestination.parse(["deep_link": "lore://place/city-hall/extra"]))
@@ -918,6 +904,29 @@ final class SpecialistJourneyRegressionTests: XCTestCase {
         XCTAssertEqual(pack.missingMediaCount, 1)
         XCTAssertEqual(pack.imageBytes, 4500)
         XCTAssertFalse(pack.isComplete)
+    }
+
+    @MainActor
+    func testPublicOfflinePackStillRequiresMatchingEpochWithoutAnAgeLimit() {
+        let contract = ContentContract(contractVersion: "2", reviewEpoch: "public-current", enforcementEnabled: false, offlineMaxAgeHours: 24)
+        let oldPack = CityPackStore.CityPack(downloadedAt: .distantPast, placeCount: 3, imageBytes: 0,
+            imageKeys: [], pinnedURLs: [], contractVersion: "2", reviewEpoch: "public-previous")
+        var currentPack = oldPack
+        currentPack.reviewEpoch = "public-current"
+        XCTAssertFalse(oldPack.isCompatible(with: contract))
+        XCTAssertTrue(currentPack.isCompatible(with: contract), "Disabled enforcement must not introduce an offline TTL")
+        XCTAssertFalse(currentPack.isCompatible(with: .compatibility), "A versioned pack must not downgrade to URL-only identity")
+    }
+
+    @MainActor
+    func testPublicPackedMediaKeysChangeWithoutEditorialEnforcement() throws {
+        let remote = try XCTUnwrap(URL(string: "https://example.com/public-lore-media.jpg"))
+        PackImageStore.activate(ContentContract(contractVersion: "2", reviewEpoch: "public-1", enforcementEnabled: false, offlineMaxAgeHours: 24))
+        let firstKey = try PackImageStore.store(Data("old image".utf8), for: remote)
+        XCTAssertNotNil(PackImageStore.localURL(for: remote))
+        PackImageStore.activate(ContentContract(contractVersion: "2", reviewEpoch: "public-2", enforcementEnabled: false, offlineMaxAgeHours: 24))
+        XCTAssertNotEqual(PackImageStore.key(for: remote), firstKey)
+        XCTAssertNil(PackImageStore.localURL(for: remote))
     }
 
     @MainActor

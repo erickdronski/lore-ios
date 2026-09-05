@@ -223,7 +223,7 @@ final class PremiumEntitlementTests: XCTestCase {
         )
     }
 
-    func testResolverRejectsAnotherLoreAccountsTransactions() {
+    func testResolverRejectsAnotherLoreAccountButAllowsAppleDeviceAccessWhileSignedOut() {
         let now = Date(timeIntervalSince1970: 10_000)
         let otherAccount = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
         let lifetime = snapshot(id: StoreKitService.ProductID.lifetime)
@@ -244,8 +244,8 @@ final class PremiumEntitlementTests: XCTestCase {
 
         XCTAssertTrue(switchedAccount.ownedProductIDs.isEmpty)
         XCTAssertNil(switchedAccount.tripPassExpiresAt)
-        XCTAssertTrue(signedOut.ownedProductIDs.isEmpty)
-        XCTAssertNil(signedOut.tripPassExpiresAt)
+        XCTAssertEqual(signedOut.ownedProductIDs, [StoreKitService.ProductID.lifetime])
+        XCTAssertEqual(signedOut.tripPassExpiresAt, now.addingTimeInterval(72 * 3_600))
     }
 
     func testOfflineCacheIsIdentityBoundActiveAndTimeLimited() {

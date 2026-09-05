@@ -49,124 +49,72 @@ enum EntitlementCachePolicy {
     }
 }
 
-/// The single source of truth for "is this user Lore+?" across the app.
-///
-/// It reads the signed-in user's `entitlements` rows (RLS: own rows only) and
-/// exposes `isPlus`, true when any grant's status is `active` or `trialing`
-/// (docs/00-DECISIONS.md §7; the backend contract, `Entitlement.isActive`).
-///
-/// **Two paths, unioned (docs/16-APPLE-TOOLKITS.md §1).** StoreKit 2 is the
-/// purchase path and local transaction truth. Lore records verified Apple
-/// transactions server-side in `entitlements` so signed-in users can restore
-/// access across devices. `StoreKitService` also reads
-/// `Transaction.currentEntitlements` on-device, which works offline and covers a
-/// first-launch-before-network. `isPlus` is the **union**: either source may
-/// *open* the gate, neither can subtract from the other.
-///
-/// Doctrine (docs/00 §7): the app is generous by default. `isPlus == false`
-/// gates only the live Lore+ surfaces, the 4th deep dive of a day, tours, and
-/// audio narration. Scanning, Layer-1 cards, and the first three
-/// dives are never gated (that generosity lives in `DiveMeter`, not here).
-///
-/// **Offline resilience.** Verified StoreKit transactions are the durable local
-/// truth. A server grant is also cached for at most 72 hours and only reused by
-/// a JWT whose subject matches that grant's user id. Signed-out, mismatched,
-/// expired, unknown, or inactive cache entries fail closed.
-///
-/// Lifecycle mirrors `AuthService`: `@Observable @MainActor`, one instance,
-/// handed down the environment. Views read `store.isPlus`; the paywall calls
-/// `refresh(accessToken:)` after a purchase settles so the gate reopens without
-/// a relaunch.
+/// Combines identity-bound server membership with verified device purchases.
+/// Server fallback retains its verification timestamp and is rechecked on every
+/// read. A request generation prevents old accounts and cancelled tasks from
+/// publishing after sign-out or a newer refresh.
 @Observable
 @MainActor
 final class EntitlementStore {
+    typealias EntitlementLoader = (String) async throws -> Entitlement?
+
     private enum CacheKey {
-        // v1 did not retain Apple's environment, so it cannot safely
-        // distinguish a historical Sandbox grant from a legacy non-Apple row.
         static let verifiedEntitlement = "lore.premium.cachedEntitlement.v2"
     }
 
-    /// The grant currently on file, if we've loaded one. `nil` before the first
-    /// load, or when the user has no entitlement row at all.
     private(set) var entitlement: Entitlement?
-
-    /// The StoreKit 2 client path (`Transaction.currentEntitlements`). When set,
-    /// its on-device answer is *unioned* into `isPlus`, it can open the gate the
-    /// server hasn't confirmed yet (offline / RC-outage), never close one it has.
-    /// Injected once from `LoreApp`. Weak-by-contract: both are `@MainActor`
-    /// app-lifetime singletons, so a plain reference is fine.
     var storeKit: StoreKitService?
-
-    /// True while a `refresh` is in flight (paywall/profile can show a spinner).
     private(set) var isRefreshing = false
-
-    /// Set when the last refresh failed. Non-fatal, `isPlus` simply stays
-    /// closed. Surfaced only where it helps (a quiet "couldn't verify" note),
-    /// never as a blocking error.
     private(set) var lastError: String?
-
-    /// True only while a fresh, identity-matched server snapshot is carrying
-    /// access through a backend outage. Useful for transparent member UI.
-    private(set) var isUsingCachedEntitlement = false
 
     private let defaults: UserDefaults
     @ObservationIgnored private let now: () -> Date
+    @ObservationIgnored private let entitlementLoader: EntitlementLoader
     private let environmentPolicy: EntitlementEnvironmentPolicy
     private var cachedRecord: CachedEntitlementRecord?
-    private var activeCachedEntitlement: Entitlement?
+    private var usingCache = false
+    private var activeUserID: String?
+    private var refreshGeneration: UInt64 = 0
+    private var expirationRevision = 0
+    @ObservationIgnored private var expirationTask: Task<Void, Never>?
 
-    /// The one question the rest of the app asks. `active` or `trialing` on any
-    /// grant opens every Lore+ surface; everything else (including no grant, a
-    /// signed-out user, or an unconfirmed read) leaves it closed.
-    ///
-    /// **Union of the two paths** (docs/16 §1): the server row recorded from a
-    /// verified Apple transaction *or* the on-device StoreKit 2 entitlement.
-    /// Either opens the gate; neither subtracts. StoreKit's read is the offline
-    /// belt-and-suspenders so a returning subscriber isn't gated during a
-    /// backend outage or before the first network round-trip.
+    private var currentDate: Date {
+        _ = expirationRevision
+        return now()
+    }
+
+    private var usableCachedEntitlement: Entitlement? {
+        guard usingCache else { return nil }
+        return EntitlementCachePolicy.usable(
+            cachedRecord, for: activeUserID, now: currentDate,
+            environmentPolicy: environmentPolicy
+        )
+    }
+
+    var isUsingCachedEntitlement: Bool { usableCachedEntitlement != nil }
+
     var isPlus: Bool {
         #if DEBUG
-        // Developer override: unlock every Lore+ surface for testing without a
-        // purchase. Set by the LORE_DEV_PLUS launch env or the DEBUG-only
-        // Settings toggle. Compiled out of Release entirely, never ships.
-        if EntitlementStore.devForcePlus { return true }
+        if Self.devForcePlus { return true }
         #endif
-        let currentDate = now()
         let server = entitlement.map {
             environmentPolicy.grantsAccess($0, asOf: currentDate)
         } ?? false
-        let cached = activeCachedEntitlement.map {
-            environmentPolicy.grantsAccess($0, asOf: currentDate)
-        } ?? false
-        let onDevice = storeKit?.hasActiveEntitlement ?? false
-        return server || cached || onDevice
+        return server || usableCachedEntitlement != nil || (storeKit?.hasActiveEntitlement ?? false)
     }
 
     #if DEBUG
-    /// Debug-only Lore+ override (env `LORE_DEV_PLUS=1` or UserDefaults toggle).
     static var devForcePlus: Bool {
         ProcessInfo.processInfo.environment["LORE_DEV_PLUS"] == "1"
             || UserDefaults.standard.bool(forKey: "lore.dev.forcePlus")
     }
     #endif
 
-    /// True specifically during the 7-day free trial, lets surfaces show
-    /// "Trial · 4 days left" style affordances distinct from a paid member.
-    /// (The day-count itself isn't in the `entitlements` contract yet; this is
-    /// just the status distinction. TODO(P1): expose `trial_ends_at`.)
-    ///
-    /// Unions the server status with StoreKit's introductory-period read so the
-    /// trial framing shows even when only the on-device path knows about it.
     var isTrialing: Bool {
-        let currentDate = now()
-        let serverTrial = entitlement.map {
+        let server = entitlement.map {
             $0.status == .trialing && environmentPolicy.grantsAccess($0, asOf: currentDate)
         } ?? false
-        let cachedTrial = activeCachedEntitlement.map {
-            $0.status == .trialing && environmentPolicy.grantsAccess($0, asOf: currentDate)
-        } ?? false
-        return serverTrial
-            || cachedTrial
+        return server || usableCachedEntitlement?.status == .trialing
             || (storeKit?.isInIntroPeriod ?? false)
     }
 
@@ -174,90 +122,95 @@ final class EntitlementStore {
         entitlement: Entitlement? = nil,
         defaults: UserDefaults = .standard,
         now: @escaping () -> Date = Date.init,
-        environmentPolicy: EntitlementEnvironmentPolicy = .current
+        environmentPolicy: EntitlementEnvironmentPolicy = .current,
+        entitlementLoader: @escaping EntitlementLoader = { token in
+            try await LoreAPI.shared.entitlement(accessToken: token)
+        }
     ) {
         self.entitlement = entitlement
+        self.activeUserID = entitlement?.userID
         self.defaults = defaults
         self.now = now
         self.environmentPolicy = environmentPolicy
+        self.entitlementLoader = entitlementLoader
         if let data = defaults.data(forKey: CacheKey.verifiedEntitlement) {
             cachedRecord = try? JSONDecoder().decode(CachedEntitlementRecord.self, from: data)
         }
+        scheduleExpiration()
     }
 
-    /// Load the user's entitlement. Pass the current access token (from
-    /// `AuthService.validAccessToken()`); a `nil` token means signed-out, so
-    /// we clear to free without hitting the network.
-    ///
-    /// Call this: on sign-in, on app foreground, and after a purchase settles.
-    func refresh(accessToken: String?) async {
-        // Always re-read StoreKit. Local access remains account-token scoped;
-        // an authenticated server sync separately handles verified recovery
-        // after a Lore account was deleted and recreated.
-        await storeKit?.refreshEntitlements()
+    deinit { expirationTask?.cancel() }
 
-        guard let accessToken else {
+    /// Change identity before any suspension, then reconcile device/server state.
+    func refresh(accessToken: String?) async {
+        guard !Task.isCancelled else { return }
+        refreshGeneration &+= 1
+        let generation = refreshGeneration
+        let userID = accessToken.flatMap(EntitlementCachePolicy.userID(fromJWT:))
+        if activeUserID != userID {
             entitlement = nil
-            activeCachedEntitlement = nil
-            isUsingCachedEntitlement = false
-            lastError = nil
+            usingCache = false
+        }
+        activeUserID = userID
+        lastError = nil
+        isRefreshing = accessToken != nil && userID != nil
+        defer {
+            if generation == refreshGeneration {
+                isRefreshing = false
+                scheduleExpiration()
+            }
+        }
+
+        guard let accessToken, let userID else {
+            entitlement = nil
+            usingCache = false
+            await storeKit?.refreshEntitlements()
             return
         }
-        let currentUserID = EntitlementCachePolicy.userID(fromJWT: accessToken)
-        activeCachedEntitlement = nil
-        isUsingCachedEntitlement = false
-        isRefreshing = true
-        lastError = nil
-        defer { isRefreshing = false }
+        await storeKit?.refreshEntitlements()
+        guard generation == refreshGeneration, !Task.isCancelled else { return }
         do {
-            entitlement = try await LoreAPI.shared.entitlement(accessToken: accessToken)
-            activeCachedEntitlement = nil
-            if let entitlement {
-                persist(entitlement, verifiedAt: now())
-            } else if cachedRecord?.entitlement.userID == currentUserID {
+            let result = try await entitlementLoader(accessToken)
+            guard generation == refreshGeneration, !Task.isCancelled else { return }
+            guard result == nil || result?.userID == userID else {
+                throw LoreAPI.APIError.invalidResponse
+            }
+            entitlement = result
+            usingCache = false
+            if let result {
+                persist(result, verifiedAt: now())
+            } else if cachedRecord?.entitlement.userID == userID {
                 removeCachedRecord()
             }
         } catch {
+            guard generation == refreshGeneration, !Task.isCancelled,
+                  !(error is CancellationError),
+                  (error as? URLError)?.code != .cancelled else { return }
             entitlement = nil
-            activeCachedEntitlement = EntitlementCachePolicy.usable(
-                cachedRecord,
-                for: currentUserID,
-                now: now(),
-                environmentPolicy: environmentPolicy
-            )
-            isUsingCachedEntitlement = activeCachedEntitlement != nil
+            // An explicit auth rejection is not an offline membership verdict.
+            if case LoreAPI.APIError.http(let status, _) = error, [401, 403].contains(status) {
+                usingCache = false
+                if cachedRecord?.entitlement.userID == userID { removeCachedRecord() }
+            } else {
+                usingCache = true
+            }
             lastError = isUsingCachedEntitlement
-                ? "You're offline. Lore+ is using your recently verified membership for up to 72 hours."
+                ? "You're offline. Recently verified membership is available for up to 72 hours."
                 : "Couldn't verify your membership. Free Lore remains available while you reconnect."
         }
     }
 
-    /// Clear the server grant on sign-out so the next Supabase user starts from
-    /// free. StoreKit transactions remain on-device, but the local resolver
-    /// grants them only when their signed account token matches the active Lore
-    /// account.
+    /// Invalidate pending responses synchronously; device purchases retain their
+    /// independent Apple-account access according to StoreKitService's policy.
     func clear() {
+        refreshGeneration &+= 1
+        activeUserID = nil
         entitlement = nil
-        activeCachedEntitlement = nil
-        isUsingCachedEntitlement = false
+        usingCache = false
         lastError = nil
         isRefreshing = false
-    }
-
-    /// Optimistically mark the user as Lore+ the instant a purchase completes,
-    /// before the server-side webhook has written the `entitlements` row. The
-    /// next `refresh` reconciles with the backend truth.
-    ///
-    /// Called by the paywall after StoreKit reports a successful transaction.
-    /// `userID` lets
-    /// us build a plausible local row; `trialing` picks the status so the
-    /// 7-day-trial framing shows immediately.
-    func applyLocalPurchase(userID: String, trialing: Bool) {
-        entitlement = Entitlement(
-            userID: userID,
-            entitlement: Entitlement.plusName,
-            status: trialing ? .trialing : .active
-        )
+        expirationTask?.cancel()
+        expirationTask = nil
     }
 
     private func persist(_ entitlement: Entitlement, verifiedAt: Date) {
@@ -270,8 +223,26 @@ final class EntitlementStore {
 
     private func removeCachedRecord() {
         cachedRecord = nil
-        activeCachedEntitlement = nil
-        isUsingCachedEntitlement = false
+        usingCache = false
         defaults.removeObject(forKey: CacheKey.verifiedEntitlement)
+    }
+
+    /// Wake observable UI gates at expiry, including while no network work occurs.
+    private func scheduleExpiration() {
+        expirationTask?.cancel()
+        expirationTask = nil
+        var deadlines = [entitlement?.expiresAt].compactMap { $0 }
+        if usingCache, let record = cachedRecord {
+            deadlines.append(record.verifiedAt.addingTimeInterval(EntitlementCachePolicy.maximumAge))
+            if let expiry = record.entitlement.expiresAt { deadlines.append(expiry) }
+        }
+        guard let next = deadlines.filter({ $0 > now() }).min() else { return }
+        let delay = max(0.01, next.timeIntervalSince(now()))
+        expirationTask = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(delay)) } catch { return }
+            guard let self else { return }
+            self.expirationRevision &+= 1
+            self.scheduleExpiration()
+        }
     }
 }

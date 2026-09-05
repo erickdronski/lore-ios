@@ -83,6 +83,11 @@ struct LoreApp: App {
                 // start the Transaction.updates listener once, at launch. Both
                 // are @MainActor app-lifetime singletons (docs/16 §1).
                 .task {
+                    #if DEBUG
+                    // Hosted StoreKit tests own the transaction listener. A
+                    // second app listener could finish their receipts early.
+                    guard ProcessInfo.processInfo.environment["LORE_UNIT_TESTS"] != "1" else { return }
+                    #endif
                     entitlements.storeKit = store
                     // Record verified purchases server-side before StoreKit
                     // transactions are finished. TestFlight/Sandbox receipts may
@@ -105,11 +110,11 @@ struct LoreApp: App {
                             return auth.isSignedIn ? .failed : .acceptedWithoutServerGrant
                         }
                         do {
-                            let recorded = try await LoreAPI.shared.syncApplePurchase(
+                            let response = try await LoreAPI.shared.syncApplePurchase(
                                 signedTransaction: signedJWS,
                                 accessToken: token
                             )
-                            return recorded ? .recorded : .acceptedWithoutServerGrant
+                            return StoreKitService.VerifiedTransactionSyncOutcome(response: response)
                         } catch {
                             return .failed
                         }
@@ -385,6 +390,8 @@ struct RootTabView: View {
         TabView(selection: $selection) {
             ForEach(Tab.allCases) { tab in
                 surface(for: tab)
+                    .tabItem { Label(tab.title, systemImage: tab.systemImage) }
+                    .toolbar(.hidden, for: .tabBar)
                     .tag(tab)
             }
         }

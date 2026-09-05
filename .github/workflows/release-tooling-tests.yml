@@ -2,23 +2,9 @@ name: Release Tooling Tests
 
 on:
   pull_request:
-    paths:
-      - ".github/workflows/app-store-preflight.yml"
-      - ".github/workflows/screenshots-upload.yml"
-      - ".github/workflows/release-tooling-tests.yml"
-      - "fastlane/Fastfile"
-      - "fastlane/lib/**"
-      - "fastlane/spec/**"
   push:
     branches:
       - main
-    paths:
-      - ".github/workflows/app-store-preflight.yml"
-      - ".github/workflows/screenshots-upload.yml"
-      - ".github/workflows/release-tooling-tests.yml"
-      - "fastlane/Fastfile"
-      - "fastlane/lib/**"
-      - "fastlane/spec/**"
 
 permissions:
   contents: read

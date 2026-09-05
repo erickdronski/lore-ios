@@ -19,6 +19,8 @@ struct StoreEntitlementSnapshot: Equatable {
     let isIntroductory: Bool
     let ownership: Ownership
     let appAccountToken: UUID?
+    var originalTransactionID: String? = nil
+    var isSandbox: Bool = false
 }
 
 struct StoreEntitlementResolution: Equatable {
@@ -33,19 +35,25 @@ enum StoreEntitlementResolver {
         current: [StoreEntitlementSnapshot],
         history: [StoreEntitlementSnapshot],
         accountUUID: UUID?,
+        serverBindings: [String: Bool] = [:],
         now: Date
     ) -> StoreEntitlementResolution {
-        guard let accountUUID else {
-            return StoreEntitlementResolution(
-                ownedProductIDs: [],
-                tripPassExpiresAt: nil,
-                isInIntroPeriod: false,
-                includesFamilySharedAccess: false
-            )
+        func belongsToCurrentAccount(_ snapshot: StoreEntitlementSnapshot) -> Bool {
+            // Device purchases are usable without creating a Lore account.
+            guard let accountUUID else { return true }
+            if let originalID = snapshot.originalTransactionID,
+               let confirmedAccess = serverBindings[originalID] {
+                return confirmedAccess
+            }
+            // Account-bound receipts cannot unlock a different live Lore user.
+            if let token = snapshot.appAccountToken { return token == accountUUID }
+            // Sandbox cannot create a production server binding. Keep guest
+            // testing usable on-device without granting any production cloud row.
+            return snapshot.isSandbox
         }
 
         let active = current.filter { snapshot in
-            guard snapshot.appAccountToken == accountUUID else { return false }
+            guard belongsToCurrentAccount(snapshot) else { return false }
             guard StoreKitService.ProductID.subsAndLifetime.contains(snapshot.productID) else {
                 return false
             }
@@ -55,7 +63,7 @@ enum StoreEntitlementResolver {
         }
 
         let passExpiry = history.compactMap { snapshot -> Date? in
-            guard snapshot.appAccountToken == accountUUID,
+            guard belongsToCurrentAccount(snapshot),
                   snapshot.revocationDate == nil,
                   let duration = StoreKitService.ProductID.passDuration(snapshot.productID)
             else { return nil }
@@ -95,17 +103,23 @@ enum StoreEntitlementResolver {
 final class StoreKitService {
     /// The signed-in Lore account, set by the app whenever the session changes.
     ///
-    /// This is the ONLY link between an App Store transaction and a Lore
-    /// account. It is passed to `product.purchase()` as `appAccountToken`, so
-    /// Apple echoes it back in the signed transaction and in every App Store
-    /// Server Notification — which is what lets the server write an
-    /// `entitlements` row for the right user. Without it a purchase is
-    /// cryptographically valid but unattributable, and the only proof of
-    /// payment lives on one device.
+    /// Passed to `product.purchase()` as `appAccountToken`, so Apple echoes it
+    /// in signed transactions and server notifications. Purchases made without
+    /// a Lore account can later receive an authenticated initial server claim;
+    /// an existing binding cannot be transferred to another live account.
     ///
-    /// Purchases fail closed while this is nil. New transactions must be
-    /// attributable to a Lore account before StoreKit opens.
-    var accountUUID: UUID?
+    /// Nil leaves access with the verified Apple device account. Signed-in
+    /// access remains scoped to its signed token or an authenticated server claim.
+    var accountUUID: UUID? {
+        didSet {
+            guard oldValue != accountUUID else { return }
+            refreshGeneration &+= 1
+            serverBindings = [:]
+            // Re-evaluate synchronously, before any old account request finishes.
+            expirationRevision &+= 1
+            scheduleExpiration()
+        }
+    }
 
     /// Called with a transaction's **JWS representation** so the app can post it
     /// to the server for entitlement recording. Set by the app before `start()`.
@@ -160,14 +174,31 @@ final class StoreKitService {
         /// Lore verified/handled the transaction but intentionally did not grant
         /// a production row, for example a TestFlight/Sandbox purchase.
         case acceptedWithoutServerGrant
+        /// An authenticated server verdict binds this purchase to one Lore user.
+        case accountVerified(originalTransactionID: String, userID: UUID, grantsAccess: Bool)
         /// The app could not post or verify the transaction with Lore.
         case failed
 
-        var canFinishTransaction: Bool {
-            self == .recorded || self == .acceptedWithoutServerGrant
+        init(response: LoreAPI.ApplePurchaseSyncResponse) {
+            if response.recorded,
+               let originalID = response.originalTransactionID,
+               let userID = response.boundUserID,
+               let grantsAccess = response.grantsAccess {
+                self = .accountVerified(originalTransactionID: originalID, userID: userID, grantsAccess: grantsAccess)
+            } else {
+                self = response.recorded ? .recorded : .acceptedWithoutServerGrant
+            }
         }
 
-        var recordedServerEntitlement: Bool { self == .recorded }
+        var canFinishTransaction: Bool { self != .failed }
+
+        var recordedServerEntitlement: Bool {
+            switch self {
+            case .recorded: return true
+            case .accountVerified(_, _, let grantsAccess): return grantsAccess
+            case .acceptedWithoutServerGrant, .failed: return false
+            }
+        }
     }
 
     enum ProductLoadState: Equatable {
@@ -192,7 +223,7 @@ final class StoreKitService {
     /// per `Transaction.currentEntitlements`. This is the offline signal
     /// `EntitlementStore` unions in. Recomputed on launch, on `Transaction.updates`,
     /// and after a purchase/restore.
-    private(set) var ownedProductIDs: Set<String> = []
+    var ownedProductIDs: Set<String> { resolution.ownedProductIDs }
 
     /// True while a product load is in flight (paywall can show skeletons).
     private(set) var isLoadingProducts = false
@@ -203,7 +234,7 @@ final class StoreKitService {
     /// A verified transaction may be shared by the purchaser's family. Lore
     /// grants it exactly like a directly purchased transaction when the product
     /// is configured as Family Shareable in App Store Connect.
-    private(set) var hasFamilySharedAccess = false
+    var hasFamilySharedAccess: Bool { resolution.includesFamilySharedAccess }
 
     /// True when StoreKit returned a transaction whose signature could not be
     /// verified. The transaction never unlocks access, and restore reports a
@@ -219,8 +250,50 @@ final class StoreKitService {
     /// implementation detail, which also lets nonisolated deinit cancel it.
     @ObservationIgnored private var updatesTask: Task<Void, Never>?
     @ObservationIgnored private var productLoadTask: Task<[Product], Error>?
+    @ObservationIgnored private var expirationTask: Task<Void, Never>?
+    @ObservationIgnored private let now: () -> Date
+    private var currentSnapshots: [StoreEntitlementSnapshot] = []
+    private var historySnapshots: [StoreEntitlementSnapshot] = []
+    private var serverBindings: [String: Bool] = [:]
+    private var refreshGeneration: UInt64 = 0
+    private var expirationRevision = 0
 
-    init() {}
+    init(now: @escaping () -> Date = Date.init) { self.now = now }
+
+    private var resolution: StoreEntitlementResolution {
+        _ = expirationRevision
+        return StoreEntitlementResolver.resolve(
+            current: currentSnapshots, history: historySnapshots,
+            accountUUID: accountUUID, serverBindings: serverBindings, now: now()
+        )
+    }
+
+    /// Only a server response for the still-current account and this verified
+    /// original transaction can establish or deny recovered local ownership.
+    func applyServerVerification(_ outcome: VerifiedTransactionSyncOutcome, originalTransactionID: String) {
+        guard case .accountVerified(let verifiedID, let userID, let grantsAccess) = outcome,
+              verifiedID == originalTransactionID, userID == accountUUID else { return }
+        serverBindings[verifiedID] = grantsAccess
+    }
+
+    private func scheduleExpiration() {
+        expirationTask?.cancel()
+        expirationTask = nil
+        let deadlines = currentSnapshots.compactMap(\.expirationDate)
+            + historySnapshots.compactMap { snapshot -> Date? in
+                StoreKitService.ProductID.passDuration(snapshot.productID).map {
+                    snapshot.purchaseDate.addingTimeInterval($0)
+                }
+            }
+        guard let next = deadlines.filter({ $0 > now() }).min() else { return }
+        let delay = max(0.01, next.timeIntervalSince(now()))
+        expirationTask = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(delay)) } catch { return }
+            guard let self else { return }
+            self.expirationRevision &+= 1
+            self.scheduleExpiration()
+        }
+    }
 
     /// Start the transaction listener. Call once, early (from `LoreApp`), so a
     /// renewal or a Family-Sharing grant that arrives while the app is running
@@ -238,6 +311,7 @@ final class StoreKitService {
 
     deinit {
         updatesTask?.cancel()
+        expirationTask?.cancel()
     }
 
     // MARK: - Products
@@ -316,91 +390,78 @@ final class StoreKitService {
     /// The expiry of the most recent Trip Pass, if any. A non-renewing pass does
     /// NOT appear in `currentEntitlements`, so it's tracked from its purchase
     /// date plus the pass window (recomputed in `refreshEntitlements`).
-    private(set) var tripPassExpiresAt: Date?
+    var tripPassExpiresAt: Date? { resolution.tripPassExpiresAt }
 
     /// True while an unexpired Trip Pass grants Lore+.
     var tripPassActive: Bool {
         guard let expiry = tripPassExpiresAt else { return false }
-        return expiry > Date()
+        return expiry > now()
     }
 
     /// Whether the current on-device entitlement is within an introductory
     /// (free-trial) period, lets the paywall/profile show "Trial" framing
     /// offline, distinct from a paid member. Determined from the latest verified
     /// transaction's `offer`/`offerType`.
-    private(set) var isInIntroPeriod = false
+    var isInIntroPeriod: Bool { resolution.isInIntroPeriod }
 
     /// Recompute access from verified StoreKit transactions. Unverified rows
     /// fail closed and are remembered so restore can explain the integrity
     /// failure instead of incorrectly reporting an empty purchase history.
     @discardableResult
-    func refreshEntitlements() async -> Bool {
+    func refreshEntitlements(syncWithServer: Bool = true) async -> Bool {
+        guard !Task.isCancelled else { return false }
+        refreshGeneration &+= 1
+        let generation = refreshGeneration
         var current: [StoreEntitlementSnapshot] = []
         var history: [StoreEntitlementSnapshot] = []
         var verificationIssue = false
-        var verifiedJWS: [String] = []
+        var verifiedJWS: [(String, String)] = []
         var seenJWS = Set<String>()
 
-        func queueForServer(_ jws: String) {
-            if seenJWS.insert(jws).inserted { verifiedJWS.append(jws) }
+        func queueForServer(_ jws: String, originalID: String) {
+            if seenJWS.insert(jws).inserted { verifiedJWS.append((jws, originalID)) }
         }
 
         for await result in Transaction.currentEntitlements {
+            guard generation == refreshGeneration, !Task.isCancelled else { return false }
             switch result {
             case .verified(let transaction):
                 guard ProductID.all.contains(transaction.productID) else { continue }
-                queueForServer(result.jwsRepresentation)
-                if transaction.appAccountToken == accountUUID {
-                    current.append(snapshot(for: transaction))
-                }
-            case .unverified:
-                verificationIssue = true
+                queueForServer(result.jwsRepresentation, originalID: String(transaction.originalID))
+                current.append(snapshot(for: transaction))
+            case .unverified(let transaction, _):
+                if ProductID.all.contains(transaction.productID) { verificationIssue = true }
             }
         }
-
         for await result in Transaction.all {
+            guard generation == refreshGeneration, !Task.isCancelled else { return false }
             switch result {
             case .verified(let transaction):
                 guard ProductID.passDuration(transaction.productID) != nil else { continue }
-                queueForServer(result.jwsRepresentation)
-                if transaction.appAccountToken == accountUUID {
-                    history.append(snapshot(for: transaction))
-                }
+                queueForServer(result.jwsRepresentation, originalID: String(transaction.originalID))
+                history.append(snapshot(for: transaction))
             case .unverified(let transaction, _):
-                if ProductID.all.contains(transaction.productID) {
-                    verificationIssue = true
-                }
+                if ProductID.all.contains(transaction.productID) { verificationIssue = true }
             }
         }
-
-        // Re-assert verified ownership server-side after collecting current
-        // products and Trip Pass history. A token mismatch never grants local
-        // access, but the server may safely reclaim an orphaned binding after
-        // account deletion by matching Apple's original transaction id.
-        var serverRecorded = false
-        if let sync = onVerifiedTransaction {
-            for jws in verifiedJWS {
-                let outcome = await sync(jws)
-                if outcome.recordedServerEntitlement { serverRecorded = true }
-                if outcome == .failed {
-                    lastError = Self.transactionSyncFailureMessage
-                }
-            }
-        }
-
-        let resolution = StoreEntitlementResolver.resolve(
-            current: current,
-            history: history,
-            accountUUID: accountUUID,
-            now: Date()
-        )
-        ownedProductIDs = resolution.ownedProductIDs
-        tripPassExpiresAt = resolution.tripPassExpiresAt
-        isInIntroPeriod = resolution.isInIntroPeriod
-        hasFamilySharedAccess = resolution.includesFamilySharedAccess
+        guard generation == refreshGeneration, !Task.isCancelled else { return false }
+        // Publish Apple's current truth before waiting on Lore. A failed sync
+        // must not suppress a new device purchase or defer a refund/revocation.
+        currentSnapshots = current
+        historySnapshots = history
         hasVerificationIssue = verificationIssue
+        scheduleExpiration()
         if verificationIssue {
             lastError = "Apple returned a purchase Lore couldn't verify. Restore purchases to try again."
+        }
+        guard syncWithServer, let sync = onVerifiedTransaction else { return false }
+        var serverRecorded = false
+        for (jws, originalID) in verifiedJWS {
+            let outcome = await sync(jws)
+            guard generation == refreshGeneration, !Task.isCancelled else { return false }
+            applyServerVerification(outcome, originalTransactionID: originalID)
+            if outcome.recordedServerEntitlement { serverRecorded = true }
+            if outcome == .failed { lastError = Self.transactionSyncFailureMessage }
         }
         return serverRecorded
     }
@@ -414,7 +475,9 @@ final class StoreKitService {
             isUpgraded: transaction.isUpgraded,
             isIntroductory: introductory(in: transaction),
             ownership: transaction.ownershipType == .familyShared ? .familyShared : .purchased,
-            appAccountToken: transaction.appAccountToken
+            appAccountToken: transaction.appAccountToken,
+            originalTransactionID: String(transaction.originalID),
+            isSandbox: transaction.environment == .sandbox || transaction.environment == .xcode
         )
     }
 
@@ -422,8 +485,9 @@ final class StoreKitService {
 
     /// Outcome of a purchase attempt the paywall branches on.
     enum PurchaseOutcome: Equatable {
-        /// Purchase succeeded and the transaction verified + finished. `trialing`
-        /// reflects whether it started in the introductory free-trial period.
+        /// Apple verified the purchase and access is available. A temporarily
+        /// failed server sync remains unfinished for retry. `trialing` reflects
+        /// whether it started in the introductory free-trial period.
         case success(trialing: Bool)
         /// The user tapped Cancel in the sheet, not an error, no message.
         case userCancelled
@@ -491,18 +555,23 @@ final class StoreKitService {
                     return .failed(message: message)
                 }
                 let trialing = introductory(in: transaction)
+                await refreshEntitlements(syncWithServer: false)
                 // Record/accept it server-side BEFORE finishing, so a crash or
                 // transport failure leaves the transaction unfinished and
                 // replayable. Sandbox/TestFlight may be accepted without a
                 // production entitlement row, but failed posts are not finished.
                 let syncOutcome = await syncVerifiedTransaction(verification.jwsRepresentation)
-                guard syncOutcome.canFinishTransaction else {
-                    let message = Self.transactionSyncFailureMessage
-                    lastError = message
-                    return .failed(message: message)
+                applyServerVerification(syncOutcome, originalTransactionID: String(transaction.originalID))
+                if syncOutcome.canFinishTransaction {
+                    await transaction.finish()
+                } else {
+                    // Keep unfinished for retry, but acknowledge usable verified
+                    // on-device access when Apple has already completed payment.
+                    lastError = Self.transactionSyncFailureMessage
                 }
-                await transaction.finish()
-                await refreshEntitlements()
+                guard hasActiveEntitlement || syncOutcome.recordedServerEntitlement else {
+                    return .failed(message: Self.transactionSyncFailureMessage)
+                }
                 return .success(trialing: trialing)
             case .userCancelled:
                 return .userCancelled
@@ -637,7 +706,9 @@ final class StoreKitService {
             await transaction.finish()
             return
         }
+        await refreshEntitlements(syncWithServer: false)
         let syncOutcome = await syncVerifiedTransaction(result.jwsRepresentation)
+        applyServerVerification(syncOutcome, originalTransactionID: String(transaction.originalID))
         guard syncOutcome.canFinishTransaction else {
             lastError = Self.transactionSyncFailureMessage
             return
@@ -645,7 +716,6 @@ final class StoreKitService {
         // Finish only after Lore has handled the signed transaction, so StoreKit
         // can replay it if the durable server sync is temporarily unavailable.
         await transaction.finish()
-        await refreshEntitlements()
     }
 
     private static let transactionSyncFailureMessage =
@@ -653,6 +723,9 @@ final class StoreKitService {
 
     private func syncVerifiedTransaction(_ jws: String) async -> VerifiedTransactionSyncOutcome {
         guard let sync = onVerifiedTransaction else { return .failed }
-        return await sync(jws)
+        let generation = refreshGeneration
+        let outcome = await sync(jws)
+        guard generation == refreshGeneration, !Task.isCancelled else { return .failed }
+        return outcome
     }
 }

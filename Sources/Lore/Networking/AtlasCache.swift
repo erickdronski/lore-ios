@@ -71,6 +71,10 @@ struct ContentContract: Codable, Equatable, Sendable {
             && (1...720).contains(offlineMaxAgeHours)
     }
 
+    /// Cache generations apply to public content too. Editorial access gating
+    /// and its offline age limit can remain disabled independently.
+    var usesVersionedCache: Bool { enforcementEnabled || isValidForEnforcement }
+
     var maximumOfflineAge: TimeInterval? {
         guard enforcementEnabled, isValidForEnforcement else {
             return enforcementEnabled ? 0 : nil
@@ -186,8 +190,14 @@ actor ContentContractStore: ContentContractProviding {
             }
             return rejection
         case .contract(let fetched):
+            if previous?.usesVersionedCache == true, fetched == .compatibility {
+                return previous ?? .cacheRejection
+            }
             if previous?.enforcementEnabled == true, !fetched.enforcementEnabled {
                 return previous ?? .cacheRejection
+            }
+            guard fetched == .compatibility || fetched.isValidForEnforcement else {
+                return apply(.invalid)
             }
             lastKnown = fetched
             if let data = try? JSONEncoder().encode(fetched) {
@@ -259,7 +269,8 @@ actor ContentContractStore: ContentContractProviding {
 ///   background so the next read is current;
 /// - stale / missing            → network first, cache on success;
 /// - network failure            → compatible cached bytes beat a spinner; once
-///   contract enforcement is active, generation and maximum age are strict.
+///   a valid contract is known, generations are strict. Editorial enforcement
+///   additionally imposes the declared maximum offline age.
 ///
 /// User-scoped rows (anything with an access token) must NEVER pass through
 /// here; `LoreAPI.get` only routes anonymous requests in.
@@ -277,6 +288,7 @@ actor AtlasCache {
     private let contractProvider: any ContentContractProviding
     private let now: @Sendable () -> Date
     private var refreshing: Set<String> = []
+    private var activeContentContract: ContentContract?
 
     init(
         directory: URL? = nil,
@@ -312,12 +324,13 @@ actor AtlasCache {
         let effectiveFreshFor = maximumAge.map { min(freshFor, $0) } ?? freshFor
 
         if let cached = read(file, maximumAge: maximumAge), cached.age < effectiveFreshFor {
-            refreshInBackground(key: key, request: request, session: session, file: file)
+            refreshInBackground(key: key, request: request, session: session, file: file, contract: contract)
             return cached.data
         }
 
         do {
             let data = try await fetchValid(request, session: session)
+            guard activeContentContract == contract else { throw CancellationError() }
             if !contract.enforcementEnabled || contract.isValidForEnforcement {
                 try? data.write(to: file, options: .atomic)
             }
@@ -330,6 +343,7 @@ actor AtlasCache {
             // one after the traveler has already moved on.
             throw error
         } catch {
+            guard activeContentContract == contract else { throw CancellationError() }
             if let stale = read(file, maximumAge: maximumAge) { return stale.data }
             // Cache purged + no network: a downloaded city pack still answers.
             // Re-seed the cache copy so subsequent reads skip this branch.
@@ -355,8 +369,13 @@ actor AtlasCache {
         session: URLSession,
         contract: ContentContract
     ) async throws -> Data {
+        guard activeContentContract == nil || activeContentContract == contract else {
+            throw CancellationError()
+        }
+        activeContentContract = contract
         prepareStorage(for: contract)
         let data = try await fetchValid(request, session: session)
+        guard activeContentContract == contract else { throw CancellationError() }
         if (!contract.enforcementEnabled || contract.isValidForEnforcement),
            let key = cacheKey(for: request, contract: contract) {
             try? data.write(to: directory.appending(path: key), options: .atomic)
@@ -366,7 +385,11 @@ actor AtlasCache {
     }
 
     func contentContract(session: URLSession) async -> ContentContract {
-        await contractProvider.current(session: session)
+        let fetched = await contractProvider.current(session: session)
+        if let activeContentContract, activeContentContract.usesVersionedCache,
+           fetched == .compatibility { return activeContentContract }
+        activeContentContract = fetched
+        return fetched
     }
 
     /// Remove the durable copies for the given request URLs (pack removal).
@@ -391,7 +414,7 @@ actor AtlasCache {
 
     private func cacheKey(for request: URLRequest, contract: ContentContract) -> String? {
         guard let url = request.url?.absoluteString else { return nil }
-        let identity = contract.enforcementEnabled
+        let identity = contract.usesVersionedCache
             ? "\(contract.cacheNamespace)\n\(url)"
             : url
         return Self.digest(identity)
@@ -413,10 +436,10 @@ actor AtlasCache {
         return (data, max(0, age))
     }
 
-    /// An enforcement transition removes all prior URL-only bytes. Subsequent
+    /// A known contract removes all prior URL-only bytes. Subsequent
     /// generations are isolated by the same marker and key namespace.
     private func prepareStorage(for contract: ContentContract) {
-        guard contract.enforcementEnabled else { return }
+        guard contract.usesVersionedCache else { return }
         let namespace = contract.cacheNamespace
         for storageDirectory in [directory, pinDirectory] {
             let marker = storageDirectory.appending(path: ".content-contract")
@@ -456,12 +479,13 @@ actor AtlasCache {
         return data
     }
 
-    private func refreshInBackground(key: String, request: URLRequest, session: URLSession, file: URL) {
+    private func refreshInBackground(key: String, request: URLRequest, session: URLSession, file: URL, contract: ContentContract) {
         guard !refreshing.contains(key) else { return }
         refreshing.insert(key)
         Task {
             defer { self.endRefresh(key) }
-            if let data = try? await self.fetchValid(request, session: session) {
+            if let data = try? await self.fetchValid(request, session: session),
+               self.activeContentContract == contract {
                 try? data.write(to: file, options: .atomic)
             }
         }

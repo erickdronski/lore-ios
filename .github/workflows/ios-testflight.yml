@@ -9,26 +9,7 @@ name: iOS CI and TestFlight
 on:
   push:
     branches: [main]
-    # Skip doc-only pushes; the build is for source/spec changes.
-    paths:
-      - "Sources/**"
-      - "project.yml"
-      - "StoreKit/**"
-      - "fastlane/**"
-      - "Gemfile*"
-      - "scripts/verify-edge-function-contracts.mjs"
-      - "supabase/functions/**"
-      - ".github/workflows/ios-testflight.yml"
   pull_request:
-    paths:
-      - "Sources/**"
-      - "project.yml"
-      - "StoreKit/**"
-      - "fastlane/**"
-      - "Gemfile*"
-      - "scripts/verify-edge-function-contracts.mjs"
-      - "supabase/functions/**"
-      - ".github/workflows/ios-testflight.yml"
   workflow_dispatch:
     inputs:
       upload_to_testflight:
@@ -122,8 +103,38 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  storekit-journeys:
+    name: StoreKit purchase and restore journeys
+    runs-on: macos-15
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90
+        with:
+          xcode-version: "26.3"
+      - run: brew install xcodegen
+      - run: xcodegen generate
+      - name: Exercise the local Apple StoreKit engine
+        run: >-
+          xcodebuild test
+          -project Lore.xcodeproj
+          -scheme LoreStoreKitTests
+          -destination 'platform=iOS Simulator,name=iPhone 17 Pro'
+          -parallel-testing-enabled NO
+          -resultBundlePath build/storekit-journeys.xcresult
+          CODE_SIGNING_ALLOWED=YES
+          CODE_SIGN_IDENTITY=-
+      - name: Preserve StoreKit journey results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: storekit-journeys
+          path: build/storekit-journeys.xcresult
+          if-no-files-found: ignore
+          retention-days: 14
+
   release-testflight:
-    needs: validate
+    needs: [validate, storekit-journeys]
     if: github.event_name == 'workflow_dispatch' && inputs.upload_to_testflight
     runs-on: macos-15
     environment: testflight

@@ -356,46 +356,35 @@ final class AuthService {
         lastError = nil
         defer { isBusy = false }
         do {
-            let deletedUserID = session?.user.id
-            guard let token = await validAccessToken() else {
+            guard let deletedUserID = session?.user.id,
+                  let token = await validAccessToken(),
+                  session?.user.id == deletedUserID else {
                 lastError = "Your session has expired. Sign in and try again."
                 return false
             }
 
-            var response = try await performDeleteAccount(accessToken: token)
+            var response = try await AccountDeletionClient.delete(accessToken: token, session: urlSession)
             if response.statusCode == 401,
-               let refreshedToken = await validAccessToken(forceRefresh: true) {
-                response = try await performDeleteAccount(accessToken: refreshedToken)
+               session?.user.id == deletedUserID,
+               let refreshedToken = await validAccessToken(forceRefresh: true),
+               session?.user.id == deletedUserID {
+                response = try await AccountDeletionClient.delete(accessToken: refreshedToken, session: urlSession)
             }
 
             guard response.statusCode == 200 else {
-                lastError = "Couldn't delete your account. Please try again."
+                lastError = response.statusCode == 202
+                    ? "Deletion is still in progress. Your data is protected while cleanup continues. Retry to finish deleting your account."
+                    : "Couldn't delete your account. Please try again."
                 return false
             }
+            AppleProfileSeedStore.clear(userID: deletedUserID)
+            guard session?.user.id == deletedUserID else { return true }
             clearLocalSession()
-            if let deletedUserID {
-                AppleProfileSeedStore.clear(userID: deletedUserID)
-            }
             return true
         } catch {
             recordFailure(error)
             return false
         }
-    }
-
-    private func performDeleteAccount(accessToken: String) async throws -> HTTPURLResponse {
-        var request = URLRequest(url: Config.functionsURL.appending(path: "delete-account"))
-        request.timeoutInterval = Self.requestTimeout
-        request.httpMethod = "POST"
-        request.setValue(Config.supabaseAnonKey, forHTTPHeaderField: "apikey")
-        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = Data("{}".utf8)
-        let (_, response) = try await urlSession.data(for: request)
-        guard let http = response as? HTTPURLResponse else {
-            throw AuthError.http(status: 0, message: "The server returned an invalid response.")
-        }
-        return http
     }
 
     /// Restore a persisted session on launch: load it from the Keychain, show

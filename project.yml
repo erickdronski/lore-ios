@@ -58,8 +58,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.erickdronski.lore
         PRODUCT_NAME: Lore
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon # Sources/Lore/Resources/Assets.xcassets/AppIcon.appiconset (1024px, no alpha)
-        MARKETING_VERSION: "1.1"
-        CURRENT_PROJECT_VERSION: "1"
+        MARKETING_VERSION: "1.2"
+        CURRENT_PROJECT_VERSION: "48"
         # Universal iPhone + iPad. Location-aware surfaces already degrade to
         # city browsing when a device has no precise fix, so Wi-Fi-only iPads
         # keep the full Lore experience without pretending they have GPS.
@@ -204,8 +204,8 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.erickdronski.lore.LoreWidget
         PRODUCT_NAME: LoreWidget
-        MARKETING_VERSION: "1.1"
-        CURRENT_PROJECT_VERSION: "1"
+        MARKETING_VERSION: "1.2"
+        CURRENT_PROJECT_VERSION: "48"
         TARGETED_DEVICE_FAMILY: "1,2"
         SKIP_INSTALL: true
         # App Group entitlement is portal-gated — same note as the app target.
@@ -285,10 +285,35 @@ schemes:
       storeKitConfiguration: StoreKit/Lore.storekit
     test:
       config: Debug
+      environmentVariables:
+        LORE_UNIT_TESTS: "1"
       targets:
-        - LoreTests
+        - name: LoreTests
+          parallelizable: false
+          skippedTests:
+            - StoreKitJourneyTests
     archive:
       config: Release
+
+  # Dedicated StoreKit engine journeys can also be run from Xcode when a
+  # simulator runtime cannot initialize StoreKitTest from xcodebuild alone.
+  LoreStoreKitTests:
+    build:
+      targets:
+        Lore: all
+        LoreTests: [test]
+    run:
+      config: Debug
+      storeKitConfiguration: StoreKit/Lore.storekit
+    test:
+      config: Debug
+      environmentVariables:
+        LORE_UNIT_TESTS: "1"
+      targets:
+        - name: LoreTests
+          parallelizable: false
+          selectedTests:
+            - StoreKitJourneyTests
 
   # Screenshot scheme, run by `fastlane screenshots` on the Simulator only.
   LoreScreenshots:
