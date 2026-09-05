@@ -155,10 +155,31 @@ final class StoreKitJourneyTests: XCTestCase {
         XCTAssertTrue(service.hasActiveEntitlement)
 
         try engine.expireSubscription(productIdentifier: StoreKitService.ProductID.monthly)
+        // The test daemon mutates the subscription before StoreKit publishes
+        // the replacement signed transaction to this process. Observe Apple's
+        // actual expiration first; never substitute a date or clear local state.
+        try await waitForAppleExpiration(productID: StoreKitService.ProductID.monthly)
         await service.refreshEntitlements(syncWithServer: false)
 
         XCTAssertFalse(service.hasActiveEntitlement)
         XCTAssertNil(service.activeProductID)
+    }
+
+    private func waitForAppleExpiration(productID: String) async throws {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(5))
+        var lastObservation = "No verified latest transaction"
+        repeat {
+            if case .verified(let transaction) = await StoreKit.Transaction.latest(for: productID) {
+                lastObservation = "id=\(transaction.id), expiration=\(String(describing: transaction.expirationDate)), now=\(Date())"
+                if let expiration = transaction.expirationDate, expiration <= Date() {
+                    return
+                }
+            }
+            try await Task.sleep(for: .milliseconds(50))
+        } while ContinuousClock.now < deadline
+        XCTFail("StoreKit did not publish the simulated expiration within five seconds: \(lastObservation)")
+        throw NSError(domain: "StoreKitJourneyTests.ExpirationNotDelivered", code: 1,
+                      userInfo: [NSLocalizedDescriptionKey: lastObservation])
     }
 
     private func currentTransaction(productID: String) async throws -> StoreKit.Transaction {
