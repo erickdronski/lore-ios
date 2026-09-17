@@ -2,9 +2,9 @@ import AuthenticationServices
 import UIKit
 
 /// Runs an `ASWebAuthenticationSession` for a Supabase OAuth provider (Google,
-/// Facebook, Discord …) and returns the callback URL, which carries the GoTrue
-/// session tokens in its fragment. `ASWebAuthenticationSession` intercepts the
-/// `lore://` callback itself, so no Info.plist / `onOpenURL` juggling is needed.
+/// Facebook, Discord …) and returns the callback URL. With PKCE the callback
+/// carries a one-time `code` in the query, not session tokens in the fragment.
+/// `ASWebAuthenticationSession` intercepts the `lore://` callback itself.
 @MainActor
 final class WebAuthCoordinator: NSObject, ASWebAuthenticationPresentationContextProviding {
     enum WebAuthError: LocalizedError, Equatable {
@@ -60,8 +60,10 @@ final class WebAuthCoordinator: NSObject, ASWebAuthenticationPresentationContext
                     }
                 }
                 session.presentationContextProvider = self
-                // Keep the user's provider cookie so a return sign-in is one tap.
-                session.prefersEphemeralWebBrowserSession = false
+                // Ephemeral: do not persist IdP cookies in the shared browser
+                // session. A custom-scheme callback can be claimed by another
+                // app; PKCE still binds the code to this process.
+                session.prefersEphemeralWebBrowserSession = true
                 self.session = session
                 if !session.start() {
                     finish(.failure(WebAuthError.failedToStart), for: attemptID)

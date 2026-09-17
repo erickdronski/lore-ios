@@ -218,7 +218,7 @@ struct ScannerScreen: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Lore will send one still camera frame to Google Cloud Vision to identify a landmark. Lore does not save this frame. Only continue if you want Google to process what is visible. You will confirm each image match.")
+            Text(ScannerIdentifyCopy.disclosure)
         }
         .task {
             model.apply(prefs: prefs)
@@ -754,7 +754,7 @@ struct ScannerScreen: View {
                     Image(systemName: "viewfinder.circle")
                         .font(.system(size: 13, weight: .semibold))
                 }
-                Text("Identify with Google")
+                Text(ScannerIdentifyCopy.buttonTitle)
                     .font(LoreType.button)
                     .lineLimit(1)
                     .minimumScaleFactor(0.84)
@@ -770,7 +770,7 @@ struct ScannerScreen: View {
         }
         .buttonStyle(.plain)
         .disabled(!model.canRequestImageMatch)
-        .accessibilityLabel(Text("Identify this place with Google Cloud Vision"))
+        .accessibilityLabel(Text(ScannerIdentifyCopy.accessibilityLabel))
         .accessibilityHint(Text("Sends one still frame only after you confirm."))
     }
 
@@ -1497,9 +1497,17 @@ struct ScannerGuidanceToast: Identifiable {
     }
 }
 
-/// A cloud landmark identification (Google Cloud Vision), the opt-in "what is
-/// this?" tap. A real, specific name — the honest thing on-device Vision can't
-/// give — labeled as a cloud ID.
+/// Opt-in Plus image matching chrome. Provider-agnostic: the Edge Function
+/// vendor is not named in the UI (Review 5.1 / unit tests).
+enum ScannerIdentifyCopy {
+    static let buttonTitle = "Identify landmark"
+    static let accessibilityLabel = "Identify this place with an optional image match"
+    static let disclosure = "Lore will send one still camera frame to an optional image-matching service for Plus members. Live scanning stays on this device. Lore does not save this frame. Only continue if you want that one picture processed. You will confirm each image match."
+}
+
+/// A cloud landmark identification, the opt-in "what is this?" tap. A real,
+/// specific name — the honest thing on-device Vision can't give — labeled as
+/// an image match, not a vendor brand.
 struct LandmarkID: Equatable {
     let name: String
     let confidence: Double?
@@ -1820,7 +1828,7 @@ final class ScannerModel {
     /// escalate its copy ("try stepping outside") instead of spinning forever.
     private var acquiringSince: Date?
 
-    /// The opt-in cloud landmark identification (Google Cloud Vision), fired one
+    /// The opt-in landmark identification, fired one
     /// frame per explicit tap in the nothing-recognized state.
     private(set) var identifyState: IdentifyState = .idle
     /// A short local acknowledgement after the traveler resolves a dense stack.

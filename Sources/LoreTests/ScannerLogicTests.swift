@@ -564,6 +564,12 @@ final class SpecialistJourneyRegressionTests: XCTestCase {
         XCTAssertFalse(IdentifyFailure.membership.message.localizedCaseInsensitiveContains("Google"))
         XCTAssertFalse(IdentifyFailure.membership.message.localizedCaseInsensitiveContains("cloud"))
         XCTAssertTrue(IdentifyFailure.membership.message.localizedCaseInsensitiveContains("image matching"))
+        XCTAssertEqual(ScannerIdentifyCopy.buttonTitle, "Identify landmark")
+        XCTAssertFalse(ScannerIdentifyCopy.buttonTitle.localizedCaseInsensitiveContains("Google"))
+        XCTAssertFalse(ScannerIdentifyCopy.accessibilityLabel.localizedCaseInsensitiveContains("Google"))
+        XCTAssertFalse(ScannerIdentifyCopy.disclosure.localizedCaseInsensitiveContains("Google"))
+        XCTAssertTrue(ScannerIdentifyCopy.disclosure.localizedCaseInsensitiveContains("image-matching"))
+        XCTAssertTrue(ScannerIdentifyCopy.disclosure.localizedCaseInsensitiveContains("Live scanning stays on this device"))
     }
 
     func testScannerGuidanceToastStaysCompactAndProviderAgnostic() {

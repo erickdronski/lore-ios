@@ -113,30 +113,22 @@ struct SettingsView: View {
 
     private var languageSection: some View {
         Section {
+            Label("App menus stay in English", systemImage: "character.bubble")
+                .font(LoreType.body)
+                .foregroundStyle(LoreColor.ink)
             if #available(iOS 18.0, *) {
-                Picker(selection: Binding(
-                    get: { L10n.shared.choice },
-                    set: { L10n.shared.choice = $0 }
-                )) {
-                    Text("Auto (device)").tag("auto")
-                    ForEach(AppLanguage.allCases) { language in
-                        Text(language.label).tag(language.rawValue)
-                    }
-                } label: {
-                    Label("Story translation", systemImage: "character.bubble")
-                        .font(LoreType.body)
-                        .foregroundStyle(LoreColor.ink)
-                }
-                .tint(LoreColor.brass700)
+                Text("Long-form stories can still translate privately on this device into the iPhone language. There is no in-app language list until chrome is fully localized.")
+                    .font(LoreType.caption)
+                    .foregroundStyle(LoreColor.ink600)
             } else {
-                Label("Story translation requires iOS 18 or later", systemImage: "character.bubble")
-                    .font(LoreType.body)
+                Text("On-device story translation requires iOS 18 or later.")
+                    .font(LoreType.caption)
                     .foregroundStyle(LoreColor.ink600)
             }
         } header: {
-            Text("Story translation")
+            Text("Language")
         } footer: {
-            Text("Long-form stories can translate privately on your device. App controls remain in English for this release; the original English is shown when translation is unavailable.")
+            Text("Choosing a language here would only relabel a few tabs while forms, alerts, and VoiceOver stayed in English. Stories use the device language on iOS 18+; otherwise the original English is shown.")
                 .font(LoreType.caption)
                 .foregroundStyle(LoreColor.ink600)
         }

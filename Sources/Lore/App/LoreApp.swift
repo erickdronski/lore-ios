@@ -56,7 +56,7 @@ struct LoreApp: App {
         // Build one `AuthService` and wire the Travel stores' credentials
         // closure to read its *current* session lazily (the user can sign in
         // mid-session). `@State`'s backing is created once, here.
-        let auth = AuthService()
+        let auth = AuthService(urlSession: LoreAPI.makeDefaultSession())
         _auth = State(initialValue: auth)
         _travel = State(initialValue: TravelSession(credentials: {
             guard let session = auth.session, !session.isExpired else { return nil }
@@ -643,19 +643,17 @@ struct RootTabView: View {
     }
 
     /// Resolve a place id to a full `Place` (search hits carry only the id) and
-    /// present its card. Best-effort: a miss just no-ops.
+    /// present its card. Uses `place(id:)` so a deep link never downloads the
+    /// whole city catalog.
     private func openPlace(id: String) async {
         selection = .map
-        // Try the city the router is scoped to first (the common case), then a
-        // broad fetch is unnecessary, `place_explore` is city-filtered, and the
-        // router already followed a cross-city hit's `city` into `selectedCity`.
         do {
-            let places = try await LoreAPI.shared.places(city: router.selectedCity)
-            try Task.checkCancellation()
-            if let match = places.first(where: { $0.id == id }) {
+            if let match = try await LoreAPI.shared.place(id: id) {
+                try Task.checkCancellation()
+                router.adoptResolvedCity(match.city)
                 routedPlace = RoutedPlace(place: match)
             } else {
-                routeError = "That place is no longer available in this city."
+                routeError = "That place is no longer available."
             }
         } catch is CancellationError {
             return
@@ -668,12 +666,12 @@ struct RootTabView: View {
 
     private func openStory(id: String) async {
         do {
-            let stories = try await LoreAPI.shared.stories(city: router.selectedCity)
-            try Task.checkCancellation()
-            if let match = stories.first(where: { $0.id == id }) {
+            if let match = try await LoreAPI.shared.story(id: id) {
+                try Task.checkCancellation()
+                router.adoptResolvedCity(match.city)
                 routedStory = match
             } else {
-                routeError = "That story is no longer available in this city."
+                routeError = "That story is no longer available."
             }
         } catch is CancellationError {
             return
@@ -686,12 +684,12 @@ struct RootTabView: View {
 
     private func openTour(slug: String) async {
         do {
-            let tours = try await LoreAPI.shared.tours(city: router.selectedCity)
-            try Task.checkCancellation()
-            if let match = tours.first(where: { $0.slug == slug }) {
+            if let match = try await LoreAPI.shared.tour(slug: slug) {
+                try Task.checkCancellation()
+                router.adoptResolvedCity(match.city)
                 routedTour = match
             } else {
-                routeError = "That tour is no longer available in this city."
+                routeError = "That tour is no longer available."
             }
         } catch is CancellationError {
             return

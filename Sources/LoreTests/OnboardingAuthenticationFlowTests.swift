@@ -1,4 +1,5 @@
 import CoreLocation
+import CryptoKit
 import XCTest
 @testable import Lore
 
@@ -228,21 +229,29 @@ final class OnboardingAuthenticationFlowTests: XCTestCase {
         XCTAssertFalse(auth.isBusy)
     }
 
-    func testOAuthCallbackAcceptsOnlyLoreHostAndCompleteBearerTokens() throws {
-        let valid = URL(string: "lore://auth-callback#access_token=access&refresh_token=refresh&expires_in=3600&token_type=bearer")!
-        let tokens = try AuthService.oauthTokens(from: valid)
+    func testOAuthCallbackAcceptsPKCECodeAndRejectsFragmentTokens() throws {
+        let valid = URL(string: "lore://auth-callback?code=one-time-code")!
+        XCTAssertEqual(try AuthService.oauthAuthorizationCode(from: valid), "one-time-code")
 
-        XCTAssertEqual(tokens.access, "access")
-        XCTAssertEqual(tokens.refresh, "refresh")
-        XCTAssertEqual(tokens.expiresIn, 3_600)
-        XCTAssertEqual(tokens.tokenType, "bearer")
+        XCTAssertThrowsError(try AuthService.oauthAuthorizationCode(from: URL(string:
+            "lore://auth-callback#access_token=access&refresh_token=refresh&expires_in=3600&token_type=bearer")!))
+        XCTAssertThrowsError(try AuthService.oauthTokens(from: URL(string:
+            "lore://auth-callback#access_token=access&refresh_token=refresh&expires_in=3600&token_type=bearer")!))
+        XCTAssertThrowsError(try AuthService.oauthAuthorizationCode(from: URL(string:
+            "lore://unexpected?code=one-time-code")!))
+        XCTAssertThrowsError(try AuthService.oauthAuthorizationCode(from: URL(string:
+            "lore://auth-callback?code=a&code=b")!))
+    }
 
-        XCTAssertThrowsError(try AuthService.oauthTokens(from: URL(string:
-            "lore://unexpected#access_token=a&refresh_token=r&expires_in=3600&token_type=bearer")!))
-        XCTAssertThrowsError(try AuthService.oauthTokens(from: URL(string:
-            "lore://auth-callback#access_token=a&access_token=b&refresh_token=r&expires_in=3600&token_type=bearer")!))
-        XCTAssertThrowsError(try AuthService.oauthTokens(from: URL(string:
-            "lore://auth-callback#access_token=a&refresh_token=r&expires_in=forever&token_type=bearer")!))
+    func testPKCEChallengeIsS256Base64URLOfVerifier() throws {
+        let pair = try AuthService.makePKCEPair()
+        XCTAssertFalse(pair.verifier.isEmpty)
+        XCTAssertFalse(pair.challenge.contains("+"))
+        XCTAssertFalse(pair.challenge.contains("/"))
+        XCTAssertFalse(pair.challenge.contains("="))
+        let expected = AuthService.base64URL(Data(SHA256.hash(data: Data(pair.verifier.utf8))))
+        XCTAssertEqual(pair.challenge, expected)
+        XCTAssertNotEqual(try AuthService.makePKCEPair().verifier, pair.verifier)
     }
 
     func testOAuthProviderErrorIsDecodedForAUsefulRetryMessage() {

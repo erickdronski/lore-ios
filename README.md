@@ -62,7 +62,7 @@ Normal scanning stays on-device. Lore does not store continuous camera video or 
 | `Sources/LoreWidget` | Widget and Live Activity extension |
 | `Sources/LoreTests` | Unit and contract tests |
 | `Sources/LoreUITests` | UI verification and screenshot automation |
-| `supabase/functions` | Authenticated server operations included in this public lane |
+| `supabase/content` | Editorial seed payloads (not Edge Functions; do not deploy from this repo) |
 | `fastlane` | Tests, signing, screenshots, preflight, and TestFlight delivery |
 | `.github/workflows` | CI, screenshots, App Store preflight, and release automation |
 
@@ -88,7 +88,8 @@ plutil -lint Sources/Lore/PrivacyInfo.xcprivacy \
 
 ## Release state
 
-- Marketing version: `1.1`
+- Marketing version: `1.2`
+- Build: `48`
 - Bundle ID: `com.erickdronski.lore`
 - Minimum platform: iOS 17, universal iPhone and iPad
 - Delivery: tested native build through a manual TestFlight lane

@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Observation
 
@@ -102,18 +103,24 @@ final class AuthService {
 
     /// Runs the `ASWebAuthenticationSession` for Supabase OAuth providers.
     @ObservationIgnored private let webAuth: WebAuthCoordinator
-    /// The registered URL scheme (project.yml). `ASWebAuthenticationSession`
-    /// intercepts this callback so Supabase's redirect lands back in the app.
+    /// Custom-scheme callback intercepted by `ASWebAuthenticationSession`.
+    /// Tokens are no longer read from this URL; the callback carries a one-time
+    /// PKCE `code` that is exchanged over HTTPS with GoTrue.
     private static let oauthCallbackScheme = "lore"
     private static let oauthRedirect = "lore://auth-callback"
     private static let oauthCallbackHost = "auth-callback"
+    /// Reserved HTTPS callback (same host as `Config.webURL`) for when Associated
+    /// Domains are enabled in the Apple portal. Not sent as `redirect_to` until
+    /// then — the web `/auth/callback` route consumes PKCE for the *browser*
+    /// session and must not steal the native code.
+    static let oauthHTTPSCallbackPath = "/auth/ios"
     private static let supportedOAuthProviders: Set<String> = ["google", "facebook"]
     private static let requestTimeout: TimeInterval = 30
 
     var isSignedIn: Bool { session != nil }
 
     init(
-        urlSession: URLSession = .shared,
+        urlSession: URLSession = LoreAPI.makeDefaultSession(),
         webAuth: WebAuthCoordinator? = nil
     ) {
         self.urlSession = urlSession
@@ -622,13 +629,14 @@ final class AuthService {
     }
 
     /// Generic Supabase OAuth: open `/auth/v1/authorize?provider=…` in an
-    /// `ASWebAuthenticationSession`, let Supabase run the provider handshake,
-    /// then read the GoTrue tokens Supabase returns in the callback fragment and
-    /// hydrate the session (docs/11-AUTH-SETUP.md §B, docs/16 §2).
+    /// ephemeral `ASWebAuthenticationSession`, complete PKCE, and exchange the
+    /// returned `code` over HTTPS for session tokens (never read tokens from a
+    /// custom-scheme fragment).
     ///
     /// **Server prerequisite:** the provider must be enabled in the Supabase
-    /// dashboard (client id + secret) and `lore://auth-callback` added to the
-    /// Auth → URL Configuration redirect allowlist.
+    /// dashboard and `lore://auth-callback` added to Auth → URL Configuration.
+    /// HTTPS universal-link callback needs Associated Domains + an iOS-only
+    /// route that does **not** call `exchangeCodeForSession` (see PR notes).
     func signInWithOAuth(provider: String, confirmedMinimumAge: Bool) async {
         lastError = nil
         lastNotice = nil
@@ -642,6 +650,7 @@ final class AuthService {
         lastError = nil
         defer { isBusy = false }
         do {
+            let pkce = try Self.makePKCEPair()
             var components = URLComponents(
                 url: Config.authURL.appending(path: "authorize"),
                 resolvingAgainstBaseURL: false
@@ -649,6 +658,8 @@ final class AuthService {
             components?.queryItems = [
                 URLQueryItem(name: "provider", value: provider),
                 URLQueryItem(name: "redirect_to", value: Self.oauthRedirect),
+                URLQueryItem(name: "code_challenge", value: pkce.challenge),
+                URLQueryItem(name: "code_challenge_method", value: "s256"),
             ]
             guard let authorizeURL = components?.url else {
                 throw AuthError.http(status: 0, message: "Lore couldn't create the secure provider request.")
@@ -658,23 +669,83 @@ final class AuthService {
                 url: authorizeURL,
                 callbackScheme: Self.oauthCallbackScheme
             )
-            let tokens = try Self.oauthTokens(from: callback)
-
-            let user = try await fetchUser(accessToken: tokens.access)
-            let newSession = AuthSession(
-                accessToken: tokens.access,
-                refreshToken: tokens.refresh,
-                expiresIn: tokens.expiresIn,
-                expiresAt: Int(Date().timeIntervalSince1970) + tokens.expiresIn,
-                tokenType: tokens.tokenType,
-                user: user
-            )
+            let code = try Self.oauthAuthorizationCode(from: callback)
+            let newSession = try await exchangePKCE(code: code, verifier: pkce.verifier)
             await completeAuthentication(with: newSession)
         } catch WebAuthCoordinator.WebAuthError.cancelled {
             // Backing out is a successful cancellation, not a failed sign-in.
         } catch {
             recordFailure(error)
         }
+    }
+
+    /// POST `/auth/v1/token?grant_type=pkce` — session tokens stay on HTTPS.
+    private func exchangePKCE(code: String, verifier: String) async throws -> AuthSession {
+        var components = URLComponents(
+            url: Config.authURL.appending(path: "token"),
+            resolvingAgainstBaseURL: false
+        )
+        components?.queryItems = [URLQueryItem(name: "grant_type", value: "pkce")]
+        guard let url = components?.url else {
+            throw AuthError.http(status: 0, message: "Lore couldn't create the secure sign-in request.")
+        }
+
+        var request = URLRequest(url: url)
+        request.timeoutInterval = Self.requestTimeout
+        request.httpMethod = "POST"
+        request.setValue(Config.supabaseAnonKey, forHTTPHeaderField: "apikey")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(
+            ["grant_type": "pkce", "auth_code": code, "code_verifier": verifier]
+        )
+
+        let (data, response) = try await urlSession.data(for: request)
+        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            throw AuthError.http(
+                status: http.statusCode,
+                message: Self.errorMessage(from: data) ?? "Couldn't complete secure sign-in."
+            )
+        }
+
+        if let session = try? JSONDecoder().decode(AuthSession.self, from: data),
+           !session.accessToken.isEmpty,
+           !session.refreshToken.isEmpty {
+            if session.user.id.isEmpty {
+                let user = try await fetchUser(accessToken: session.accessToken)
+                return AuthSession(
+                    accessToken: session.accessToken,
+                    refreshToken: session.refreshToken,
+                    expiresIn: session.expiresIn,
+                    expiresAt: session.expiresAt ?? Int(Date().timeIntervalSince1970) + session.expiresIn,
+                    tokenType: session.tokenType,
+                    user: user
+                )
+            }
+            return session
+        }
+
+        struct TokenPayload: Decodable {
+            let accessToken: String
+            let refreshToken: String
+            let expiresIn: Int
+            let tokenType: String?
+            enum CodingKeys: String, CodingKey {
+                case accessToken = "access_token"
+                case refreshToken = "refresh_token"
+                case expiresIn = "expires_in"
+                case tokenType = "token_type"
+            }
+        }
+        let tokens = try JSONDecoder().decode(TokenPayload.self, from: data)
+        let user = try await fetchUser(accessToken: tokens.accessToken)
+        return AuthSession(
+            accessToken: tokens.accessToken,
+            refreshToken: tokens.refreshToken,
+            expiresIn: tokens.expiresIn,
+            expiresAt: Int(Date().timeIntervalSince1970) + tokens.expiresIn,
+            tokenType: tokens.tokenType ?? "bearer",
+            user: user
+        )
     }
 
     /// GET `/auth/v1/user` to resolve the account behind an OAuth access token
@@ -694,20 +765,10 @@ final class AuthService {
         return try JSONDecoder().decode(AuthUser.self, from: data)
     }
 
-    /// Parse the GoTrue tokens Supabase returns in the callback URL fragment
-    /// (`…#access_token=…&refresh_token=…&expires_in=…&token_type=bearer`).
-    struct OAuthTokens: Equatable {
-        let access: String
-        let refresh: String
-        let expiresIn: Int
-        let tokenType: String
-    }
-
-    static func oauthTokens(from url: URL) throws -> OAuthTokens {
-        guard url.scheme?.lowercased() == oauthCallbackScheme,
-              url.host?.lowercased() == oauthCallbackHost,
-              url.user == nil,
-              url.password == nil else {
+    /// Parse a one-time authorization `code` from the OAuth callback query.
+    /// Fragment access/refresh tokens are rejected — PKCE exchange happens on HTTPS.
+    static func oauthAuthorizationCode(from url: URL) throws -> String {
+        guard isOAuthCallbackURL(url) else {
             throw AuthError.invalidOAuthCallback(
                 "The sign-in provider returned to an unexpected address. Please try again."
             )
@@ -715,28 +776,60 @@ final class AuthService {
         if let callbackError = callbackError(from: url) {
             throw AuthError.invalidOAuthCallback(callbackError)
         }
-        let fragment = URLComponents(url: url, resolvingAgainstBaseURL: false)?.fragment
-            ?? url.fragment
-        guard let fragment else {
+        if (url.fragment ?? "").contains("access_token=") {
+            throw AuthError.invalidOAuthCallback(
+                "Sign-in returned an insecure session. Please try again."
+            )
+        }
+        let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        let codes = items.filter { $0.name == "code" }.compactMap(\.value)
+        guard codes.count == 1, let code = codes.first, !code.isEmpty else {
             throw AuthError.invalidOAuthCallback("Sign-in didn't return a secure session. Please try again.")
         }
-        var pairs: [String: String] = [:]
-        for pair in fragment.split(separator: "&") {
-            let kv = pair.split(separator: "=", maxSplits: 1).map(String.init)
-            guard kv.count == 2, pairs[kv[0]] == nil else {
-                throw AuthError.invalidOAuthCallback("Sign-in returned an invalid session. Please try again.")
-            }
-            pairs[kv[0]] = kv[1].removingPercentEncoding ?? kv[1]
+        return code
+    }
+
+    static func isOAuthCallbackURL(_ url: URL) -> Bool {
+        guard url.user == nil, url.password == nil else { return false }
+        if url.scheme?.lowercased() == oauthCallbackScheme,
+           url.host?.lowercased() == oauthCallbackHost {
+            return true
         }
-        guard let access = pairs["access_token"], !access.isEmpty,
-              let refresh = pairs["refresh_token"], !refresh.isEmpty,
-              let expiresIn = Int(pairs["expires_in"] ?? ""),
-              (1...604_800).contains(expiresIn),
-              let tokenType = pairs["token_type"],
-              tokenType.caseInsensitiveCompare("bearer") == .orderedSame else {
-            throw AuthError.invalidOAuthCallback("Sign-in returned an invalid session. Please try again.")
+        if url.scheme?.lowercased() == "https",
+           url.host?.lowercased() == Config.webURL.host?.lowercased(),
+           url.path == oauthHTTPSCallbackPath {
+            return true
         }
-        return OAuthTokens(access: access, refresh: refresh, expiresIn: expiresIn, tokenType: "bearer")
+        return false
+    }
+
+    struct PKCEPair: Equatable {
+        let verifier: String
+        let challenge: String
+    }
+
+    static func makePKCEPair() throws -> PKCEPair {
+        var bytes = [UInt8](repeating: 0, count: 32)
+        let status = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
+        guard status == errSecSuccess else {
+            throw AuthError.http(status: 0, message: "Lore couldn't start a secure sign-in. Please try again.")
+        }
+        let verifier = base64URL(Data(bytes))
+        let challenge = base64URL(Data(SHA256.hash(data: Data(verifier.utf8))))
+        return PKCEPair(verifier: verifier, challenge: challenge)
+    }
+
+    static func base64URL(_ data: Data) -> String {
+        data.base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+    }
+
+    /// Fragment access/refresh tokens are rejected. Call `oauthAuthorizationCode`.
+    static func oauthTokens(from url: URL) throws -> Never {
+        _ = try oauthAuthorizationCode(from: url)
+        throw AuthError.invalidOAuthCallback("Sign-in returned an insecure session. Please try again.")
     }
 
     /// A human error Supabase may put in the callback fragment/query instead of tokens.

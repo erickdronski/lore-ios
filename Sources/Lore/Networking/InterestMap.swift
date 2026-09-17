@@ -11,6 +11,9 @@ enum InterestMap {
 
     /// The canonical interest slugs shown as onboarding chips (13 §1/§2), in
     /// display order.
+    /// The canonical interest slugs shown as onboarding chips (13 §1/§2), in
+    /// display order. `trending` is omitted: `place_explore` has no trending
+    /// flag/tag, so a chip would match nothing.
     static let allInterests: [String] = [
         "architecture",
         "history",
@@ -22,7 +25,6 @@ enum InterestMap {
         "haunted",
         "public_art",
         "hidden_gems",
-        "trending",
     ]
 
     /// How each interest maps onto the tags a place already carries (13 §2).
