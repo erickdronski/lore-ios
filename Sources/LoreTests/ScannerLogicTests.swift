@@ -568,7 +568,7 @@ final class SpecialistJourneyRegressionTests: XCTestCase {
         XCTAssertFalse(ScannerIdentifyCopy.buttonTitle.localizedCaseInsensitiveContains("Google"))
         XCTAssertFalse(ScannerIdentifyCopy.accessibilityLabel.localizedCaseInsensitiveContains("Google"))
         XCTAssertFalse(ScannerIdentifyCopy.disclosure.localizedCaseInsensitiveContains("Google"))
-        XCTAssertTrue(ScannerIdentifyCopy.disclosure.localizedCaseInsensitiveContains("image matching"))
+        XCTAssertTrue(ScannerIdentifyCopy.disclosure.localizedCaseInsensitiveContains("image-matching"))
         XCTAssertTrue(ScannerIdentifyCopy.disclosure.localizedCaseInsensitiveContains("Live scanning stays on this device"))
     }
 
