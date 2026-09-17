@@ -42,7 +42,20 @@ final class ExplorationJourneyTests: XCTestCase {
         XCTAssertFalse(router.handleDeepLink(try XCTUnwrap(URL(string: "https://example.com/place/place-1"))))
     }
 
-    func testWidgetDeepLinkContextOnlyRetainsCurrentSnapshot() {
+    func testMapDeepLinkHonorsQueryCity() throws {
+        let router = AppRouter(selectedCity: "chicago")
+
+        XCTAssertTrue(router.handleDeepLink(try XCTUnwrap(URL(string: "lore://map?city=paris"))))
+        XCTAssertEqual(router.selectedCity, "paris")
+        XCTAssertEqual(router.lastRoute, .city(slug: "paris"))
+        XCTAssertTrue(router.userDidChooseCity)
+
+        XCTAssertTrue(router.handleDeepLink(try XCTUnwrap(URL(string: "lore://map"))))
+        XCTAssertEqual(router.selectedCity, "paris")
+        XCTAssertEqual(router.lastRoute, .city(slug: "paris"))
+    }
+
+    func testWidgetDeepLinkContextMergesPlaceCityMaps() {
         DeepLinkContextStore.remember(
             city: "paris",
             forPlaceIDs: ["a", "b"],
@@ -55,8 +68,16 @@ final class ExplorationJourneyTests: XCTestCase {
             forPlaceIDs: ["c"],
             defaults: defaults
         )
-        XCTAssertNil(DeepLinkContextStore.city(forPlaceID: "a", defaults: defaults))
+        XCTAssertEqual(DeepLinkContextStore.city(forPlaceID: "a", defaults: defaults), "paris")
         XCTAssertEqual(DeepLinkContextStore.city(forPlaceID: "c", defaults: defaults), "tokyo")
+
+        DeepLinkContextStore.remember(
+            city: "rome",
+            forPlaceIDs: ["a"],
+            defaults: defaults
+        )
+        XCTAssertEqual(DeepLinkContextStore.city(forPlaceID: "a", defaults: defaults), "rome")
+        XCTAssertEqual(DeepLinkContextStore.city(forPlaceID: "b", defaults: defaults), "paris")
     }
 
     func testGuestPlansMoveIntoFirstSignedInJourney() {

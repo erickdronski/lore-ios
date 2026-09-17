@@ -124,6 +124,41 @@ final class LoreAPITests: XCTestCase {
         XCTAssertNil(links.sourceRecordURL)
     }
 
+    func testCatalogQueriesBoundCityPagesAndLookupByID() {
+        let page = CatalogQuery.placesPage(city: "chicago", offset: 200, limit: LoreAPI.catalogPageSize)
+        XCTAssertEqual(page.first { $0.name == "city" }?.value, "eq.chicago")
+        XCTAssertEqual(page.first { $0.name == "limit" }?.value, "200")
+        XCTAssertEqual(page.first { $0.name == "offset" }?.value, "200")
+
+        let byID = CatalogQuery.placeByID("215607ca-aaaa-bbbb-cccc-ddddeeeeffff")
+        XCTAssertEqual(byID.first { $0.name == "id" }?.value, "eq.215607ca-aaaa-bbbb-cccc-ddddeeeeffff")
+        XCTAssertEqual(byID.first { $0.name == "limit" }?.value, "1")
+        XCTAssertNil(byID.first { $0.name == "city" })
+
+        let tour = CatalogQuery.tourBySlug("riverwalk")
+        XCTAssertEqual(tour.first { $0.name == "slug" }?.value, "eq.riverwalk")
+        XCTAssertEqual(tour.first { $0.name == "limit" }?.value, "1")
+
+        let poisoned = CatalogQuery.eq("city", "chicago,or.other")
+        XCTAssertEqual(poisoned.value, "eq.chicagoorother")
+    }
+
+    func testOnboardingInterestsOmitTrendingChip() {
+        XCTAssertFalse(InterestMap.allInterests.contains("trending"))
+        XCTAssertFalse(
+            OnboardingContent.presets.flatMap(\.interests).contains("trending")
+        )
+        XCTAssertEqual(LoreAPI.catalogPageSize, 200)
+        XCTAssertEqual(LoreAPI.catalogMaxRows, 4_000)
+    }
+
+    func testChromeLocalizationStaysEnglish() {
+        let previous = L10n.shared.choice
+        L10n.shared.choice = "es"
+        XCTAssertEqual(L10n.t("tab.map"), "Map")
+        L10n.shared.choice = previous
+    }
+
     private func cityFact(source: String?) -> CityFact {
         CityFact(
             id: "fact",

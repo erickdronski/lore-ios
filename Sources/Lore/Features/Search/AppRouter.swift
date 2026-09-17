@@ -156,6 +156,14 @@ final class AppRouter {
         selectedCity = slug
     }
 
+    /// After a place/story/tour row resolves, keep the app scoped to that row's
+    /// city without re-emitting a route (which would cancel the in-flight open).
+    func adoptResolvedCity(_ slug: String) {
+        guard let slug = Self.normalizedSlug(slug) else { return }
+        selectedCity = slug
+        userDidChooseCity = true
+    }
+
     /// Handle a `lore://` deep link from a **widget tap** or a **Live Activity**
     /// (docs/16 §7/§8). Supported forms:
     /// - `lore://place/{id}` → open that place's card
@@ -193,9 +201,13 @@ final class AppRouter {
             return true
         case "map":
             guard components.isEmpty else { return false }
-            // Nothing to resolve, the host's onRoute for a city no-op keeps the
-            // map foremost. Emit a city route to the current city to surface it.
-            route(.city(slug: selectedCity))
+            // Honor `lore://map?city=` (push `new_city` payloads). With no city
+            // query, keep the traveler's current city and still surface the map.
+            if let queryCity {
+                route(.city(slug: queryCity))
+            } else {
+                route(.city(slug: selectedCity))
+            }
             return true
         default:
             return false
@@ -225,11 +237,10 @@ enum DeepLinkContextStore {
     ) {
         let city = city.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !city.isEmpty else { return }
-        let entries = Dictionary(
-            uniqueKeysWithValues: placeIDs
-                .filter { !$0.isEmpty }
-                .map { ($0, city) }
-        )
+        var entries = (defaults.dictionary(forKey: placeCitiesKey) as? [String: String]) ?? [:]
+        for placeID in placeIDs where !placeID.isEmpty {
+            entries[placeID] = city
+        }
         defaults.set(entries, forKey: placeCitiesKey)
     }
 

@@ -87,28 +87,39 @@ struct LoreAPI {
         )
     }
 
-    /// All published places for a city, from the `place_explore` view.
-    /// `GET /rest/v1/place_explore?city=eq.{city}&order=name.asc`
+    /// Page size for city catalog loads. Matches the PostgREST `max_rows`
+    /// ceiling so a growing city cannot arrive as one unbounded JSON array.
+    static let catalogPageSize = 200
+    /// Hard cap so a pathological city cannot OOM the map/scanner. Deep links
+    /// never use this path — they resolve with `place(id:)` / `story(id:)` /
+    /// `tour(slug:)`.
+    static let catalogMaxRows = 4_000
+
+    /// Published places for a city, from `place_explore`, loaded in bounded pages.
+    /// `GET /rest/v1/place_explore?city=eq.{city}&order=name.asc&limit=&offset=`
     func places(city: String = Config.defaultCity) async throws -> [Place] {
-        try await get(
-            "place_explore",
-            query: [
-                URLQueryItem(name: "city", value: "eq.\(city)"),
-                URLQueryItem(name: "order", value: "name.asc"),
-            ]
-        )
+        var all: [Place] = []
+        var offset = 0
+        while all.count < Self.catalogMaxRows {
+            let remaining = Self.catalogMaxRows - all.count
+            let limit = min(Self.catalogPageSize, remaining)
+            let page: [Place] = try await get(
+                "place_explore",
+                query: CatalogQuery.placesPage(city: city, offset: offset, limit: limit)
+            )
+            all.append(contentsOf: page)
+            if page.count < limit { break }
+            offset += page.count
+        }
+        return all
     }
 
-    /// Resolve one published place by its stable database id. Cloud landmark
-    /// identification uses this when the match belongs to another city than
-    /// the scanner's currently loaded roster.
+    /// Resolve one published place by its stable database id. Deep links and
+    /// cloud landmark identification use this instead of downloading a city.
     func place(id: String) async throws -> Place? {
         let rows: [Place] = try await get(
             "place_explore",
-            query: [
-                URLQueryItem(name: "id", value: "eq.\(id)"),
-                URLQueryItem(name: "limit", value: "1"),
-            ]
+            query: CatalogQuery.placeByID(id)
         )
         return rows.first
     }
@@ -132,11 +143,17 @@ struct LoreAPI {
     func stories(city: String = Config.defaultCity) async throws -> [Story] {
         try await get(
             "story",
-            query: [
-                URLQueryItem(name: "city", value: "eq.\(city)"),
-                URLQueryItem(name: "order", value: "year.asc"),
-            ]
+            query: CatalogQuery.stories(city: city)
         )
+    }
+
+    /// One story by id. Deep links use this instead of scanning the city list.
+    func story(id: String) async throws -> Story? {
+        let rows: [Story] = try await get(
+            "story",
+            query: CatalogQuery.storyByID(id)
+        )
+        return rows.first
     }
 
     /// The culture shelf (slang, sayings, quotes, people) for a city.
@@ -189,17 +206,22 @@ struct LoreAPI {
         )
     }
 
-    /// Published tours for a city, stops embedded and ordered by `seq`.
+    /// Published tours for a city, stops embedded and ordered by `title.asc`.
     /// `GET /rest/v1/tour?city=eq.{city}&select=*,tour_stop(*)&order=title.asc`
     func tours(city: String = Config.defaultCity) async throws -> [Tour] {
         try await get(
             "tour",
-            query: [
-                URLQueryItem(name: "city", value: "eq.\(city)"),
-                URLQueryItem(name: "select", value: "*,tour_stop(*)"),
-                URLQueryItem(name: "order", value: "title.asc"),
-            ]
+            query: CatalogQuery.tours(city: city)
         )
+    }
+
+    /// One tour by slug, stops embedded. Deep links use this instead of the city list.
+    func tour(slug: String) async throws -> Tour? {
+        let rows: [Tour] = try await get(
+            "tour",
+            query: CatalogQuery.tourBySlug(slug)
+        )
+        return rows.first
     }
 
     /// The catalog of earnable achievements (definitions only), in sort order.
@@ -756,3 +778,55 @@ struct LoreAPI {
 
 /// Sentinel for endpoints that return no body (`Prefer: return=minimal`).
 struct EmptyResponse: Decodable {}
+
+/// PostgREST query builders for catalog reads. Kept testable so deep-link
+/// lookups cannot regress to an unbounded city download.
+enum CatalogQuery {
+    static func placesPage(city: String, offset: Int, limit: Int) -> [URLQueryItem] {
+        [
+            eq("city", city),
+            URLQueryItem(name: "order", value: "name.asc"),
+            URLQueryItem(name: "limit", value: "\(max(limit, 0))"),
+            URLQueryItem(name: "offset", value: "\(max(offset, 0))"),
+        ]
+    }
+
+    static func placeByID(_ id: String) -> [URLQueryItem] {
+        [eq("id", id), URLQueryItem(name: "limit", value: "1")]
+    }
+
+    static func stories(city: String) -> [URLQueryItem] {
+        [eq("city", city), URLQueryItem(name: "order", value: "year.asc")]
+    }
+
+    static func storyByID(_ id: String) -> [URLQueryItem] {
+        [eq("id", id), URLQueryItem(name: "limit", value: "1")]
+    }
+
+    static func tours(city: String) -> [URLQueryItem] {
+        [
+            eq("city", city),
+            URLQueryItem(name: "select", value: "*,tour_stop(*)"),
+            URLQueryItem(name: "order", value: "title.asc"),
+        ]
+    }
+
+    static func tourBySlug(_ slug: String) -> [URLQueryItem] {
+        [
+            eq("slug", slug),
+            URLQueryItem(name: "select", value: "*,tour_stop(*)"),
+            URLQueryItem(name: "limit", value: "1"),
+        ]
+    }
+
+    /// Filter values stay in the query item value (not interpolated into the
+    /// path). Commas and periods are stripped so they cannot widen an `eq.`
+    /// filter into an `in.` list.
+    static func eq(_ column: String, _ raw: String) -> URLQueryItem {
+        let cleaned = raw
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: ",", with: "")
+            .replacingOccurrences(of: ".", with: "")
+        return URLQueryItem(name: column, value: "eq.\(cleaned)")
+    }
+}

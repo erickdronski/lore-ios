@@ -99,7 +99,7 @@ enum OnboardingContent {
         .init(
             persona: .nightlife,
             symbol: "moon.stars",
-            interests: ["nightlife", "film_music", "trending"]
+            interests: ["nightlife", "film_music", "hidden_gems"]
         ),
     ]
 

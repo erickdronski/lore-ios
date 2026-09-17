@@ -65,7 +65,7 @@ Apple has finished processing the build.
 
 - Clean launch, onboarding, map, city selection, place card, and deep dive
 - Scanner permission denial, grant, restart, weak location, and known-place flow
-- Optional Google identification disclosure, cancellation, success, auth expiry,
+- Optional Identify landmark disclosure (Plus), cancellation, success, auth expiry,
   and quota response
 - Email registration, confirmation, sign-in, recovery, and sign-out
 - Lore+ product loading, eligible/ineligible trial copy, purchase cancellation,
@@ -91,7 +91,7 @@ Never upload the old map/profile set.
 
 ## App Review is separate
 
-A processed TestFlight build is not approval to submit version 1.1 for review.
+A processed TestFlight build is not approval to submit version 1.2 for review.
 Use `/Users/dron/Projects/lore/legal/APP-STORE-LISTING.md` and `HANDOFF.md` for
 the current submission gates. Explicit approval is required before pressing
 Submit for Review.

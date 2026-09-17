@@ -24,7 +24,7 @@ COVERAGE AND SOURCES
 Coverage varies by city and place. Lore helps you find places already in its catalog; it does not identify every building or object. Source links appear where available, and historical details may be incomplete or wrong. Scanner placement can also be approximate.
 
 YOUR CAMERA AND LOCATION
-Normal live scanning uses the camera, precise location while in use, heading, motion, and Apple frameworks on your device. Lore does not store a continuous camera feed or continuous location history. If you are signed in and explicitly choose Identify with Google, Lore asks before sending one current frame to Google Cloud Vision for that request. Lore does not use facial recognition, show third-party ads, track you across apps, or sell personal information.
+Normal live scanning uses the camera, precise location while in use, heading, motion, and Apple frameworks on your device. Lore does not store a continuous camera feed or continuous location history. If you are signed in with Lore+ and explicitly choose Identify landmark, Lore asks before sending one current still frame for optional image matching. Lore does not use facial recognition, show third-party ads, track you across apps, or sell personal information.
 
 Terms of Use (EULA): https://www.apple.com/legal/internet-services/itunes/dev/stdeula/
 Privacy Policy: https://lore-web-liart.vercel.app/privacy

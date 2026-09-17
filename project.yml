@@ -168,9 +168,9 @@ targets:
         # ── Purpose strings ─────────────────────────────────────────────────
         # Camera + location copy must match the release scanner and public
         # privacy policy. The scanner resolves places through local geospatial
-        # matching; no primary UI path sends camera frames to a third-party
-        # landmark service.
-        NSCameraUsageDescription: "Lore uses your camera to position nearby stories in the live scanner. Live scanning stays on your device, and Lore only opens a place when the local geospatial match earns it."
+        # matching; the opt-in Plus "Identify landmark" control may send one
+        # confirmed still frame to Lore's authenticated image-match function.
+        NSCameraUsageDescription: "Lore uses the camera to position nearby catalog places in the live scanner. Live scanning and ranking stay on this device. If you are signed in with Lore+ and choose Identify landmark, Lore asks before sending one still frame for optional image matching. Lore does not store a continuous camera feed."
         NSLocationWhenInUseUsageDescription: "Your precise location lets Lore know which block you're standing on, so it can load the stories around you and place them accurately in AR."
         NSLocationTemporaryUsageDescriptionDictionary:
           ScannerPrecision: "Precise Location lets Lore place nearby stories on the correct block while the live scanner is open."

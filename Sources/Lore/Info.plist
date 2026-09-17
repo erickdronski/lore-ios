@@ -34,7 +34,7 @@
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>NSCameraUsageDescription</key>
-	<string>Lore uses your camera to position nearby stories in the live scanner. Live scanning stays on your device, and Lore only opens a place when the local geospatial match earns it.</string>
+	<string>Lore uses the camera to position nearby catalog places in the live scanner. Live scanning and ranking stay on this device. If you are signed in with Lore+ and choose Identify landmark, Lore asks before sending one still frame for optional image matching. Lore does not store a continuous camera feed.</string>
 	<key>NSLocationTemporaryUsageDescriptionDictionary</key>
 	<dict>
 		<key>ScannerPrecision</key>
