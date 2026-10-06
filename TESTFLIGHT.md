@@ -5,8 +5,7 @@
 **App Store Connect app ID:** `6788171860`
 
 GitHub Actions is the authoritative native build, test, signing, archive, and
-TestFlight lane. This machine has Command Line Tools rather than the full iOS
-SDK; local Xcode is not required to publish Lore.
+TestFlight lane. Local Xcode is not required to publish Lore.
 
 ## Release contract
 
@@ -15,7 +14,8 @@ The workflow at `.github/workflows/ios-testflight.yml` always:
 1. Checks out one exact commit.
 2. Selects Xcode 26.3 and generates `Lore.xcodeproj` with XcodeGen.
 3. Runs the Lore unit-test suite on an iPhone simulator.
-4. Compiles the unsigned Release configuration.
+4. Compiles the unsigned Release configuration and runs the StoreKit purchase
+   journeys.
 5. Archives, signs, and uploads only when a manual dispatch sets
    `upload_to_testflight=true`.
 
@@ -78,20 +78,20 @@ Account deletion should use a disposable account.
 
 ## Screenshots are a separate release artifact
 
-`fastlane screenshots_upload` intentionally cannot upload the existing
-promotional set. The lane requires
-`fastlane/promo_screenshots/SOURCE_SHA`, containing the full Git commit SHA from
-which every screenshot was captured, and refuses to run unless it equals the
-current checkout.
+`fastlane screenshots_upload` (the **App Store · Upload Screenshots** workflow)
+uploads `fastlane/promo_screenshots` only when
+`fastlane/promo_screenshots/SOURCE_SHA` exactly matches the
+`release_source_sha` dispatch input and that commit is an ancestor of the
+checkout. It never touches the binary or text metadata.
 
 Regenerate the complete set from the exact release build, including a genuine
 physical-device scanner capture. Audit every visible claim, flatten alpha, and
-verify App Store Connect's current dimensions before creating `SOURCE_SHA`.
-Never upload the old map/profile set.
+verify App Store Connect's current dimensions before recording `SOURCE_SHA` and
+`CAPTURE.json`.
 
 ## App Review is separate
 
-A processed TestFlight build is not approval to submit version 1.2 for review.
-Use `/Users/dron/Projects/lore/legal/APP-STORE-LISTING.md` and `HANDOFF.md` for
-the current submission gates. Explicit approval is required before pressing
-Submit for Review.
+A processed TestFlight build is not approval to submit a version for review.
+Submission goes through the **App Store · Preflight / Submit** workflow and the
+guards described in `docs/APP-STORE-RELEASE-TOOLING.md`. Explicit approval is
+required before submitting for review.
