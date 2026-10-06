@@ -174,8 +174,8 @@ class LoreReleaseToolingTest < Minitest::Test
   end
 
   def test_screenshot_upload_targets_and_verifies_the_exact_reviewed_package
-    fastfile = File.read(File.expand_path("../Fastfile", __dir__))
-    workflow = File.read(File.expand_path("../../.github/workflows/screenshots-upload.yml", __dir__))
+    fastfile = File.read(File.expand_path("../Fastfile", __dir__), encoding: "UTF-8")
+    workflow = File.read(File.expand_path("../../.github/workflows/screenshots-upload.yml", __dir__), encoding: "UTF-8")
 
     upload = lane_body("screenshots_upload")
     assert_includes upload, "EXPECTED_VERSION"
@@ -222,7 +222,7 @@ class LoreReleaseToolingTest < Minitest::Test
   end
 
   def test_submission_helper_uses_ready_review_submission_and_item_verification
-    fastfile = File.read(File.expand_path("../Fastfile", __dir__))
+    fastfile = File.read(File.expand_path("../Fastfile", __dir__), encoding: "UTF-8")
 
     assert_includes fastfile, "get_ready_review_submission"
     assert_includes fastfile, "wait_for_review_submission_item!"
@@ -331,7 +331,7 @@ class LoreReleaseToolingTest < Minitest::Test
   def test_checked_in_release_configuration_has_matching_targets_and_release_notes
     settings = LoreReleaseTooling.project_release_settings(File.expand_path("../../project.yml", __dir__))
     version = LoreReleaseTooling.release_version!(settings.fetch(:version), project_version: settings.fetch(:version))
-    notes = File.read(File.expand_path("../release_notes/#{version}.en-US.txt", __dir__)).strip
+    notes = File.read(File.expand_path("../release_notes/#{version}.en-US.txt", __dir__), encoding: "UTF-8").strip
     assert (1..4000).cover?(notes.length), "The project version needs nonempty App Store release notes of at most 4000 characters"
     description = File.read(File.expand_path("../release_notes/#{version}.description.en-US.txt", __dir__), encoding: "UTF-8")
     assert description.valid_encoding?, "The reviewed description must be UTF-8"
@@ -620,7 +620,7 @@ class LoreReleaseToolingTest < Minitest::Test
   end
 
   def all_lane_bodies
-    lines = File.readlines(File.expand_path("../Fastfile", __dir__))
+    lines = File.readlines(File.expand_path("../Fastfile", __dir__), encoding: "UTF-8")
     starts = lines.each_index.select { |index| lines[index].match?(/^  lane :\w+\b/) }
     starts.to_h do |start|
       name = lines[start].match(/^  lane :(\w+)\b/)[1]
