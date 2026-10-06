@@ -6,7 +6,8 @@ Expo/EAS is not part of this release lane.
 
 ## What publishes
 
-- A push to `main` or a pull request runs the unit-test gate only.
+- A push to `main` or a pull request runs validation only: unit tests, an
+  unsigned Release compile, and the StoreKit purchase journeys.
 - TestFlight upload requires an explicit **Run workflow** action with
   `upload_to_testflight` enabled.
 - The upload job tests the exact checkout before it archives, signs, and uploads.
@@ -86,6 +87,7 @@ assets into a throwaway CI keychain, archives Release, and uploads the IPA.
 - **No signing profile:** verify both app identifiers exist and the API key has
   sufficient Apple access; Match must create/fetch profiles for both targets.
 - **Duplicate build number:** rerun the workflow. The lane queries the latest
-  build for marketing version `1.0` and increments it.
+  TestFlight build for the marketing version in `project.yml` and uses one
+  above it, never below the project's `CURRENT_PROJECT_VERSION` floor.
 - **Upload passed but build is absent:** allow Apple processing time, then inspect
   App Store Connect processing errors and the workflow build logs.
