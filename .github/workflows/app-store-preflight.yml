@@ -65,7 +65,7 @@ jobs:
       - name: Ruby + Fastlane (cached)
         uses: ruby/setup-ruby@984c0c890880bbf811283d6f09c4607c62d210a4 # v1
         with:
-          ruby-version: "3.2"
+          ruby-version: "3.4"
           bundler-cache: true
 
       - name: Validate release guards before App Store access

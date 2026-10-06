@@ -20,7 +20,7 @@ jobs:
       - name: Ruby
         uses: ruby/setup-ruby@984c0c890880bbf811283d6f09c4607c62d210a4 # v1
         with:
-          ruby-version: "3.2"
+          ruby-version: "3.4"
 
       - name: Run offline release-tooling tests
         run: ruby fastlane/spec/lore_release_tooling_test.rb
