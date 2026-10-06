@@ -27,3 +27,24 @@ fastlane/*.p8
 tools/narration/.venv/
 tools/narration/models/
 tools/narration/out/
+
+# Signing material and local credentials. Release signing comes only from
+# fastlane match and GitHub Actions secrets; none of these belong in the repo.
+*.p12
+*.cer
+*.certSigningRequest
+*.mobileprovision
+*.provisionprofile
+.env
+.env.*
+!.env.example
+
+# Local tool state
+*.xcresult
+.build/
+.swiftpm/
+.bundle/
+vendor/bundle/
+node_modules/
+supabase/.temp/
+supabase/.branches/
