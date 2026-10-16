@@ -1,0 +1,4 @@
+# These SQL payloads are compiled from reviewed JSON by tools/content-wave.
+# Keep authored SQL and all application source in language statistics.
+supabase/content/wave-2026-07/regional-sections.sql linguist-generated=true
+supabase/content/wave-2026-07/missing-dives.sql linguist-generated=true
