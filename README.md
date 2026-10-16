@@ -11,10 +11,22 @@ one you pick. Browse the map from home, follow self-guided walks, and keep a
 private visit journal.
 
 **Status:** version 1.2 is [live on the App Store](https://apps.apple.com/us/app/lore-ar-city-history-guide/id6788171860)
-(released September 5, 2026). Build 48 was archived, signed and uploaded to
-TestFlight by this repository's manual release lane from commit
-[`261d633`](https://github.com/erickdronski/lore-ios/commit/261d633d277a9940b849b108df0f10776e657f76).
-`main` carries post-release fixes that have not shipped yet.
+(released September 5, 2026). `main` carries post-release fixes that have not
+shipped yet. This repository contains the iOS client; the backend is maintained
+separately.
+
+[Try Lore](https://apps.apple.com/us/app/lore-ar-city-history-guide/id6788171860) ·
+[Product screenshots](#screenshots) · [Architecture](#architecture) ·
+[Build and test](#build-and-test)
+
+## Product decisions
+
+- **Make nearby history discoverable.** The scanner connects a place in front of
+  you to its story; the map and walking tours support exploration before a trip.
+- **Show uncertainty.** Geospatial ranking runs on the device, and the scanner
+  uses confidence tiers and disambiguation when the location or heading is noisy.
+- **Keep exploration accessible.** Browsing works without an account. Lore+
+  adds paid depth through StoreKit, with restore and server verification.
 
 ## Screenshots
 
@@ -125,8 +137,8 @@ covered by unit tests (`ScannerLogicTests`, `VisionRecognitionTests`).
   anon key; user rows (`visit`, `saved_place`, `user_prefs`, `entitlements`,
   `user_achievement`) require the signed-in user's token and are scoped by
   row-level security.
-- The anon key in `Config.swift` is the publishable client key by design. No
-  service-role key exists anywhere in this repository or its history.
+- The anon key in `Config.swift` is the publishable client key by design.
+  Privileged server credentials belong in the backend environment.
 - Privileged work runs in Edge Functions: `sync-apple-purchase` re-verifies
   StoreKit JWS transactions against Apple's chain before writing an
   entitlement, `delete-account` performs fenced account deletion, `streetview`
@@ -186,12 +198,17 @@ bundle exec fastlane tests
 ruby fastlane/spec/lore_release_tooling_test.rb
 ```
 
-The unit suite has 236 tests across scanner math, Vision parsing, networking
+The unit suite covers scanner math, Vision parsing, networking
 resilience, StoreKit entitlement logic, account flows, privacy-manifest
-contracts and layout. The app runs against the production Supabase project
-with the publishable key; no local backend is needed.
+contracts and layout. The default app configuration connects to the production
+Supabase project with its publishable key. The backend source is not included,
+so cloning this repository does not create an independent backend.
 
 ## CI and release pipeline
+
+The shipped 1.2 build (48) was archived, signed, and uploaded to TestFlight by
+this repository's manual release lane from commit
+[`261d633`](https://github.com/erickdronski/lore-ios/commit/261d633d277a9940b849b108df0f10776e657f76).
 
 | Workflow | Trigger | What it does |
 | --- | --- | --- |
@@ -217,7 +234,7 @@ Release design:
 - **Supply chain.** Every third-party action is pinned to a full commit SHA,
   and Dependabot is configured for both the actions and the Bundler lockfile.
 
-The operator runbook is [TESTFLIGHT.md](TESTFLIGHT.md); the App Store guard
+The release runbook is [TESTFLIGHT.md](TESTFLIGHT.md); the App Store guard
 design is in [docs/APP-STORE-RELEASE-TOOLING.md](docs/APP-STORE-RELEASE-TOOLING.md).
 
 ## Repository map
