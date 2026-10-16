@@ -73,6 +73,10 @@ struct AuthUser: Codable {
 final class AuthService {
     private(set) var session: AuthSession? {
         didSet {
+            if oldValue?.user.id != session?.user.id {
+                profileGeneration = UUID()
+                profile = nil
+            }
             if let session {
                 if !SessionStore.save(session) {
                     lastNotice = "You're signed in for now, but Lore couldn't securely remember this session."
@@ -100,6 +104,8 @@ final class AuthService {
     @ObservationIgnored private var sessionRefreshTask: Task<Bool, Never>?
     @ObservationIgnored private var sessionRefreshID: UUID?
     @ObservationIgnored private let urlSession: URLSession
+    @ObservationIgnored private let profileAPI: LoreAPI
+    @ObservationIgnored private var profileGeneration = UUID()
 
     /// Runs the `ASWebAuthenticationSession` for Supabase OAuth providers.
     @ObservationIgnored private let webAuth: WebAuthCoordinator
@@ -124,6 +130,7 @@ final class AuthService {
         webAuth: WebAuthCoordinator? = nil
     ) {
         self.urlSession = urlSession
+        self.profileAPI = LoreAPI(session: urlSession)
         self.webAuth = webAuth ?? WebAuthCoordinator()
     }
 
@@ -526,12 +533,23 @@ final class AuthService {
 
     /// Loads the signed-in user's `user_profile` row (trust tier, points).
     func refreshProfile() async {
-        guard let token = await validAccessToken() else { return }
+        let generation = profileGeneration
+        guard let userID = session?.user.id,
+              let token = await validAccessToken(),
+              generation == profileGeneration else { return }
         do {
-            profile = try await LoreAPI.shared.profile(accessToken: token)
+            let loaded = try await profileAPI.profile(accessToken: token)
+            guard generation == profileGeneration, session?.user.id == userID else { return }
+            profile = loaded
         } catch LoreAPI.APIError.http(let status, _) where status == 401 {
-            guard let refreshedToken = await validAccessToken(forceRefresh: true) else { return }
-            profile = try? await LoreAPI.shared.profile(accessToken: refreshedToken)
+            // A response from a previous account must neither refresh the new
+            // account's session nor restore its predecessor's profile.
+            guard generation == profileGeneration, session?.user.id == userID,
+                  let refreshedToken = await validAccessToken(forceRefresh: true),
+                  generation == profileGeneration else { return }
+            let loaded = try? await profileAPI.profile(accessToken: refreshedToken)
+            guard generation == profileGeneration, session?.user.id == userID else { return }
+            profile = loaded
         } catch {
             // Profile is supplemental; keep the rest of the signed-in app live.
         }
