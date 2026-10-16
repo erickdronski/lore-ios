@@ -42,7 +42,7 @@ jobs:
         run: xcrun simctl list devices available | grep -Ei "iphone|ipad" || true
 
       - name: Ruby + Fastlane (cached)
-        uses: ruby/setup-ruby@984c0c890880bbf811283d6f09c4607c62d210a4 # v1
+        uses: ruby/setup-ruby@651ff0d62c5c79bed6d53ec518387aae20e72c1a # v1
         with:
           ruby-version: "3.4"
           bundler-cache: true
@@ -52,7 +52,7 @@ jobs:
 
       - name: Upload screenshots artifact
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: app-store-screenshots
           path: fastlane/screenshots
@@ -61,7 +61,7 @@ jobs:
 
       - name: Save fastlane logs on failure
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: screenshot-logs
           path: |
