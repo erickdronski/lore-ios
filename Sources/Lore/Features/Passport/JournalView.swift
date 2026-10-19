@@ -548,54 +548,36 @@ struct NoteEditorSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(VisitStore.self) private var visits
     @Environment(AuthService.self) private var auth
-    @State private var text: String
+    @State private var editor: JournalEditorState
+    @State private var operationTask: Task<Void, Never>?
     @State private var picked: PhotosPickerItem?
-    @State private var uploading = false
-    @State private var saving = false
-    @State private var sheetError: String?
-    @State private var persistedText: String
-    @State private var legacyShareWasPublic: Bool
     @State private var showDiscardConfirmation = false
     @State private var showClearConfirmation = false
-    @State private var editingUserID: String?
     @State private var photoToDelete: String?
     @State private var showDeleteMemoryConfirmation = false
-    @State private var deleting = false
-    @State private var localPhotoPaths: [String] = []
-    @State private var pendingPhoto: PendingJournalPhoto?
 
     private let maximumCharacters = JournalDraftPolicy.maximumCharacters
     private let maximumPhotos = 12
 
-    private struct PendingJournalPhoto: Identifiable {
-        let id = UUID()
-        let data: Data
-    }
-
     init(entry: VisitLogEntry, onSave: @escaping (String) async -> Bool) {
         self.entry = entry
         self.onSave = onSave
-        _text = State(initialValue: entry.note ?? "")
-        _persistedText = State(initialValue: JournalDraftPolicy.normalized(entry.note ?? ""))
-        _legacyShareWasPublic = State(initialValue: entry.hasLegacyPublicFlag)
+        _editor = State(initialValue: JournalEditorState(
+            text: entry.note ?? "", legacyShareWasPublic: entry.hasLegacyPublicFlag
+        ))
     }
 
     /// Live photos for this place from the store, so an upload shows immediately.
     private var photos: [String] {
         let stored = visits.visitHistory.first(where: { $0.placeID == entry.placeID })?.photoPaths ?? entry.photoPaths
-        return Self.uniquePhotoPaths(stored + localPhotoPaths)
+        return editor.visiblePhotos(stored: stored)
     }
-    private var visiblePhotoCount: Int { photos.count + (pendingPhoto == nil ? 0 : 1) }
-
-    private var normalizedText: String { JournalDraftPolicy.normalized(text) }
-    private var hasUnsavedChanges: Bool {
-        normalizedText != persistedText
-    }
-    private var validationMessage: String? {
-        JournalDraftPolicy.validationMessage(text: text)
-    }
+    private var isPerformingOperation: Bool { editor.isBusy || operationTask != nil }
+    private var visiblePhotoCount: Int { photos.count + (editor.pendingPhoto == nil ? 0 : 1) }
 
     var body: some View {
+        @Bindable var editor = editor
+        let isUploading = editor.operation == .upload
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
@@ -605,7 +587,7 @@ struct NoteEditorSheet: View {
                         .font(LoreType.label)
                         .tracking(0.7)
                         .foregroundStyle(LoreColor.brass700)
-                    TextEditor(text: $text)
+                    TextEditor(text: $editor.text)
                         .font(LoreType.body)
                         .foregroundStyle(LoreColor.ink)
                         .tint(LoreColor.brass700)
@@ -618,22 +600,22 @@ struct NoteEditorSheet: View {
                                 .strokeBorder(LoreColor.bone300, lineWidth: 1)
                         )
                         .accessibilityLabel("Field note")
-                        .disabled(saving)
+                        .disabled(isPerformingOperation)
 
                     HStack {
-                        if !normalizedText.isEmpty {
+                        if !editor.normalizedText.isEmpty {
                             Button("Clear note", role: .destructive) {
                                 showClearConfirmation = true
                             }
                             .font(LoreType.caption)
-                            .disabled(saving)
+                            .disabled(isPerformingOperation)
                         }
                         Spacer()
-                        Text("\(text.count)/\(maximumCharacters)")
+                        Text("\(editor.text.count)/\(maximumCharacters)")
                             .font(LoreType.caption)
                             .monospacedDigit()
-                            .foregroundStyle(text.count > maximumCharacters ? LoreColor.error : LoreColor.ink600)
-                            .accessibilityLabel("\(text.count) of \(maximumCharacters) characters")
+                            .foregroundStyle(editor.text.count > maximumCharacters ? LoreColor.error : LoreColor.ink600)
+                            .accessibilityLabel("\(editor.text.count) of \(maximumCharacters) characters")
                     }
 
                     HStack {
@@ -644,14 +626,14 @@ struct NoteEditorSheet: View {
                         Spacer()
                         PhotosPicker(selection: $picked, matching: .images) {
                             HStack(spacing: 6) {
-                                if uploading { ProgressView() } else { Image(systemName: "plus") }
+                                if isUploading { ProgressView() } else { Image(systemName: "plus") }
                                 Text("Add photo").font(LoreType.button)
                             }
                             .foregroundStyle(LoreColor.brass700)
                         }
-                        .disabled(saving || uploading || visiblePhotoCount >= maximumPhotos)
+                        .disabled(isPerformingOperation || visiblePhotoCount >= maximumPhotos)
                     }
-                    if photos.isEmpty && pendingPhoto == nil {
+                    if photos.isEmpty && editor.pendingPhoto == nil {
                         HStack(spacing: 10) {
                             Image(systemName: "photo.badge.plus")
                                 .font(.system(size: 20, weight: .medium))
@@ -667,8 +649,8 @@ struct NoteEditorSheet: View {
                     } else {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 10) {
-                                if let pendingPhoto {
-                                    LocalJournalPhotoThumb(data: pendingPhoto.data, size: 96)
+                                if let pendingPhoto = editor.pendingPhoto {
+                                    LocalJournalPhotoThumb(data: pendingPhoto, size: 96)
                                         .overlay {
                                             ZStack {
                                                 Color.black.opacity(0.2)
@@ -694,7 +676,7 @@ struct NoteEditorSheet: View {
                                             .frame(width: 44, height: 44, alignment: .topTrailing)
                                             .contentShape(Rectangle())
                                             .accessibilityLabel("Remove this photo")
-                                            .disabled(saving || uploading || deleting)
+                                            .disabled(isPerformingOperation)
                                         }
                                 }
                             }
@@ -712,12 +694,12 @@ struct NoteEditorSheet: View {
 
                     privacySection
 
-                    if let message = validationMessage {
+                    if let message = editor.validationMessage {
                         Label(message, systemImage: "exclamationmark.triangle.fill")
                             .font(LoreType.caption)
                             .foregroundStyle(LoreColor.error)
                             .fixedSize(horizontal: false, vertical: true)
-                    } else if let sheetError {
+                    } else if let sheetError = editor.error {
                         Label(sheetError, systemImage: "exclamationmark.triangle.fill")
                             .font(LoreType.caption)
                             .foregroundStyle(LoreColor.error)
@@ -730,7 +712,7 @@ struct NoteEditorSheet: View {
                         showDeleteMemoryConfirmation = true
                     } label: {
                         HStack(spacing: 8) {
-                            if deleting { ProgressView() } else { Image(systemName: "trash") }
+                            if editor.operation == .removeMemory { ProgressView() } else { Image(systemName: "trash") }
                             Text("Remove this memory")
                         }
                         .font(LoreType.button)
@@ -738,7 +720,7 @@ struct NoteEditorSheet: View {
                         .frame(maxWidth: .infinity, minHeight: 44)
                     }
                     .buttonStyle(.plain)
-                    .disabled(saving || uploading || deleting)
+                    .disabled(isPerformingOperation)
                     .accessibilityHint("Deletes this visit, its note, and its photos.")
 
                     Spacer(minLength: 0)
@@ -753,34 +735,38 @@ struct NoteEditorSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {
-                        if hasUnsavedChanges {
+                        guard !isPerformingOperation else { return }
+                        if editor.hasUnsavedChanges {
                             showDiscardConfirmation = true
                         } else {
                             dismiss()
                         }
                     }
-                    .disabled(saving || uploading)
+                    .disabled(isPerformingOperation)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
-                        saving = true
-                        Task { await saveChanges() }
+                        runOperation {
+                            if await editor.save() { dismiss() }
+                        }
                     }
-                    .disabled(saving || uploading || validationMessage != nil)
+                    .disabled(isPerformingOperation || editor.validationMessage != nil)
                 }
             }
-            .interactiveDismissDisabled(hasUnsavedChanges || saving || uploading)
+            .interactiveDismissDisabled(isPerformingOperation || !editor.allowsInteractiveDismissal)
             .confirmationDialog(
                 "Discard your unsaved changes?",
                 isPresented: $showDiscardConfirmation,
                 titleVisibility: .visible
             ) {
-                Button("Discard changes", role: .destructive) { dismiss() }
+                Button("Discard changes", role: .destructive) {
+                    if !isPerformingOperation { dismiss() }
+                }
                 Button("Keep editing", role: .cancel) {}
             }
             .alert("Clear this field note?", isPresented: $showClearConfirmation) {
                 Button("Clear note", role: .destructive) {
-                    text = ""
+                    if !isPerformingOperation { editor.text = "" }
                 }
                 Button("Cancel", role: .cancel) {}
             } message: {
@@ -792,106 +778,72 @@ struct NoteEditorSheet: View {
             ) {
                 Button("Remove photo", role: .destructive) {
                     if let path = photoToDelete {
-                        Task {
-                            if await visits.removePhoto(placeID: entry.placeID, path: path) {
-                                localPhotoPaths.removeAll { $0 == path }
-                            } else {
-                                sheetError = visits.lastError ?? "Couldn't remove that photo."
-                            }
-                            photoToDelete = nil
-                        }
+                        runOperation { await editor.removePhoto(path: path) }
                     }
+                    photoToDelete = nil
                 }
+
                 Button("Keep", role: .cancel) { photoToDelete = nil }
             } message: {
                 Text("This private photo is deleted right away.")
             }
             .alert("Remove this memory?", isPresented: $showDeleteMemoryConfirmation) {
                 Button("Remove memory", role: .destructive) {
-                    deleting = true
-                    Task {
-                        let ok = await visits.deleteVisit(placeID: entry.placeID, photoPaths: photos)
-                        deleting = false
-                        if ok { dismiss() } else { sheetError = visits.lastError ?? "Couldn't remove that memory." }
+                    let paths = photos
+                    runOperation {
+                        if await editor.removeMemory(photoPaths: paths) { dismiss() }
                     }
                 }
+
                 Button("Keep", role: .cancel) {}
             } message: {
                 Text("This deletes your note and \(photos.count) photo\(photos.count == 1 ? "" : "s") for this place. It can't be undone.")
             }
             .onChange(of: picked) { _, item in
                 guard let item else { return }
-                uploading = true
-                Task {
-                    sheetError = nil
-                    defer {
-                        picked = nil
-                        uploading = false
+                runOperation {
+                    await editor.upload {
+                        guard let data = try await item.loadTransferable(type: Data.self) else { return nil }
+                        guard !Task.isCancelled, editor.isCurrentIdentity else { return nil }
+                        return await JournalImageProcessor.preparedJPEG(data)
                     }
-                    do {
-                        guard let data = try await item.loadTransferable(type: Data.self),
-                              let jpeg = await JournalImageProcessor.preparedJPEG(data) else {
-                            sheetError = "That photo couldn't be prepared for upload."
-                            return
-                        }
-                        let pending = PendingJournalPhoto(data: jpeg)
-                        pendingPhoto = pending
-                        guard let path = await visits.addPhoto(placeID: entry.placeID, imageData: jpeg) else {
-                            if pendingPhoto?.id == pending.id { pendingPhoto = nil }
-                            sheetError = visits.lastError ?? "Couldn't add that photo."
-                            return
-                        }
-                        if !localPhotoPaths.contains(path) { localPhotoPaths.append(path) }
-                        if pendingPhoto?.id == pending.id { pendingPhoto = nil }
-                    } catch is CancellationError {
-                        pendingPhoto = nil
-                        return
-                    } catch {
-                        pendingPhoto = nil
-                        sheetError = "That photo couldn't be prepared for upload."
-                    }
+                    if editor.isCurrentIdentity { picked = nil }
                 }
             }
             .onAppear {
-                if editingUserID == nil { editingUserID = auth.session?.user.id }
+                let auth = auth
+                let visits = visits
+                let placeID = entry.placeID
+                let onSave = onSave
+                editor.connect(.init(
+                    currentUserID: { auth.session?.user.id },
+                    saveNote: onSave,
+                    makePrivate: { await visits.makePrivateIfNeeded(placeID: placeID) },
+                    addPhoto: { await visits.addPhoto(placeID: placeID, imageData: $0) },
+                    removePhoto: { await visits.removePhoto(placeID: placeID, path: $0) },
+                    removeMemory: { await visits.deleteVisit(placeID: placeID, photoPaths: $0) },
+                    lastError: { visits.lastError }
+                ))
             }
-            .onChange(of: auth.session?.user.id) { _, newUserID in
-                guard let editingUserID, newUserID != editingUserID else { return }
+            .onChange(of: auth.session?.user.id) { _, _ in
+                editor.invalidate()
+                operationTask?.cancel()
                 dismiss()
+            }
+            .onDisappear {
+                editor.invalidate()
+                operationTask?.cancel()
             }
         }
     }
 
     @MainActor
-    private func saveChanges() async {
-        guard validationMessage == nil else { return }
-        sheetError = nil
-        defer { saving = false }
-
-        let desiredText = normalizedText
-        // Privacy first: clear any stale flag left by a pre-launch client.
-        if legacyShareWasPublic {
-            guard await visits.makePrivateIfNeeded(placeID: entry.placeID) else {
-                sheetError = visits.lastError ?? "Couldn't make that note private."
-                return
-            }
-            legacyShareWasPublic = false
+    private func runOperation(_ action: @escaping @MainActor () async -> Void) {
+        guard !editor.isBusy, operationTask == nil else { return }
+        operationTask = Task {
+            await action()
+            if editor.isCurrentIdentity { operationTask = nil }
         }
-
-        if desiredText != persistedText {
-            guard await onSave(desiredText) else {
-                sheetError = visits.lastError ?? "Couldn't save your note."
-                return
-            }
-            persistedText = desiredText
-        }
-
-        dismiss()
-    }
-
-    private static func uniquePhotoPaths(_ paths: [String]) -> [String] {
-        var seen = Set<String>()
-        return paths.filter { seen.insert($0).inserted }
     }
 
     private var editorMasthead: some View {
@@ -1005,21 +957,6 @@ enum JournalImageProcessor {
     }
 }
 
-enum JournalDraftPolicy {
-    static let maximumCharacters = 2_000
-
-    static func normalized(_ text: String) -> String {
-        text.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    static func validationMessage(text: String) -> String? {
-        if text.count > maximumCharacters {
-            return "Shorten this field note to \(maximumCharacters) characters before saving."
-        }
-        return nil
-    }
-}
-
 /// A just-picked private journal photo. It makes the user's selected image
 /// visible immediately while the durable Storage path and signed URL settle.
 struct LocalJournalPhotoThumb: View {
@@ -1063,8 +1000,28 @@ struct LocalJournalPhotoThumb: View {
 /// path (RLS-guarded to the owner) and loads it, with a quiet placeholder.
 struct JournalPhotoThumb: View {
     @Environment(VisitStore.self) private var visits
+    @Environment(AuthService.self) private var auth
     let path: String
     var size: CGFloat = 72
+
+    private struct Identity: Hashable {
+        let path: String
+        let userID: String?
+        let generation: UUID
+    }
+
+    var body: some View {
+        SessionJournalPhotoThumb(path: path, size: size)
+            .id(Identity(path: path, userID: auth.session?.user.id, generation: visits.photoSessionGeneration))
+    }
+}
+
+/// Keep image and retry state inside the session identity, so a previously
+/// resolved private URL cannot render while the replacement task is starting.
+private struct SessionJournalPhotoThumb: View {
+    @Environment(VisitStore.self) private var visits
+    let path: String
+    let size: CGFloat
     @State private var url: URL?
     @State private var hasResolvedURL = false
     @State private var reloadToken = 0

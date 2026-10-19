@@ -338,6 +338,9 @@ struct RootTabView: View {
         // returning users are not asked to sign in again.
         .task { await auth.restore() }
         // Session changes ripple to every dependent store.
+        .onChange(of: auth.session?.user.id) { _, _ in
+            resetTravelIdentityIfNeeded()
+        }
         .task(id: auth.session?.accessToken) { await syncSession() }
         // iOS suspends timers in the background. Refresh an expired/near-expiry
         // Supabase token as soon as the app is usable again.
@@ -767,15 +770,12 @@ struct RootTabView: View {
     /// prefs (persona lens), and the Travel visit set. Also folds a signed-out
     /// user's stashed filter changes back once they sign in.
     private func syncSession() async {
-        let token = await auth.validAccessToken()
+        // Clear private capabilities before a token refresh can suspend. The
+        // synchronous identity observer also clears them while this task waits.
+        resetTravelIdentityIfNeeded()
         let userID = auth.session?.user.id
-
-        if userID != syncedUserID {
-            travel.visits.reset()
-            travel.savedPlaces.reset()
-            travel.clearUnlocks()
-            syncedUserID = userID
-        }
+        let token = await auth.validAccessToken()
+        guard !Task.isCancelled, auth.session?.user.id == userID else { return }
 
         if token == nil {
             entitlements.clear()
@@ -789,15 +789,28 @@ struct RootTabView: View {
                 userID: userID,
                 accessToken: token
             )
+            guard !Task.isCancelled, auth.session?.user.id == userID else { return }
             try? await MapFilterStore.flushPending(
                 userID: userID,
                 accessToken: token
             )
         }
 
+        guard !Task.isCancelled, auth.session?.user.id == userID else { return }
         await entitlements.refresh(accessToken: token)
+        guard !Task.isCancelled, auth.session?.user.id == userID else { return }
         await prefs.load(accessToken: token, force: true)
+        guard !Task.isCancelled, auth.session?.user.id == userID else { return }
         await travel.bootstrap(prefs: prefs.prefs)
+    }
+
+    private func resetTravelIdentityIfNeeded() {
+        let userID = auth.session?.user.id
+        guard userID != syncedUserID else { return }
+        travel.visits.reset()
+        travel.savedPlaces.reset()
+        travel.clearUnlocks()
+        syncedUserID = userID
     }
 }
 
