@@ -5,6 +5,7 @@ import XCTest
 final class LoreNetworkResilienceTests: XCTestCase {
     override func tearDown() {
         NetworkStubProtocol.handler = nil
+        NetworkStubProtocol.timeoutIntervalOverride = nil
         super.tearDown()
     }
 
@@ -61,6 +62,10 @@ final class LoreNetworkResilienceTests: XCTestCase {
     }
 
     func testDeletionStopsPollingAtTimeBudgetWithoutPretendingCompletion() async throws {
+        // Test the polling deadline independently of URLProtocol delivery. A zero
+        // budget gives the request a 100ms timeout, which can expire while a busy
+        // simulator schedules the stub before its first response is received.
+        NetworkStubProtocol.timeoutIntervalOverride = 30
         var requests = 0
         NetworkStubProtocol.handler = { request in
             requests += 1
@@ -644,10 +649,17 @@ private func XCTAssertThrowsAsyncError<T>(
 
 private final class NetworkStubProtocol: URLProtocol {
     static var handler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
+    static var timeoutIntervalOverride: TimeInterval?
 
     override class func canInit(with request: URLRequest) -> Bool { true }
 
-    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+        var request = request
+        if let timeoutIntervalOverride {
+            request.timeoutInterval = timeoutIntervalOverride
+        }
+        return request
+    }
 
     override func startLoading() {
         guard let handler = Self.handler else { return }
