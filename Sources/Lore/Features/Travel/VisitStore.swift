@@ -52,17 +52,13 @@ final class VisitStore {
 
     private let api: LoreAPI
 
-    private struct CachedPhotoURL {
-        let url: URL
-        let expiresAt: Date
-    }
-
-    /// Signed Storage URLs are valid for an hour. Keep them for 50 minutes so
-    /// scrolling the journal does not re-sign every thumbnail on every appear.
-    private var photoURLCache: [String: CachedPhotoURL] = [:]
-    /// Freshly uploaded private photos should render immediately, even before
-    /// Supabase signs and serves the object back to `AsyncImage`.
-    private var photoPreviewCache: [String: Data] = [:]
+    /// Changes on reset and account changes, including signing back into the
+    /// same account. Views use this identity to discard already-resolved URLs.
+    private(set) var photoSessionGeneration = UUID()
+    @ObservationIgnored private var photoUserID: String?
+    private let photoURLs: PhotoURLLoader
+    /// Reading a preview during view rendering updates only ignored LRU state.
+    @ObservationIgnored private var photoPreviewCache = PhotoPreviewCache()
     private let visitsLoader: VisitsLoader
     private let visitHistoryLoader: VisitHistoryLoader
 
@@ -75,13 +71,20 @@ final class VisitStore {
         visitHistoryLoader: @escaping VisitHistoryLoader = { accessToken in
             try await TravelReads.visitHistory(accessToken: accessToken)
         },
-        onUnlocks: @escaping ([Achievement]) -> Void = { _ in }
+        onUnlocks: @escaping ([Achievement]) -> Void = { _ in },
+        photoURLSigner: @escaping PhotoURLLoader.Signer = { path, accessToken in
+            try await TravelReads.signedJournalPhotoURL(path: path, accessToken: accessToken)
+        },
+        photoURLClock: @escaping () -> Date = Date.init,
+        photoURLLimits: PhotoURLLoader.Limits = .init()
     ) {
         self.api = api
         self.credentials = credentials
         self.visitsLoader = visitsLoader
         self.visitHistoryLoader = visitHistoryLoader
         self.onUnlocks = onUnlocks
+        self.photoURLs = PhotoURLLoader(signer: photoURLSigner, now: photoURLClock, limits: photoURLLimits)
+        self.photoUserID = credentials()?.userID
     }
 
     // MARK: - Queries
@@ -161,17 +164,21 @@ final class VisitStore {
     /// Save the user's note ("their lore") on a visited place, then refresh.
     @discardableResult
     func saveNote(placeID: String, note: String) async -> Bool {
-        guard let creds = credentials() else {
+        guard let creds = synchronizePhotoSession() else {
             lastError = "Sign in to save a journal note."
             return false
         }
+        let generation = photoSessionGeneration
         do {
             lastError = nil
             try await TravelReads.updateVisitNote(placeID: placeID, note: note, accessToken: creds.accessToken)
-            await settleAchievements(for: creds)
+            guard isCurrentPhotoSession(generation, userID: creds.userID) else { return false }
+            await settleAchievements(for: creds, photoGeneration: generation)
+            guard isCurrentPhotoSession(generation, userID: creds.userID) else { return false }
             await loadHistory(force: true)
-            return true
+            return isCurrentPhotoSession(generation, userID: creds.userID)
         } catch {
+            guard isCurrentPhotoSession(generation, userID: creds.userID) else { return false }
             lastError = "Couldn't save your note."
             return false
         }
@@ -180,20 +187,25 @@ final class VisitStore {
     /// Upload a journal photo for a place, append its path, and refresh.
     @discardableResult
     func addPhoto(placeID: String, imageData: Data) async -> String? {
-        guard let creds = credentials() else {
+        guard let creds = synchronizePhotoSession() else {
             lastError = "Sign in to add a journal photo."
             return nil
         }
+        let generation = photoSessionGeneration
         do {
             lastError = nil
             let path = try await TravelReads.storeJournalPhoto(
                 data: imageData, userID: creds.userID, placeID: placeID, accessToken: creds.accessToken
             )
-            photoPreviewCache[path] = imageData
-            await settleAchievements(for: creds)
+            guard isCurrentPhotoSession(generation, userID: creds.userID) else { return nil }
+            photoPreviewCache.insert(imageData, for: path)
+            await settleAchievements(for: creds, photoGeneration: generation)
+            guard isCurrentPhotoSession(generation, userID: creds.userID) else { return nil }
             await loadHistory(force: true)
+            guard isCurrentPhotoSession(generation, userID: creds.userID) else { return nil }
             return path
         } catch {
+            guard isCurrentPhotoSession(generation, userID: creds.userID) else { return nil }
             lastError = "Couldn't add that photo."
             return nil
         }
@@ -202,18 +214,28 @@ final class VisitStore {
     /// Remove one journal photo (array + storage) and refresh.
     @discardableResult
     func removePhoto(placeID: String, path: String) async -> Bool {
-        guard let creds = credentials() else {
+        guard let creds = synchronizePhotoSession() else {
             lastError = "Sign in to manage journal photos."
             return false
+        }
+        let generation = photoSessionGeneration
+        invalidatePhoto(path: path)
+        defer {
+            // Storage deletion can succeed even if removing its database
+            // reference fails. Never retain a capability or preview for it.
+            if isCurrentPhotoSession(generation, userID: creds.userID) {
+                invalidatePhoto(path: path)
+            }
         }
         do {
             lastError = nil
             try await TravelReads.removeVisitPhoto(placeID: placeID, path: path, accessToken: creds.accessToken)
-            photoURLCache.removeValue(forKey: path)
-            photoPreviewCache.removeValue(forKey: path)
+            guard isCurrentPhotoSession(generation, userID: creds.userID) else { return false }
+            invalidatePhoto(path: path)
             await loadHistory(force: true)
-            return true
+            return isCurrentPhotoSession(generation, userID: creds.userID)
         } catch {
+            guard isCurrentPhotoSession(generation, userID: creds.userID) else { return false }
             lastError = "Couldn't remove that photo."
             return false
         }
@@ -223,22 +245,33 @@ final class VisitStore {
     /// refresh both the visited set and the history.
     @discardableResult
     func deleteVisit(placeID: String, photoPaths: [String]) async -> Bool {
-        guard let creds = credentials() else {
+        guard let creds = synchronizePhotoSession() else {
             lastError = "Sign in to manage your memories."
             return false
+        }
+        let generation = photoSessionGeneration
+        for path in photoPaths { invalidatePhoto(path: path) }
+        defer {
+            // Storage deletion can succeed even if removing its database
+            // reference fails. Never retain a capability or preview for it.
+            if isCurrentPhotoSession(generation, userID: creds.userID) {
+                for path in photoPaths { invalidatePhoto(path: path) }
+            }
         }
         do {
             lastError = nil
             try await TravelReads.deleteVisit(placeID: placeID, photoPaths: photoPaths, accessToken: creds.accessToken)
+            guard isCurrentPhotoSession(generation, userID: creds.userID) else { return false }
             visitedPlaceIDs.remove(placeID)
             for path in photoPaths {
-                photoURLCache.removeValue(forKey: path)
-                photoPreviewCache.removeValue(forKey: path)
+                invalidatePhoto(path: path)
             }
-            await settleAchievements(for: creds)
+            await settleAchievements(for: creds, photoGeneration: generation)
+            guard isCurrentPhotoSession(generation, userID: creds.userID) else { return false }
             await loadHistory(force: true)
-            return true
+            return isCurrentPhotoSession(generation, userID: creds.userID)
         } catch {
+            guard isCurrentPhotoSession(generation, userID: creds.userID) else { return false }
             lastError = "Couldn't remove that memory."
             return false
         }
@@ -246,46 +279,66 @@ final class VisitStore {
 
     /// A short-lived signed URL to display a private journal photo path.
     func signedPhotoURL(path: String, forceRefresh: Bool = false) async -> URL? {
-        guard let creds = credentials() else { return nil }
-        if forceRefresh {
-            photoURLCache.removeValue(forKey: path)
-        } else if let cached = photoURLCache[path], cached.expiresAt > Date() {
-            return cached.url
-        }
-        guard let url = try? await TravelReads.signedJournalPhotoURL(
-            path: path, accessToken: creds.accessToken
-        ) else { return nil }
-        guard credentials()?.userID == creds.userID else { return nil }
-        photoURLCache[path] = CachedPhotoURL(
-            url: url,
-            expiresAt: Date().addingTimeInterval(50 * 60)
-        )
+        guard let creds = synchronizePhotoSession() else { return nil }
+        let generation = photoSessionGeneration
+        let url = await photoURLs.url(path: path, accessToken: creds.accessToken, forceRefresh: forceRefresh)
+        guard !Task.isCancelled,
+              isCurrentPhotoSession(generation, userID: creds.userID) else { return nil }
         return url
     }
 
-    /// Local preview bytes for a newly uploaded private photo. This is only a
-    /// display cache; the durable source of truth remains Storage + visit.photos.
+    /// Local preview bytes for a newly uploaded private photo. The durable
+    /// source remains Storage + visit.photos. Never return another owner's data,
+    /// including before the app's session-change callback has run.
     func cachedPhotoPreview(path: String) -> Data? {
-        photoPreviewCache[path]
+        guard let userID = credentials()?.userID, userID == photoUserID else { return nil }
+        return photoPreviewCache.data(for: path)
+    }
+
+    private func invalidatePhoto(path: String) {
+        photoURLs.invalidate(path: path)
+        photoPreviewCache.remove(path)
+    }
+
+    private func synchronizePhotoSession() -> (userID: String, accessToken: String)? {
+        let creds = credentials()
+        if creds?.userID != photoUserID { resetPhotoSession(userID: creds?.userID) }
+        return creds
+    }
+
+    private func isCurrentPhotoSession(_ generation: UUID, userID: String) -> Bool {
+        let creds = synchronizePhotoSession()
+        return photoSessionGeneration == generation && creds?.userID == userID
+    }
+
+    private func resetPhotoSession(userID: String?) {
+        photoSessionGeneration = UUID()
+        photoUserID = userID
+        photoURLs.reset()
+        photoPreviewCache.removeAll()
     }
 
     /// Clear a stale public flag from an older client before saving the private
     /// journal entry. There is intentionally no operation that sets it true.
     @discardableResult
     func makePrivateIfNeeded(placeID: String) async -> Bool {
-        guard let creds = credentials() else {
+        guard let creds = synchronizePhotoSession() else {
             lastError = "Sign in to update your private journal."
             return false
         }
+        let generation = photoSessionGeneration
         do {
             lastError = nil
             try await TravelReads.makeVisitPrivate(
                 placeID: placeID, accessToken: creds.accessToken
             )
-            await settleAchievements(for: creds)
+            guard isCurrentPhotoSession(generation, userID: creds.userID) else { return false }
+            await settleAchievements(for: creds, photoGeneration: generation)
+            guard isCurrentPhotoSession(generation, userID: creds.userID) else { return false }
             await loadHistory(force: true)
-            return true
+            return isCurrentPhotoSession(generation, userID: creds.userID)
         } catch {
+            guard isCurrentPhotoSession(generation, userID: creds.userID) else { return false }
             lastError = "Couldn't secure that journal entry."
             return false
         }
@@ -293,12 +346,16 @@ final class VisitStore {
 
     /// Journal actions have their own achievement families. Settle them at the
     /// moment the action lands instead of waiting for the user's next visit.
-    private func settleAchievements(for creds: (userID: String, accessToken: String)) async {
+    private func settleAchievements(
+        for creds: (userID: String, accessToken: String), photoGeneration: UUID? = nil
+    ) async {
         let unlocked = (try? await api.recomputeAchievements(
             userID: creds.userID,
             accessToken: creds.accessToken
         )) ?? []
         guard credentials()?.userID == creds.userID else { return }
+        if let photoGeneration,
+           !isCurrentPhotoSession(photoGeneration, userID: creds.userID) { return }
         if !unlocked.isEmpty { onUnlocks(unlocked) }
     }
 
@@ -380,8 +437,7 @@ final class VisitStore {
         visitHistory = []
         historyLoaded = false
         historyLoadGeneration &+= 1
-        photoURLCache = [:]
-        photoPreviewCache = [:]
+        resetPhotoSession(userID: credentials()?.userID)
         lastError = nil
     }
 }
