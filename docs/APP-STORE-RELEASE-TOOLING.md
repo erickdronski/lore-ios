@@ -1,11 +1,18 @@
 # App Store Release Tooling
 
-The release target is explicit. Version `1.2` and the minimum build number `48`
+The release target is explicit. The marketing version and minimum build number
 come from `project.yml`; the app and widget must agree. A release action requires
-`expected_version:1.2` and the actual uploaded `expected_build`. It never chooses
+that exact `expected_version` and the actual uploaded `expected_build`. It never chooses
 an implicit latest build. Beta uploads use `max(project floor, latest TestFlight
-build for this marketing version + 1)`, so a retry may produce build 49 or higher.
+build for this marketing version + 1)`, so a retry may exceed the project floor.
 Use that actual build number for subsequent actions.
+
+The current TestFlight target is `1.2.1`, with a minimum build of `49`.
+Release notes and the existing product description are checked in for `1.2.1`.
+The uploaded App Store metadata, screenshots, and examples below describe the
+shipped `1.2 (48)` release. Preparing a future App Store release requires reviewed
+metadata and screenshots for its exact version and source commit; the TestFlight
+version bump alone does not prepare or submit it.
 
 ## Hold contract
 

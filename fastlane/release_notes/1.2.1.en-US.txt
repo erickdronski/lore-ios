@@ -1,0 +1,5 @@
+Lore 1.2.1 improves your private visit journal.
+
+• More reliable photo loading when you open or revisit journal entries.
+• Improved handling of photo uploads, retries, and note edits.
+• Better protection against stale photo and profile responses when you change accounts or delete entries.

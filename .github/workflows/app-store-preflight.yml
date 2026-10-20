@@ -29,12 +29,12 @@ on:
       expected_version:
         description: "Exact marketing version (must match project.yml for release actions)"
         required: true
-        default: "1.2"
+        default: "1.2.1"
         type: string
       expected_build:
         description: "Exact build to audit/select/submit/release; never implicit latest"
         required: true
-        default: "48"
+        default: "49"
         type: string
       release_source_sha:
         description: "Exact code commit M used by the binary/screenshots (required for select/submit/swap/auto-release)"

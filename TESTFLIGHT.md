@@ -1,6 +1,6 @@
 # Lore TestFlight Release Runbook
 
-**Audited:** July 14, 2026
+**Audited:** October 20, 2026
 **Bundle ID:** `com.erickdronski.lore`
 **App Store Connect app ID:** `6788171860`
 
@@ -39,6 +39,10 @@ repository.
 ## Publish a tested commit
 
 1. Confirm the intended Lore changes are committed and pushed to `main`.
+   Check the live App Store version before dispatching: a released version's
+   build train is closed. The photo-loading maintenance release uses version
+   `1.2.1`, with build number `49` as its minimum; version `1.2 (48)` is already
+   live. Keep the app and widget versions aligned in `project.yml`.
 2. Wait for the push-triggered `iOS CI and TestFlight` run to finish green.
 3. Confirm the run's head SHA equals the intended commit.
 4. Dispatch the same workflow on `main` with
