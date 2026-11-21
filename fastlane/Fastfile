@@ -324,8 +324,7 @@ platform :ios do
     run_tests(
       project: "Lore.xcodeproj",
       scheme: "Lore",
-      devices: ["iPhone 17 Pro"],
-      ensure_devices_found: true,
+      destination: ENV["LORE_SIMULATOR_UDID"] && ["platform=iOS Simulator,id=#{ENV.fetch('LORE_SIMULATOR_UDID')}"],
       clean: true,
       result_bundle: true,
       output_directory: "build/test-results",
@@ -337,7 +336,8 @@ platform :ios do
     # Reads fastlane/Snapfile: boots the 6.9" Simulator, runs the LoreUITests
     # capturer (LoreScreenshots.swift) against the LoreScreenshots scheme, and
     # writes PNGs to fastlane/screenshots. Never touches signing or TestFlight.
-    capture_ios_screenshots
+    options = ENV["LORE_SIMULATOR_OS"] ? { ios_version: ENV.fetch("LORE_SIMULATOR_OS") } : {}
+    capture_ios_screenshots(**options)
   end
 
   desc "Upload the App Store marketing screenshots via the ASC API (no binary)"

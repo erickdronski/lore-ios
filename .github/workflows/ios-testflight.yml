@@ -47,6 +47,9 @@ jobs:
           xcodebuild -version
           xcodebuild -showsdks | grep -i iphoneos || true
 
+      - name: Prepare the matching iPhone simulator
+        run: python3 .github/scripts/prepare-ios-simulator.py
+
       - name: Install XcodeGen
         run: brew install xcodegen
 
@@ -72,7 +75,7 @@ jobs:
           -scheme Lore
           -configuration Release
           -sdk iphonesimulator
-          -destination 'platform=iOS Simulator,name=iPhone 17 Pro'
+          -destination "platform=iOS Simulator,id=$LORE_SIMULATOR_UDID"
           CODE_SIGNING_ALLOWED=NO
           build
 
@@ -114,12 +117,14 @@ jobs:
           xcode-version: "26.3"
       - run: brew install xcodegen
       - run: xcodegen generate
+      - name: Prepare the matching iPhone simulator
+        run: python3 .github/scripts/prepare-ios-simulator.py
       - name: Exercise the local Apple StoreKit engine
         run: >-
           xcodebuild test
           -project Lore.xcodeproj
           -scheme LoreStoreKitTests
-          -destination 'platform=iOS Simulator,name=iPhone 17 Pro'
+          -destination "platform=iOS Simulator,id=$LORE_SIMULATOR_UDID"
           -parallel-testing-enabled NO
           -resultBundlePath build/storekit-journeys.xcresult
           CODE_SIGNING_ALLOWED=YES
