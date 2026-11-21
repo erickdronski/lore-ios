@@ -16,6 +16,7 @@ import UserNotifications
 /// Pushed inside Profile's `NavigationStack`, so this view carries no stack of
 /// its own, just the `List` and its title.
 struct SettingsView: View {
+    var starterAccountOnly = false
     @Environment(StoreKitService.self) private var store
     @Environment(EntitlementStore.self) private var entitlements
     /// The same store the map's filter chips use, so a toggle here persists to
@@ -47,26 +48,28 @@ struct SettingsView: View {
 
     var body: some View {
         List {
-            whatYouSeeSection
-            preferencesSection
-            languageSection
-            if Config.offlineCityPacksEnabled {
-                OfflinePacksSection()
+            if !starterAccountOnly {
+                whatYouSeeSection
+                preferencesSection
+                languageSection
+                if Config.offlineCityPacksEnabled {
+                    OfflinePacksSection()
+                }
+                permissionsSection
             }
-            permissionsSection
             subscriptionSection
             privacyDataSection
             aboutLegalSection
             if auth.isSignedIn { accountSection }
             #if DEBUG
-            developerSection
+            if !starterAccountOnly { developerSection }
             #endif
         }
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
         .background(LoreColor.bone100)
         .contentMargins(.horizontal, horizontalSizeClass == .regular ? 80 : 0, for: .scrollContent)
-        .navigationTitle(L10n.t("settings.title"))
+        .navigationTitle(starterAccountOnly ? "Account & purchases" : L10n.t("settings.title"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.visible, for: .navigationBar)
         .sheet(isPresented: $showDeleteFlow) {
@@ -76,9 +79,9 @@ struct SettingsView: View {
             }
             .presentationDetents([.large])
         }
-        .task { await refreshPermissionStatuses() }
+        .task { if !starterAccountOnly { await refreshPermissionStatuses() } }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
-            Task { await refreshPermissionStatuses() }
+            if !starterAccountOnly { Task { await refreshPermissionStatuses() } }
         }
     }
 
@@ -360,9 +363,13 @@ struct SettingsView: View {
     private func restorePurchases() async {
         restoring = true
         restoreNote = nil
+        let accountID = auth.session?.user.id
+        store.accountUUID = accountID.flatMap { UUID(uuidString: $0) }
         let outcome = await store.restore()
-        let token = await auth.validAccessToken()
-        await entitlements.refresh(accessToken: token)
+        if !starterAccountOnly {
+            let token = await auth.validAccessToken()
+            await entitlements.refresh(accessToken: token)
+        }
         restoring = false
         switch outcome {
         case .restored:

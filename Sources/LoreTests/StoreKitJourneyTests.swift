@@ -35,6 +35,35 @@ final class StoreKitJourneyTests: XCTestCase {
         engine = nil
     }
 
+    func testRestrictedCatalogPreventsNewChargeAndAllowsRestore() async throws {
+        let availability = LoreServiceAvailability(session: mockedSession())
+        let paywall = PaywallModel(availability: availability)
+        paywall.store = service
+        await service.loadProducts()
+        let productID = StoreKitService.ProductID.lifetime
+        XCTAssertNotNil(service.product(for: productID))
+        StoreKitVerifierProtocol.handler = { request in
+            let url = try XCTUnwrap(request.url)
+            let catalog = url.path == "/rest/v1/city"
+            let data = catalog ? Data() : Data(#"{"external":{"email":true},"disable_signup":false}"#.utf8)
+            let response = try XCTUnwrap(HTTPURLResponse(url: url, statusCode: catalog ? 402 : 200,
+                                                         httpVersion: nil, headerFields: nil))
+            return (response, data)
+        }
+
+        let sale = await paywall.purchase(productID: productID)
+        XCTAssertEqual(sale, .failed(message: LoreServiceAvailability.purchasesUnavailable))
+        XCTAssertTrue(availability.isRestricted)
+        XCTAssertTrue(engine.allTransactions().isEmpty)
+
+        // Seed a past Apple purchase, then restore while Lore still returns 402.
+        _ = try await engine.buyProduct(identifier: productID)
+        service.onVerifiedTransaction = { _ in .acceptedWithoutServerGrant }
+        let restored = await paywall.restore()
+        XCTAssertEqual(restored, .restored)
+        XCTAssertTrue(service.hasActiveEntitlement)
+    }
+
     func testGuestPurchaseUnlocksAndFinishesWithoutLoreRegistration() async throws {
         service.onVerifiedTransaction = { _ in .acceptedWithoutServerGrant }
         await service.loadProducts()
@@ -206,10 +235,12 @@ final class StoreKitJourneyTests: XCTestCase {
         XCTAssertTrue(condition(), "Expected StoreKit's update to arrive within five seconds")
     }
 
-    private func mockedAPI() -> LoreAPI {
+    private func mockedAPI() -> LoreAPI { LoreAPI(session: mockedSession()) }
+
+    private func mockedSession() -> URLSession {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [StoreKitVerifierProtocol.self]
-        return LoreAPI(session: URLSession(configuration: config))
+        return URLSession(configuration: config)
     }
 
     nonisolated private static func requestBody(_ request: URLRequest) throws -> Data {

@@ -10,6 +10,8 @@ struct SignInView: View {
     @Environment(AuthService.self) private var auth
     @Environment(\.dismiss) private var dismiss
 
+    private let availability = LoreServiceAvailability.shared
+
     @State private var email = ""
     @State private var password = ""
     @State private var mode: Mode = .signIn
@@ -45,105 +47,15 @@ struct SignInView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    Text("Every place has a story.")
-                        .font(LoreType.hook)
-                        .foregroundStyle(LoreColor.ink600)
-
-                    VStack(spacing: 12) {
-                        TextField("Email", text: $email)
-                            .textContentType(.emailAddress)
-                            .keyboardType(.emailAddress)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                            .focused($focusedField, equals: .email)
-                            .submitLabel(.next)
-                            .onSubmit { focusedField = .password }
-                            .padding(12)
-                            .background(LoreColor.bone200, in: RoundedRectangle(cornerRadius: 14))
-
-                        SecureField("Password", text: $password)
-                            .textContentType(mode == .signUp ? .newPassword : .password)
-                            .focused($focusedField, equals: .password)
-                            .submitLabel(.go)
-                            .onSubmit(submitCredentials)
-                            .padding(12)
-                            .background(LoreColor.bone200, in: RoundedRectangle(cornerRadius: 14))
-                    }
-
-                    if mode == .signUp {
-                        Text("Use 8 to 128 characters.")
-                            .font(LoreType.micro)
-                            .foregroundStyle(LoreColor.ink600)
-                    }
-
-                    if mode == .signUp { accountCreationConsent }
-
-                    if let lastError = auth.lastError {
-                        statusMessage(lastError, symbol: "exclamationmark.triangle.fill", color: LoreColor.error)
-                            .accessibilityIdentifier("auth.error")
-                    }
-                    if let lastNotice = auth.lastNotice {
-                        statusMessage(lastNotice, symbol: "checkmark.circle.fill", color: LoreColor.success)
-                            .accessibilityIdentifier("auth.notice")
-                    }
-
-                    Button(action: submitCredentials) {
-                        Group {
-                            if operation == .credentials {
-                                ProgressView()
-                            } else {
-                                Text(mode == .signUp ? "Create account" : "Sign in")
-                                    .font(LoreType.button)
-                            }
+                    if availability.isUnavailable {
+                        Label(LoreServiceAvailability.signInUnavailable, systemImage: "icloud.slash")
+                            .font(LoreType.body)
+                        Button("Try again") {
+                            Task { await availability.check() }
                         }
-                        .frame(maxWidth: .infinity)
-                        .frame(minHeight: 50)
+                    } else {
+                        credentialsForm
                     }
-                    .background(LoreColor.ink, in: Capsule())
-                    .foregroundStyle(LoreColor.bone)
-                    .disabled(!canSubmitCredentials)
-
-                    // Third-party sign-in ships in Release as of 2026-07-16:
-                    // Sign in with Apple is provisioned end to end (App ID
-                    // capability + entitlement + live Supabase Apple provider),
-                    // which satisfies Guideline 4.8 for the Google/Facebook
-                    // options offered alongside it.
-                    socialDivider
-                    if mode == .signIn { accountCreationConsent }
-                    socialButtons
-
-                    // Switch between sign in and account creation; reset link
-                    // only in sign-in mode.
-                    VStack(alignment: .leading, spacing: 12) {
-                        Button(mode == .signUp ? "Have an account? Sign in" : "New here? Create an account") {
-                            mode = (mode == .signUp) ? .signIn : .signUp
-                            confirmedMinimumAge = false
-                            auth.lastError = nil
-                            auth.lastNotice = nil
-                            focusedField = .email
-                        }
-                        .font(LoreType.caption)
-                        .foregroundStyle(LoreColor.brass700)
-                        .disabled(isWorking)
-                        if mode == .signIn {
-                            Button("Forgot password?") {
-                                run(.passwordReset) {
-                                    await auth.sendPasswordReset(email: email)
-                                }
-                            }
-                            .font(LoreType.caption)
-                            .foregroundStyle(LoreColor.ink600)
-                            .disabled(!AuthService.isValidEmail(email) || isWorking)
-                        }
-                    }
-
-                    Text(
-                        "Reading never requires an account, browsing, the map, "
-                        + "and deep dives all work signed out. Accounts unlock "
-                        + "visits, your journal, Insight sync, and Lore+."
-                    )
-                    .font(LoreType.caption)
-                    .foregroundStyle(LoreColor.ink600)
                 }
                 .padding(16)
             }
@@ -160,10 +72,114 @@ struct SignInView: View {
         // scheme so the nav chrome + sheet grabber don't render dark on a
         // dark-mode device (matches ProfileScreen/SettingsView).
         .preferredColorScheme(.light)
+        .task { await availability.check() }
         .onDisappear {
             actionTask?.cancel()
             apple.cancel()
         }
+    }
+
+    @ViewBuilder
+    private var credentialsForm: some View {
+        Text("Every place has a story.")
+            .font(LoreType.hook)
+            .foregroundStyle(LoreColor.ink600)
+
+        VStack(spacing: 12) {
+            TextField("Email", text: $email)
+                .textContentType(.emailAddress)
+                .keyboardType(.emailAddress)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .focused($focusedField, equals: .email)
+                .submitLabel(.next)
+                .onSubmit { focusedField = .password }
+                .padding(12)
+                .background(LoreColor.bone200, in: RoundedRectangle(cornerRadius: 14))
+
+            SecureField("Password", text: $password)
+                .textContentType(mode == .signUp ? .newPassword : .password)
+                .focused($focusedField, equals: .password)
+                .submitLabel(.go)
+                .onSubmit(submitCredentials)
+                .padding(12)
+                .background(LoreColor.bone200, in: RoundedRectangle(cornerRadius: 14))
+        }
+
+        if mode == .signUp {
+            Text("Use 8 to 128 characters.")
+                .font(LoreType.micro)
+                .foregroundStyle(LoreColor.ink600)
+        }
+
+        if mode == .signUp { accountCreationConsent }
+
+        if let lastError = auth.lastError {
+            statusMessage(lastError, symbol: "exclamationmark.triangle.fill", color: LoreColor.error)
+                .accessibilityIdentifier("auth.error")
+        }
+        if let lastNotice = auth.lastNotice {
+            statusMessage(lastNotice, symbol: "checkmark.circle.fill", color: LoreColor.success)
+                .accessibilityIdentifier("auth.notice")
+        }
+
+        Button(action: submitCredentials) {
+            Group {
+                if operation == .credentials {
+                    ProgressView()
+                } else {
+                    Text(mode == .signUp ? "Create account" : "Sign in")
+                        .font(LoreType.button)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .frame(minHeight: 50)
+        }
+        .background(LoreColor.ink, in: Capsule())
+        .foregroundStyle(LoreColor.bone)
+        .disabled(!canSubmitCredentials)
+
+        // Third-party sign-in ships in Release as of 2026-07-16:
+        // Sign in with Apple is provisioned end to end (App ID
+        // capability + entitlement + live Supabase Apple provider),
+        // which satisfies Guideline 4.8 for the Google/Facebook
+        // options offered alongside it.
+        socialDivider
+        if mode == .signIn { accountCreationConsent }
+        socialButtons
+
+        // Switch between sign in and account creation; reset link
+        // only in sign-in mode.
+        VStack(alignment: .leading, spacing: 12) {
+            Button(mode == .signUp ? "Have an account? Sign in" : "New here? Create an account") {
+                mode = (mode == .signUp) ? .signIn : .signUp
+                confirmedMinimumAge = false
+                auth.lastError = nil
+                auth.lastNotice = nil
+                focusedField = .email
+            }
+            .font(LoreType.caption)
+            .foregroundStyle(LoreColor.brass700)
+            .disabled(isWorking)
+            if mode == .signIn {
+                Button("Forgot password?") {
+                    run(.passwordReset) {
+                        await auth.sendPasswordReset(email: email)
+                    }
+                }
+                .font(LoreType.caption)
+                .foregroundStyle(LoreColor.ink600)
+                .disabled(!AuthService.isValidEmail(email) || isWorking)
+            }
+        }
+
+        Text(
+            "Reading never requires an account, browsing, the map, "
+            + "and deep dives all work signed out. Accounts unlock "
+            + "visits, your journal, Insight sync, and Lore+."
+        )
+        .font(LoreType.caption)
+        .foregroundStyle(LoreColor.ink600)
     }
 
     @ViewBuilder
@@ -333,6 +349,7 @@ struct SignInView: View {
                 operation = nil
                 actionTask = nil
             }
+            guard await availability.check(), !Task.isCancelled else { return }
             await action()
             guard !Task.isCancelled else { return }
             if auth.isSignedIn { dismiss() }

@@ -31,6 +31,7 @@ struct PaywallView: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    private let availability = LoreServiceAvailability.shared
     @State private var model = PaywallModel()
     /// Content cross-fades in (reveal.bloom feel, no bounce/shimmer per §6).
     @State private var appeared = false
@@ -46,14 +47,14 @@ struct PaywallView: View {
                     hero
                     // A current member sees only the acknowledgement, never the
                     // plan picker / feature table / trial fine print.
-                    if !entitlements.isPlus {
+                    if !entitlements.isPlus && !availability.isUnavailable {
                         valueHighlights
                         planPicker
                         featureTable
                         tripPassSection
                     }
                     purchaseButton
-                    if !entitlements.isPlus {
+                    if !entitlements.isPlus && !availability.isUnavailable {
                         finePrint
                     }
                     legalLinks
@@ -80,6 +81,7 @@ struct PaywallView: View {
             appeared = true
             model.store = store
         }
+        .task { await availability.check() }
         .task {
             // Ensure the model has the store even if `.task` beats `.onAppear`.
             model.store = store
@@ -326,40 +328,18 @@ struct PaywallView: View {
             .padding(.vertical, 14)
         } else {
             VStack(spacing: 10) {
-                Button {
-                    Task { await purchase() }
-                } label: {
-                    ZStack {
-                        BrassSheenSurface(shape: RoundedRectangle(cornerRadius: 16))
-                        Group {
-                            if model.isPurchasing {
-                                ProgressView()
-                                    .tint(LoreColor.ink)
-                            } else {
-                                VStack(spacing: 2) {
-                                    // Always the real plan copy. This used to read
-                                    // "Sign in to continue" when signed out, which
-                                    // is the forced-registration paywall App Review
-                                    // rejected under 5.1.1(v). Only promise the
-                                    // trial when the user is actually eligible for
-                                    // the intro offer (docs/16 §1).
-                                    Text(model.ctaTitle)
-                                        .font(LoreType.button)
-                                    Text(model.ctaSubtitle)
-                                        .font(LoreType.caption)
-                                        .opacity(0.85)
-                                }
-                                .foregroundStyle(LoreColor.ink)
-                            }
-                        }
+                if availability.isUnavailable {
+                    Text(LoreServiceAvailability.purchasesUnavailable)
+                        .font(LoreType.body)
+                        .foregroundStyle(LoreColor.bone)
+                        .multilineTextAlignment(.center)
+                    Button("Check availability") {
+                        Task { await availability.check() }
                     }
-                    .frame(height: 56)
+                    .foregroundStyle(LoreColor.brass300)
+                } else {
+                    subscriptionPurchaseButton
                 }
-                .buttonStyle(.plain)
-                .disabled(!model.canPurchaseSelectedPlan)
-                .opacity(model.canPurchaseSelectedPlan ? 1 : 0.62)
-                .accessibilityLabel(model.purchaseAccessibilityLabel)
-                .accessibilityHint("Apple shows a confirmation sheet before any purchase is completed")
 
                 // Restore is always available: it is an Apple-ID operation, and
                 // hiding it from signed-out users left a reinstalling buyer with
@@ -376,7 +356,7 @@ struct PaywallView: View {
                 // "explain to the user that registering will enable them to
                 // access the purchased content from any of their supported
                 // devices and provide them a way to register at any time."
-                if !auth.isSignedIn {
+                if !auth.isSignedIn && !availability.isUnavailable {
                     Button("Sign in to sync Lore+ across your devices") {
                         showSignIn = true
                     }
@@ -393,7 +373,7 @@ struct PaywallView: View {
                         .multilineTextAlignment(.center)
                 }
 
-                if let error = model.purchaseError {
+                if let error = model.purchaseError, error != LoreServiceAvailability.purchasesUnavailable {
                     Text(error)
                         .font(LoreType.caption)
                         .foregroundStyle(LoreColor.errorDark)
@@ -408,6 +388,43 @@ struct PaywallView: View {
                 }
             }
         }
+    }
+
+    private var subscriptionPurchaseButton: some View {
+        Button {
+            Task { await purchase() }
+        } label: {
+            ZStack {
+                BrassSheenSurface(shape: RoundedRectangle(cornerRadius: 16))
+                Group {
+                    if model.isPurchasing {
+                        ProgressView()
+                            .tint(LoreColor.ink)
+                    } else {
+                        VStack(spacing: 2) {
+                            // Always the real plan copy. This used to read
+                            // "Sign in to continue" when signed out, which
+                            // is the forced-registration paywall App Review
+                            // rejected under 5.1.1(v). Only promise the
+                            // trial when the user is actually eligible for
+                            // the intro offer (docs/16 §1).
+                            Text(model.ctaTitle)
+                                .font(LoreType.button)
+                            Text(model.ctaSubtitle)
+                                .font(LoreType.caption)
+                                .opacity(0.85)
+                        }
+                        .foregroundStyle(LoreColor.ink)
+                    }
+                }
+            }
+            .frame(height: 56)
+        }
+        .buttonStyle(.plain)
+        .disabled(!model.canPurchaseSelectedPlan)
+        .opacity(model.canPurchaseSelectedPlan ? 1 : 0.62)
+        .accessibilityLabel(model.purchaseAccessibilityLabel)
+        .accessibilityHint("Apple shows a confirmation sheet before any purchase is completed")
     }
 
     private var tripPassStatusText: String {
@@ -818,6 +835,12 @@ final class PaywallModel {
         }
     }
 
+    private let availability: LoreServiceAvailability
+
+    init(availability: LoreServiceAvailability? = nil) {
+        self.availability = availability ?? .shared
+    }
+
     /// The StoreKit 2 client path, injected from the view's `onAppear`. Nil in
     /// previews / before injection, the model shows an unavailable state rather
     /// than inventing a storefront price.
@@ -954,6 +977,11 @@ final class PaywallModel {
         purchaseNotice = nil
         defer { isPurchasing = false }
 
+        guard await availability.check(), !Task.isCancelled else {
+            let message = LoreServiceAvailability.purchasesUnavailable
+            purchaseError = message
+            return .failed(message: message)
+        }
         let outcome = await store.purchase(productID: productID)
         switch outcome {
         case .failed(let message):

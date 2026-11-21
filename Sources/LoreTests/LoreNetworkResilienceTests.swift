@@ -9,6 +9,33 @@ final class LoreNetworkResilienceTests: XCTestCase {
         super.tearDown()
     }
 
+    @MainActor
+    func testAvailabilityRequiresLiveCityAndAuthSettingsThenRecovers() async throws {
+        let availability = LoreServiceAvailability(session: makeSession())
+        let settings = #"{"external":{"email":true},"disable_signup":false}"#
+        let city = #"[{"slug":"chicago"}]"#
+        func respond(auth: String, catalog: String) {
+            NetworkStubProtocol.handler = { request in
+                let url = try XCTUnwrap(request.url)
+                let body = url.path == "/auth/v1/settings" ? auth : catalog
+                let response = try XCTUnwrap(HTTPURLResponse(url: url, statusCode: 200,
+                                                             httpVersion: nil, headerFields: nil))
+                return (response, Data(body.utf8))
+            }
+        }
+        for (auth, catalog) in [("<html>Sign in</html>", city), (settings, "[]")] {
+            respond(auth: auth, catalog: catalog)
+            let reachable = await availability.check()
+            XCTAssertFalse(reachable)
+        }
+        availability.observeHTTPStatus(402)
+        respond(auth: settings, catalog: city)
+        let recovered = await availability.check()
+        XCTAssertTrue(recovered)
+        XCTAssertFalse(availability.isRestricted)
+        XCTAssertFalse(availability.isUnavailable)
+    }
+
     func testApplePurchaseSyncPreservesVersionedEndpointAndOwnershipResponse() async throws {
         NetworkStubProtocol.handler = { request in
             XCTAssertEqual(request.url?.path, "/functions/v1/sync-apple-purchase")

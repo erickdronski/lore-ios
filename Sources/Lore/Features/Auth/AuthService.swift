@@ -140,6 +140,7 @@ final class AuthService {
 
         var errorDescription: String? {
             switch self {
+            case .http(402, _): return LoreServiceAvailability.signInUnavailable
             case .http(_, let message): return message
             case .invalidOAuthCallback(let message): return message
             }
@@ -462,6 +463,7 @@ final class AuthService {
             if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
                 // Only an auth verdict kills the session. A 5xx or transient
                 // platform failure keeps it so foregrounding can retry.
+                LoreServiceAvailability.shared.observeHTTPStatus(http.statusCode)
                 if [400, 401, 403].contains(http.statusCode) {
                     clearLocalSession()
                 }
@@ -889,6 +891,9 @@ final class AuthService {
     }
 
     private func recordFailure(_ error: Error) {
+        if let authError = error as? AuthError, case .http(let status, _) = authError {
+            LoreServiceAvailability.shared.observeHTTPStatus(status)
+        }
         guard let message = Self.userFacingMessage(for: error) else { return }
         lastError = message
     }
