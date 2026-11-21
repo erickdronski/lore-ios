@@ -66,7 +66,7 @@ struct LoreApp: App {
 
     var body: some Scene {
         WindowGroup {
-            RootTabView()
+            CatalogEntryView()
                 .environment(auth)
                 .environment(router)
                 .environment(entitlements)
@@ -79,6 +79,7 @@ struct LoreApp: App {
                 .environment(travel.savedPlaces)
                 .environment(travel.filters)
                 .environment(packs)
+                .task { await auth.restore() }
                 // Wire the StoreKit client path into the entitlement store and
                 // start the Transaction.updates listener once, at launch. Both
                 // are @MainActor app-lifetime singletons (docs/16 §1).
@@ -139,7 +140,6 @@ struct LoreApp: App {
                 // (Amber is reserved for the world: pins, outlines, beacon —
                 // brand/DESIGN.md §4). brass700 is the AA-safe brass on Bone.
                 .tint(LoreColor.brass700)
-                .loreOnboarding(auth: auth, prefs: prefs)
         }
     }
 }
@@ -332,11 +332,6 @@ struct RootTabView: View {
         .onChange(of: locator.location) { _, newLocation in
             resolveNearestCity(newLocation)
         }
-        // Widget taps + Live Activity taps arrive as `lore://` deep links.
-        .onOpenURL { url in router.handleDeepLink(url) }
-        // Restore a persisted sign-in on launch (Keychain + token refresh) so
-        // returning users are not asked to sign in again.
-        .task { await auth.restore() }
         // Session changes ripple to every dependent store.
         .onChange(of: auth.session?.user.id) { _, _ in
             resetTravelIdentityIfNeeded()

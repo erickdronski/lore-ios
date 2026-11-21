@@ -140,6 +140,7 @@ final class AuthService {
 
         var errorDescription: String? {
             switch self {
+            case .http(402, _): return LoreServiceAvailability.signInUnavailable
             case .http(_, let message): return message
             case .invalidOAuthCallback(let message): return message
             }
@@ -373,7 +374,9 @@ final class AuthService {
             guard let deletedUserID = session?.user.id,
                   let token = await validAccessToken(),
                   session?.user.id == deletedUserID else {
-                lastError = "Your session has expired. Sign in and try again."
+                lastError = LoreServiceAvailability.shared.isUnavailable
+                    ? "Lore account services are unavailable. Try again later or contact support to request deletion."
+                    : "Your session has expired. Sign in and try again."
                 return false
             }
 
@@ -386,12 +389,19 @@ final class AuthService {
             }
 
             guard response.statusCode == 200 else {
-                lastError = response.statusCode == 202
-                    ? "Deletion is still in progress. Your data is protected while cleanup continues. Retry to finish deleting your account."
-                    : "Couldn't delete your account. Please try again."
+                switch response.statusCode {
+                case 202:
+                    lastError = "Deletion is still in progress. Your data is protected while cleanup continues. Retry to finish deleting your account."
+                case 402:
+                    LoreServiceAvailability.shared.observeHTTPStatus(402)
+                    lastError = "Lore account services are unavailable. Try again later or contact support to request deletion."
+                default:
+                    lastError = "Couldn't delete your account. Please try again."
+                }
                 return false
             }
             AppleProfileSeedStore.clear(userID: deletedUserID)
+            UserDefaults.standard.removeObject(forKey: "lore.starter.saved." + deletedUserID)
             guard session?.user.id == deletedUserID else { return true }
             clearLocalSession()
             return true
@@ -462,6 +472,7 @@ final class AuthService {
             if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
                 // Only an auth verdict kills the session. A 5xx or transient
                 // platform failure keeps it so foregrounding can retry.
+                LoreServiceAvailability.shared.observeHTTPStatus(http.statusCode)
                 if [400, 401, 403].contains(http.statusCode) {
                     clearLocalSession()
                 }
@@ -889,6 +900,9 @@ final class AuthService {
     }
 
     private func recordFailure(_ error: Error) {
+        if let authError = error as? AuthError, case .http(let status, _) = authError {
+            LoreServiceAvailability.shared.observeHTTPStatus(status)
+        }
         guard let message = Self.userFacingMessage(for: error) else { return }
         lastError = message
     }

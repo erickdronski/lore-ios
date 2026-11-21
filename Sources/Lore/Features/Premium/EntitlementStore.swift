@@ -141,6 +141,15 @@ final class EntitlementStore {
 
     deinit { expirationTask?.cancel() }
 
+    /// Offline account status can use only a previously verified grant for the
+    /// same identity. Changing screens or restoring a session does not renew it.
+    func bindOfflineAccount(userID: String?) {
+        clear()
+        activeUserID = userID
+        usingCache = userID != nil
+        scheduleExpiration()
+    }
+
     /// Change identity before any suspension, then reconcile device/server state.
     func refresh(accessToken: String?) async {
         guard !Task.isCancelled else { return }

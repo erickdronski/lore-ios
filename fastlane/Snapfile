@@ -22,11 +22,10 @@ languages([
 # The scheme wired for testing in project.yml (its Test action runs LoreUITests).
 scheme("LoreScreenshots")
 
-# Keep App Store capture isolated from the broader UI verification suite. The
-# release CI runs those checks separately; snapshot should only drive the six
-# deterministic marketing frames per device.
+# Capture the bundled guide and check its search, sources and account access
+# along the same offline journey on each device.
 only_testing([
-  "LoreUITests/LoreScreenshots/testCaptureScreenshots",
+  "LoreUITests/LoreScreenshots/testOfflineStarterGuideJourney",
 ])
 
 # Where the PNGs land (also the artifact the workflow uploads).
@@ -35,11 +34,11 @@ output_directory("./fastlane/screenshots")
 # Start clean so a re-run never mixes old and new frames.
 clear_previous_screenshots(true)
 
-# One simulator at a time keeps memory low and network loads deterministic.
+# Run each device separately to keep simulator memory use low.
 concurrent_simulators(false)
 
 # Surface a broken capture immediately instead of half a set.
 stop_after_first_error(true)
 
-# The app pulls real content over the network; give slow first renders room.
+# Allow transient simulator startup failures to retry.
 number_of_retries(2)

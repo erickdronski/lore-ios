@@ -55,6 +55,28 @@ final class PremiumEntitlementTests: XCTestCase {
         }
     }
 
+    func testOfflineAccountBindsOnlyExistingGrantUntilItsOriginalDeadline() throws {
+        let suite = "LoreOfflineAccount." + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let verified = Date(timeIntervalSince1970: 100_000)
+        var time = verified
+        let record = CachedEntitlementRecord(entitlement: entitlement(.active), verifiedAt: verified)
+        defaults.set(try JSONEncoder().encode(record), forKey: "lore.premium.cachedEntitlement.v2")
+        let store = EntitlementStore(defaults: defaults, now: { time }, environmentPolicy: .production)
+
+        store.bindOfflineAccount(userID: record.entitlement.userID)
+        XCTAssertTrue(store.isUsingCachedEntitlement)
+        store.bindOfflineAccount(userID: "different-account")
+        XCTAssertFalse(store.isUsingCachedEntitlement)
+        store.bindOfflineAccount(userID: nil)
+        XCTAssertFalse(store.isUsingCachedEntitlement)
+
+        time = verified.addingTimeInterval(EntitlementCachePolicy.maximumAge + 1)
+        store.bindOfflineAccount(userID: record.entitlement.userID)
+        XCTAssertFalse(store.isUsingCachedEntitlement)
+    }
+
     func testRuntimePolicyUsesDebugOrSandboxReceipt() {
         let sandboxReceipt = URL(fileURLWithPath: "/receipt/sandboxReceipt")
         let productionReceipt = URL(fileURLWithPath: "/receipt/receipt")

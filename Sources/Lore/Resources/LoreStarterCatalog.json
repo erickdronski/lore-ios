@@ -1,0 +1,472 @@
+{
+  "dives": [
+    {
+      "links": {
+        "source_url": "https://www.choosechicago.com/articles/tours-and-attractions/the-bean-chicago/"
+      },
+      "media": {},
+      "source": "Choose Chicago",
+      "place_id": "93588157-d58d-46bd-ac50-ac031ff0db1e",
+      "timeline": [],
+      "narrative": "Anish Kapoor’s sculpture looks like one piece of metal. Its skin actually took 168 stainless steel plates, welded and polished until their joints disappeared. Walk toward the hollow beneath the arch and watch how the curved surface rearranges the surrounding buildings."
+    },
+    {
+      "links": {
+        "source_url": "https://flwright.org/explore/frederick-c-robie-house"
+      },
+      "media": {},
+      "source": "Frank Lloyd Wright Trust",
+      "place_id": "45ea722c-17b4-4af8-8b07-fb7ff87b6df6",
+      "timeline": [
+        {
+          "year": 1910,
+          "title": "Robie House is completed"
+        }
+      ],
+      "narrative": "Frank Lloyd Wright designed this Hyde Park home for Frederick Robie. It was finished in 1910. Follow the line of a projecting roof back to the wall, then look at the bands of windows and long runs of brick below. The horizontal pattern repeats at each scale."
+    },
+    {
+      "links": {
+        "source_url": "https://www.som.com/projects/willis-tower-formerly-sears-tower/"
+      },
+      "media": {},
+      "source": "Skidmore, Owings & Merrill",
+      "place_id": "215607ca-dbab-4464-bd14-489c32ec96de",
+      "timeline": [],
+      "narrative": "Look up the face of the former Sears headquarters. At its base, nine square structural tubes stand together, each 75 feet wide. They end at different heights. The steps you see in the skyline trace the building’s frame."
+    },
+    {
+      "links": {
+        "source_url": "https://www.architecture.org/online-resources/buildings-of-chicago/wrigley-building"
+      },
+      "media": {},
+      "source": "Chicago Architecture Center",
+      "place_id": "b27d45fe-aaad-4616-a9a7-c75460ab4024",
+      "timeline": [],
+      "narrative": "William Wrigley Jr. chose the north bank of the river for his chewing gum company’s headquarters. Two buildings make up the complex, both faced in white terra cotta. Look at the tower above them. Its design draws on the Giralda in Seville, Spain."
+    },
+    {
+      "links": {
+        "source_url": "https://www.nyc.gov/html/dot/html/infrastructure/brooklyn-bridge.shtml"
+      },
+      "media": {},
+      "source": "New York City Department of Transportation",
+      "place_id": "398520cb-edb1-457f-8a70-ec672baa67b4",
+      "timeline": [
+        {
+          "year": 1883,
+          "title": "The bridge is completed"
+        }
+      ],
+      "narrative": "The bridge had to clear the East River while meeting low ground on either bank. That explains why the approaches reach so far into Brooklyn and Manhattan. Its stone towers carry a suspension span completed in 1883 after work began in 1869."
+    },
+    {
+      "links": {
+        "source_url": "https://www.esbnyc.com/about/history"
+      },
+      "media": {},
+      "source": "Empire State Building",
+      "place_id": "6009b5b7-35df-4845-9e11-88b9a8ddb062",
+      "timeline": [
+        {
+          "year": 1931,
+          "title": "The Empire State Building opens"
+        }
+      ],
+      "narrative": "The Empire State Building opened on May 1, 1931. A button pressed by President Herbert Hoover in Washington switched on the lights. The 102-story tower had gone up in a year and 45 days, with workers adding about four and a half stories of steel framing a week."
+    },
+    {
+      "links": {
+        "source_url": "https://www.nps.gov/stli/learn/statue-of-liberty-facts.htm"
+      },
+      "media": {},
+      "source": "National Park Service",
+      "place_id": "da733686-2ec1-4d2d-8d75-3a6a94214e27",
+      "timeline": [
+        {
+          "year": 1886,
+          "title": "The statue is dedicated"
+        }
+      ],
+      "narrative": "Workers built the statue in France and took it apart for the Atlantic crossing. It arrived in New York in 1885 and was reassembled on its pedestal for the dedication in October 1886. From the harbor, compare the figure with the pedestal beneath it. The pedestal is slightly taller."
+    },
+    {
+      "links": {
+        "source_url": "https://www.nps.gov/articles/000/assembly-room-furnishings.htm"
+      },
+      "media": {},
+      "source": "National Park Service",
+      "place_id": "aee3a24e-2075-4a02-9a13-4f89583a3ac9",
+      "timeline": [
+        {
+          "year": 1787,
+          "title": "The Constitutional Convention meets here"
+        }
+      ],
+      "narrative": "The Declaration of Independence was approved in this room in 1776. The carved chair at its front came later. John Folwell made it for Pennsylvania’s legislative speaker in 1779, and George Washington used it while presiding over the Constitutional Convention in 1787."
+    },
+    {
+      "links": {
+        "source_url": "https://www.nps.gov/inde/learn/historyculture/stories-libertybell.htm"
+      },
+      "media": {},
+      "source": "National Park Service",
+      "place_id": "147fc014-9f30-40a0-9a08-6f39cd87b103",
+      "timeline": [],
+      "narrative": "This was the bell of the Pennsylvania State House. Its inscription called for liberty throughout the land. Abolitionists took up that language, and advocates for women’s voting rights and civil rights later found their own cause in the same words."
+    },
+    {
+      "links": {
+        "source_url": "https://readingterminalmarket.org/about-the-market/history/"
+      },
+      "media": {},
+      "source": "Reading Terminal Market",
+      "place_id": "95312f1a-e539-4487-ae05-2c5e1caee269",
+      "timeline": [
+        {
+          "year": 1893,
+          "title": "The market opens below the tracks"
+        }
+      ],
+      "narrative": "When the railroad bought the block for a terminal, the merchants wanted to stay. Their new market opened beneath the train shed in 1893. Stalls occupied the street level while refrigerated rooms below held food at different temperatures. Shoppers once heard trains move overhead."
+    },
+    {
+      "links": {
+        "source_url": "https://www.nps.gov/alca/learn/historyculture/us-penitentiary-alcatraz.htm"
+      },
+      "media": {},
+      "source": "National Park Service",
+      "place_id": "58693525-9c8b-4a70-a0e7-ed1d3f095ee2",
+      "timeline": [
+        {
+          "year": 1934,
+          "title": "The federal penitentiary era begins"
+        }
+      ],
+      "narrative": "The Bureau of Prisons took over a former Army prison on the island. Its distance from shore suited officials who wanted to limit contact with the outside world. Alcatraz operated as a federal penitentiary from 1934 to 1963."
+    },
+    {
+      "links": {
+        "source_url": "https://sfrecpark.org/facilities/facility/details/Coit-Tower-290/"
+      },
+      "media": {},
+      "source": "San Francisco Recreation and Park Department",
+      "place_id": "21b3032d-9ba2-49a4-bf4a-714381924bf4",
+      "timeline": [
+        {
+          "year": 1934,
+          "title": "Artists paint the tower murals"
+        }
+      ],
+      "narrative": "Coit Tower rose on Telegraph Hill in 1933. The next year, artists working for the federal Public Works of Art Project painted its base with scenes of California during the Depression. Look at the building from both distances. The column marks the skyline, while the murals tell stories at eye level."
+    },
+    {
+      "links": {
+        "source_url": "https://www.goldengate.org/bridge/history-research/bridge-features/color-art-deco-styling/"
+      },
+      "media": {},
+      "source": "Golden Gate Bridge, Highway and Transportation District",
+      "place_id": "310d93aa-6bb6-4752-9f6f-080b4740ce03",
+      "timeline": [],
+      "narrative": "The fabricated steel arrived with a reddish protective primer. Seeing the towers go up, consulting architect Irving Morrow investigated how that warm color looked from the bay. His studies led to International Orange, chosen to stand out against water and sky while fitting the hills."
+    },
+    {
+      "links": {
+        "source_url": "https://www.pikeplacemarket.org/market-history/"
+      },
+      "media": {},
+      "source": "Pike Place Market",
+      "place_id": "f867f04d-9dfa-47ed-97c4-509c8bfa0723",
+      "timeline": [
+        {
+          "year": 1907,
+          "title": "A public farmers market begins"
+        }
+      ],
+      "narrative": "Seattle created a public farmers market on Pike Place in 1907. Decades later its future was in doubt. Voters approved a historic district around the market, protecting a place where producers and shoppers could still meet in the middle of the city."
+    },
+    {
+      "links": {
+        "source_url": "https://www.smithtower.com/history/"
+      },
+      "media": {},
+      "source": "Smith Tower",
+      "place_id": "3000bd35-5fb9-44f4-9334-e20e1f06661c",
+      "timeline": [
+        {
+          "year": 1914,
+          "title": "The observatory welcomes its first visitors"
+        }
+      ],
+      "narrative": "Lyman Cornelius Smith bought the lot at Second and Yesler in 1899. Plans for a modest tower grew more ambitious before construction began. When Smith Tower opened on July 4, 1914, thousands of visitors rode the elevator to an observatory on the 35th floor."
+    },
+    {
+      "links": {
+        "source_url": "https://www.spaceneedle.com/history"
+      },
+      "media": {},
+      "source": "Space Needle",
+      "place_id": "0549e213-32e9-4903-a8c7-3f483db7d833",
+      "timeline": [
+        {
+          "year": 1962,
+          "title": "Seattle hosts the World’s Fair"
+        }
+      ],
+      "narrative": "The tower was conceived for Seattle’s 1962 World’s Fair. Architect John Graham Jr. developed the flying-saucer form at the top. Victor Steinbrueck drew on a sculpture of a dancer for the narrow waist of the supporting structure. Trace the two shapes separately from the ground."
+    }
+  ],
+  "tours": [],
+  "cities": [
+    {
+      "lat": 41.8827,
+      "lng": -87.6233,
+      "name": "Chicago",
+      "slug": "chicago",
+      "sort": 1,
+      "zoom": 14.2,
+      "emoji": "🫘",
+      "status": "live",
+      "country": "US"
+    },
+    {
+      "lat": 40.7527,
+      "lng": -73.9772,
+      "name": "New York",
+      "slug": "nyc",
+      "sort": 2,
+      "zoom": 13.8,
+      "emoji": "🗽",
+      "status": "live",
+      "country": "US"
+    },
+    {
+      "lat": 39.95,
+      "lng": -75.155,
+      "name": "Philadelphia",
+      "slug": "philadelphia",
+      "sort": 3,
+      "zoom": 13.8,
+      "emoji": "🔔",
+      "status": "live",
+      "country": "US"
+    },
+    {
+      "lat": 47.611,
+      "lng": -122.34,
+      "name": "Seattle",
+      "slug": "seattle",
+      "sort": 6,
+      "zoom": 13.6,
+      "emoji": "🌲",
+      "status": "live",
+      "country": "US"
+    },
+    {
+      "lat": 37.7896,
+      "lng": -122.4009,
+      "name": "San Francisco",
+      "slug": "san-francisco",
+      "sort": 7,
+      "zoom": 13.3,
+      "emoji": "🌉",
+      "status": "live",
+      "country": "US"
+    }
+  ],
+  "places": [
+    {
+      "id": "93588157-d58d-46bd-ac50-ac031ff0db1e",
+      "lat": 41.8827,
+      "lng": -87.6233,
+      "city": "chicago",
+      "kind": "statue",
+      "name": "Cloud Gate",
+      "slug": "cloud-gate",
+      "tags": [],
+      "emoji": "🫘",
+      "hook_text": "Look for a seam in the skyline reflected on Cloud Gate."
+    },
+    {
+      "id": "45ea722c-17b4-4af8-8b07-fb7ff87b6df6",
+      "lat": 41.7898,
+      "lng": -87.5959,
+      "city": "chicago",
+      "kind": "building",
+      "name": "Frederick C. Robie House",
+      "slug": "robie-house",
+      "tags": [],
+      "emoji": "📏",
+      "hook_text": "Even the brickwork draws your eye sideways."
+    },
+    {
+      "id": "215607ca-dbab-4464-bd14-489c32ec96de",
+      "lat": 41.8789,
+      "lng": -87.6359,
+      "city": "chicago",
+      "kind": "building",
+      "name": "Willis Tower",
+      "slug": "willis-tower",
+      "tags": [],
+      "emoji": "🏙️",
+      "hook_text": "The setbacks mark where individual tubes end."
+    },
+    {
+      "id": "b27d45fe-aaad-4616-a9a7-c75460ab4024",
+      "lat": 41.8896,
+      "lng": -87.6247,
+      "city": "chicago",
+      "kind": "building",
+      "name": "Wrigley Building",
+      "slug": "wrigley-building",
+      "tags": [],
+      "emoji": "🕰️",
+      "hook_text": "A tower from Seville helped shape a Chicago headquarters."
+    },
+    {
+      "id": "398520cb-edb1-457f-8a70-ec672baa67b4",
+      "lat": 40.7061,
+      "lng": -73.9969,
+      "city": "nyc",
+      "kind": "bridge",
+      "name": "Brooklyn Bridge",
+      "slug": "brooklyn-bridge",
+      "tags": [],
+      "emoji": "🌉",
+      "hook_text": "The walk to the river is part of the engineering."
+    },
+    {
+      "id": "6009b5b7-35df-4845-9e11-88b9a8ddb062",
+      "lat": 40.7484,
+      "lng": -73.9857,
+      "city": "nyc",
+      "kind": "building",
+      "name": "Empire State Building",
+      "slug": "empire-state-building",
+      "tags": [],
+      "emoji": "🏙️",
+      "hook_text": "The tower’s opening ceremony reached all the way to Washington."
+    },
+    {
+      "id": "da733686-2ec1-4d2d-8d75-3a6a94214e27",
+      "lat": 40.6892,
+      "lng": -74.0445,
+      "city": "nyc",
+      "kind": "statue",
+      "name": "Statue of Liberty",
+      "slug": "statue-of-liberty",
+      "tags": [],
+      "emoji": "🗽",
+      "hook_text": "The harbor was the statue’s second assembly site."
+    },
+    {
+      "id": "aee3a24e-2075-4a02-9a13-4f89583a3ac9",
+      "lat": 39.948889,
+      "lng": -75.15,
+      "city": "philadelphia",
+      "kind": "building",
+      "name": "Independence Hall",
+      "slug": "independence-hall",
+      "tags": [],
+      "emoji": "🖋️",
+      "hook_text": "One chair in the Assembly Room links two legislatures."
+    },
+    {
+      "id": "147fc014-9f30-40a0-9a08-6f39cd87b103",
+      "lat": 39.949606,
+      "lng": -75.150281,
+      "city": "philadelphia",
+      "kind": "building",
+      "name": "Liberty Bell Center",
+      "slug": "liberty-bell-center",
+      "tags": [],
+      "emoji": "🔔",
+      "hook_text": "Look above the crack for the inscription that gave the bell its public life."
+    },
+    {
+      "id": "95312f1a-e539-4487-ae05-2c5e1caee269",
+      "lat": 39.95334,
+      "lng": -75.15927,
+      "city": "philadelphia",
+      "kind": "building",
+      "name": "Reading Terminal Market",
+      "slug": "reading-terminal-market",
+      "tags": [],
+      "emoji": "🥨",
+      "hook_text": "A railroad and a market shared this block vertically."
+    },
+    {
+      "id": "58693525-9c8b-4a70-a0e7-ed1d3f095ee2",
+      "lat": 37.8267,
+      "lng": -122.423,
+      "city": "san-francisco",
+      "kind": "other",
+      "name": "Alcatraz Island",
+      "slug": "alcatraz-island",
+      "tags": [],
+      "emoji": "🔒",
+      "hook_text": "The island was already a prison before the federal penitentiary opened."
+    },
+    {
+      "id": "21b3032d-9ba2-49a4-bf4a-714381924bf4",
+      "lat": 37.8024,
+      "lng": -122.4058,
+      "city": "san-francisco",
+      "kind": "monument",
+      "name": "Coit Tower",
+      "slug": "coit-tower",
+      "tags": [],
+      "emoji": "🚒",
+      "hook_text": "The tower and the paintings inside it belong to two different years."
+    },
+    {
+      "id": "310d93aa-6bb6-4752-9f6f-080b4740ce03",
+      "lat": 37.8199,
+      "lng": -122.4783,
+      "city": "san-francisco",
+      "kind": "bridge",
+      "name": "Golden Gate Bridge",
+      "slug": "golden-gate-bridge",
+      "tags": [],
+      "emoji": "🌉",
+      "hook_text": "The color of unfinished steel helped determine the finished bridge."
+    },
+    {
+      "id": "f867f04d-9dfa-47ed-97c4-509c8bfa0723",
+      "lat": 47.6097,
+      "lng": -122.3421,
+      "city": "seattle",
+      "kind": "district",
+      "name": "Pike Place Market",
+      "slug": "pike-place-market",
+      "tags": [],
+      "emoji": "🐟",
+      "hook_text": "The first market here gave farmers a way to sell directly."
+    },
+    {
+      "id": "3000bd35-5fb9-44f4-9334-e20e1f06661c",
+      "lat": 47.6018,
+      "lng": -122.3319,
+      "city": "seattle",
+      "kind": "building",
+      "name": "Smith Tower",
+      "slug": "smith-tower",
+      "tags": [],
+      "emoji": "⌨️",
+      "hook_text": "The first plans called for just fourteen stories."
+    },
+    {
+      "id": "0549e213-32e9-4903-a8c7-3f483db7d833",
+      "lat": 47.6205,
+      "lng": -122.3493,
+      "city": "seattle",
+      "kind": "building",
+      "name": "Space Needle",
+      "slug": "space-needle",
+      "tags": [],
+      "emoji": "🛸",
+      "hook_text": "The shape grew out of two very different ideas."
+    }
+  ],
+  "schema_version": 1
+}
