@@ -328,8 +328,10 @@ struct OfflineExploreView: View {
             Label("Apple Maps", systemImage: "map").foregroundStyle(.secondary)
             Text(place.title).font(.system(.title, design: .serif, weight: .bold))
             if let address = place.item.placemark.title { Text(address) }
-            Button("Walking directions in Maps") {
+            Button {
                 place.item.openInMaps(launchOptions: [MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeWalking])
+            } label: {
+                Text("Walking directions in Maps").foregroundStyle(.white)
             }.buttonStyle(.borderedProminent)
             Button("Done") { applePlace = nil }
         }.padding(24).frame(maxWidth: .infinity, alignment: .leading)

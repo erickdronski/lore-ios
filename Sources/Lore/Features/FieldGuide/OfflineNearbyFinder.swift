@@ -30,9 +30,11 @@ struct OfflineNearbyFinder: View {
                     Label("Look around you", systemImage: "location.north.circle")
                         .font(LoreType.display(size: 29))
                     Text("Use your location to find landmarks within 2.5 km. Turn toward one to see what lies ahead.")
-                    Button("Use my location") {
+                    Button {
                         requestedLocation = true
                         startLocation()
+                    } label: {
+                        Text("Use my location").foregroundStyle(.white)
                     }.buttonStyle(.borderedProminent)
                         .accessibilityIdentifier("atlas.finder.enable")
                     Button("Browse the city map", action: browseMap)

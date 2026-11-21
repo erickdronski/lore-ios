@@ -165,7 +165,8 @@ private struct OfflineWalkReader: View {
         } label: {
             Label(session.index + 1 == walk.stops.count ? "Finish walk" : "Next stop",
                   systemImage: session.index + 1 == walk.stops.count ? "checkmark" : "arrow.right")
-                .font(LoreType.button).frame(maxWidth: .infinity).padding(5)
+                .font(LoreType.button).foregroundStyle(LoreColor.bone50)
+                .frame(maxWidth: .infinity).padding(5)
         }
         .buttonStyle(.borderedProminent).tint(LoreColor.ink).accessibilityIdentifier("walks.next")
         if session.index > 0 {
@@ -194,7 +195,9 @@ private struct OfflineWalkReader: View {
             ForEach(walk.stops) { stop in
                 Label(stop.place.name, systemImage: "checkmark")
             }
-            Button("Walk again") { session.restart() }
+            Button { session.restart() } label: {
+                Text("Walk again").foregroundStyle(LoreColor.bone50)
+            }
                 .buttonStyle(.borderedProminent).tint(LoreColor.ink)
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
