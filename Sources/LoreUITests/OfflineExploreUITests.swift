@@ -72,4 +72,26 @@ final class OfflineExploreUITests: XCTestCase {
         )).firstMatch
         XCTAssertTrue(result.waitForExistence(timeout: 30))
     }
+
+    @MainActor
+    func testVisibleMapPinOpensBundledDetail() throws {
+        let app = XCUIApplication()
+        app.resetAuthorizationStatus(for: .location)
+        app.launchArguments += ["-lore-starter-guide"]
+        app.launch()
+        XCTAssertTrue(app.buttons["atlas.directory"].waitForExistence(timeout: 15))
+        let map = app.maps.firstMatch
+        XCTAssertTrue(map.waitForExistence(timeout: 8))
+        let titles = ["Cloud Gate", "Chicago Cultural Center", "Willis Tower", "Crown Fountain", "The Rookery",
+                      "Tribune Tower", "Marina City", "Wrigley Building", "Chicago Theatre", "Chicago Water Tower"]
+        let pin = map.descendants(matching: .any).matching(NSPredicate(format: "label IN %@", titles)).firstMatch
+        XCTAssertTrue(pin.waitForExistence(timeout: 10), map.debugDescription)
+        pin.tap()
+        let selected = app.buttons["atlas.selectedPlace"]
+        XCTAssertTrue(selected.waitForExistence(timeout: 5))
+        selected.tap()
+        let directions = app.descendants(matching: .any).matching(NSPredicate(
+            format: "label == %@", "Walking directions in Maps")).firstMatch
+        XCTAssertTrue(directions.waitForExistence(timeout: 8))
+    }
 }

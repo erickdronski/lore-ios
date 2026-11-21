@@ -11,6 +11,9 @@ import json
 import math
 import subprocess
 import sys
+import tempfile
+import time
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import quote, unquote, urlencode, urlsplit
 from urllib.request import Request, urlopen
@@ -38,7 +41,7 @@ GEOMETRY_ITEMS = {
     "shedd-aquarium": "Q2166515", "st-regis-chicago": "Q19817578",
     "isabella-stewart-gardner-museum": "Q49135", "liberty-science-center": "Q6541946",
     "museum-of-pop-culture": "Q1384356", "neon-museum": "Q6993430",
-    "perez-art-museum-miami": "Q3026874", "rubell-museum": "Q86757788",
+    "paulsdale-alice-paul": "Q7155356", "rainier-tower": "Q7284914", "rubell-museum": "Q86757788",
     "miami-lowe-art-museum": "Q3837886",
 }
 
@@ -50,6 +53,8 @@ NAMES = {
     "los-angeles-the-hollywood-highland-center": ("Ovation Hollywood", "Ovation Hollywood", "https://www.ovationhollywood.com/visit"),
     "bo-railroad-museum": ("National Museum of Railroad History & Innovation", "National Museum of Railroad History & Innovation", "https://www.borail.org/about/"),
     "mccormick-field": ("HomeTrust Park", "Asheville Tourists", "https://www.milb.com/asheville/ballpark"),
+    "perez-art-museum-miami": ("Pérez Art Museum Miami", "Pérez Art Museum Miami", "https://www.pamm.org/en/directions/"),
+    "paulsdale-alice-paul": ("Paulsdale", "Alice Paul Center for Gender Justice", "https://www.alicepaul.org/visit/"),
 }
 LABELS = {
     "newport-ri-whitehorne-house-the-ghost-bride-legend": "Whitehorne House Museum",
@@ -60,6 +65,7 @@ LABELS = {
 }
 EXCLUDE = {
     "los-angeles-the-hollywood-roosevelt-hotel",  # duplicate with a misplaced pin
+    "austin-congress-avenue-bridge-bat-emergence",  # duplicate bridge marker several blocks away
     "austin-hope-outdoor-gallery", "starbucks-reserve-roastery",  # former venues
     "tinker-field",  # source record identifies the demolished stadium
     "newport-ri-conanicut-point-wreck-treasure-and-mystery", "charleston-blackbeard-s-hideout-legend",
@@ -67,6 +73,11 @@ EXCLUDE = {
     "los-angeles-the-playboy-mansion", "san-francisco-spreckels-mansion",
 }
 WIDE_FEATURES = {"park", "district", "nature", "infrastructure"}
+
+# Check the original CC0 museum pin against the city map for the current
+# building. Its Wikidata item still locates the museum at its previous site.
+# https://www.miami.gov/Notices/Events-Activities/State-of-the-City-Address-2020
+CHECKED_PINS = {"perez-art-museum-miami": (25.7860641, -80.186286)}
 
 
 def api(host, **params):
@@ -128,6 +139,31 @@ def corrected_geometry(slugs):
     return result
 
 
+def refresh_routes(catalog):
+    places = {p["id"]: p for p in catalog["places"]}
+    for index, tour in enumerate(catalog["tours"]):
+        if index:
+            time.sleep(1.1)
+        points = [places[s["place_id"]] for s in tour["tour_stop"]]
+        coords = ";".join(f"{p['lng']},{p['lat']}" for p in points)
+        endpoint = "https://routing.openstreetmap.de/routed-foot/route/v1/driving/"
+        request = Request(endpoint + coords + "?overview=false&steps=false",
+                          headers={"User-Agent": "Lore release route check (https://discoverlore.app)"})
+        with urlopen(request, timeout=35) as response:
+            data = json.load(response)
+        route = data["routes"][0]
+        if data["code"] != "Ok" or len(route["legs"]) != len(points) - 1 or any(leg["distance"] <= 0 for leg in route["legs"]):
+            raise ValueError(f"Unresolved walk: {tour['slug']}")
+        if len(data["waypoints"]) != len(points) or any(w["distance"] > 180 for w in data["waypoints"]):
+            raise ValueError(f"Review sidewalk access for {tour['slug']}")
+        tour["distance_km"] = round(route["distance"] / 1000, 1)
+        tour["duration_min"] = 5 * math.ceil((route["duration"] / 60 + 10 * len(points)) / 5)
+        tour["route_checked_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        tour["route_note"] = ("Distance follows mapped pedestrian paths. Allow about ten minutes at each stop, "
+                              "plus time for any indoor visits or queues. Check local access before setting out. "
+                              "Route data © OpenStreetMap contributors.")
+
+
 def prepare(catalog):
     if catalog.get("schema_version") != 2 or catalog.get("review_epoch") != 2026090501:
         raise ValueError("Review the updated publication contract before preparing a new release")
@@ -142,7 +178,8 @@ def prepare(catalog):
             if distance_km(p["lat"], p["lng"], lat, lng) > 20:
                 raise ValueError(f"Recheck Wikidata match for {p['slug']}")
             p.update(lat=lat, lng=lng, geom_license="cc0", geom_source_url="https://www.wikidata.org/wiki/"+item)
-            p.update(source_name="Wikipedia", source_url="https://en.wikipedia.org/wiki/"+quote(title.replace(" ", "_"),safe="()"))
+            if p["id"] not in edited:
+                p.update(source_name="Wikipedia", source_url="https://en.wikipedia.org/wiki/"+quote(title.replace(" ", "_"),safe="()"))
         if p["id"] not in edited:
             titles[p["slug"]] = unquote(urlsplit(p["source_url"]).path.removeprefix("/wiki/")).replace("_", " ")
     pages = reference_pages(titles.values())
@@ -153,7 +190,10 @@ def prepare(catalog):
             page = pages[titles[slug]]
             if page.get("missing") or "disambiguation" in page.get("pageprops", {}):
                 continue
-            if slug not in GEOMETRY_ITEMS:
+            if slug in CHECKED_PINS:
+                if distance_km(p["lat"], p["lng"], *CHECKED_PINS[slug]) > 0.05:
+                    raise ValueError(f"Recheck the public location for {slug}")
+            elif slug not in GEOMETRY_ITEMS:
                 coords = next(iter(page.get("coordinates", [])), None)
                 if not coords or coords.get("globe") != "earth":
                     continue
@@ -168,6 +208,7 @@ def prepare(catalog):
     catalog["places"] = sorted(retained, key=lambda p: (p["city"], p["name"], p["id"]))
     cities = {p["city"] for p in retained}
     catalog["cities"] = [c for c in catalog["cities"] if c["slug"] in cities]
+    refresh_routes(catalog)
     return catalog
 
 
@@ -184,9 +225,10 @@ if __name__ == "__main__":
         rows = [json.dumps(r, ensure_ascii=False, sort_keys=True, separators=(",", ":")) for r in catalog[key]]
         fields.append('  "'+key+'": [\n    '+',\n    '.join(rows)+'\n  ]')
     output = "{\n" + ",\n".join(fields) + "\n}\n"
-    temporary = args.destination.with_suffix(".partial.json")
+    with tempfile.NamedTemporaryFile("w", dir=args.destination.parent, delete=False, encoding="utf-8") as handle:
+        handle.write(output)
+        temporary = Path(handle.name)
     try:
-        temporary.write_text(output, encoding="utf-8")
         subprocess.run([sys.executable, str(Path(__file__).with_name("validate.py")), str(temporary)], check=True)
         temporary.replace(args.destination)
     finally:
