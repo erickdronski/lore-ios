@@ -9,9 +9,11 @@ struct CatalogEntryView: View {
     @AppStorage(CatalogEntryView.preferStarterKey) private var preferStarter = false
     @AppStorage("lore.lastServiceFailure") private var lastFailure: Double = 0
     @State private var connected: Bool?
+    @State private var startedExploring = false
     @State private var checking = false
     @State private var attempts = 0
     @State private var pendingLink: URL?
+    @State private var launchLink: URL?
 
     var body: some View {
         Group {
@@ -25,13 +27,13 @@ struct CatalogEntryView: View {
                             router.handleDeepLink(pendingLink)
                         }
                     }
-            case false:
-                StarterGuideView(checking: checking, tried: attempts > 1, preferred: preferStarter, pendingLink: $pendingLink) {
+            default:
+                StarterGuideView(checking: checking, tried: attempts > 1, pendingLink: $pendingLink) {
                     Task { await checkService(manual: true) }
                 }
-            default:
-                ProgressView("Opening Lore…")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .simultaneousGesture(DragGesture(minimumDistance: 0).onChanged { _ in
+                    startedExploring = true
+                })
             }
         }
         .task { if connected == nil { await checkService(manual: false) } }
@@ -40,14 +42,22 @@ struct CatalogEntryView: View {
         }
         .onOpenURL { url in
             if connected == true { router.handleDeepLink(url) }
-            else if url.scheme == "lore" { pendingLink = url }
+            else if url.scheme == "lore" {
+                if connected == nil { launchLink = url } else { pendingLink = url }
+            }
         }
     }
 
     @MainActor private func checkService(manual: Bool) async {
         guard !checking else { return }
         checking = true
-        defer { checking = false }
+        defer {
+            checking = false
+            if let launchLink {
+                self.launchLink = nil
+                pendingLink = launchLink
+            }
+        }
         attempts += 1
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("-lore-starter-guide") {
@@ -67,6 +77,6 @@ struct CatalogEntryView: View {
         let live = await LoreServiceAvailability.shared.check()
         lastFailure = live ? 0 : Date().timeIntervalSince1970
         if live { preferStarter = false }
-        connected = live
+        connected = live && (manual || !startedExploring)
     }
 }

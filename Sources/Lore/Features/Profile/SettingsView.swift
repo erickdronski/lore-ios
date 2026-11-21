@@ -53,7 +53,7 @@ struct SettingsView: View {
                 whatYouSeeSection
                 preferencesSection
                 Section {
-                    Button("Use on-device Starter Guide") { preferStarter = true }
+                    Button("Open on-device map") { preferStarter = true }
                 } footer: {
                     Text("Browse the included places without loading the full online catalog.")
                 }
