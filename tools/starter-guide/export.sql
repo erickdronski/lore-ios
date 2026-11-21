@@ -1,4 +1,6 @@
 -- Public release export. Run read-only in the project SQL editor as shown.
+-- Save the returned catalog object, then run prepare.py to validate references,
+-- review the routes and generate the on-device JSON. Never ship the raw export.
 -- The standalone atlas uses public-domain/CC0 coordinates, selected factual fields,
 -- original editorial text, and references. Never export source prose or media.
 -- With a new contract epoch or active withdrawal policy a new review is required.

@@ -28,12 +28,10 @@ struct CatalogEntryView: View {
                         }
                     }
             default:
-                StarterGuideView(checking: checking, tried: attempts > 1, pendingLink: $pendingLink) {
+                StarterGuideView(checking: checking, tried: attempts > 1, pendingLink: $pendingLink,
+                                 onInteraction: { startedExploring = true }) {
                     Task { await checkService(manual: true) }
                 }
-                .simultaneousGesture(DragGesture(minimumDistance: 0).onChanged { _ in
-                    startedExploring = true
-                })
             }
         }
         .task { if connected == nil { await checkService(manual: false) } }

@@ -82,9 +82,8 @@ final class OfflineExploreUITests: XCTestCase {
         XCTAssertTrue(app.buttons["atlas.directory"].waitForExistence(timeout: 15))
         let map = app.maps.firstMatch
         XCTAssertTrue(map.waitForExistence(timeout: 8))
-        let titles = ["Cloud Gate", "Chicago Cultural Center", "Willis Tower", "Crown Fountain", "The Rookery",
-                      "Tribune Tower", "Marina City", "Wrigley Building", "Chicago Theatre", "Chicago Water Tower"]
-        let pin = map.descendants(matching: .any).matching(NSPredicate(format: "label IN %@", titles)).firstMatch
+        let pin = map.descendants(matching: .any)
+            .matching(NSPredicate(format: "label BEGINSWITH[c] %@", "Tribune Tower")).firstMatch
         XCTAssertTrue(pin.waitForExistence(timeout: 10), map.debugDescription)
         pin.tap()
         let selected = app.buttons["atlas.selectedPlace"]
@@ -93,5 +92,38 @@ final class OfflineExploreUITests: XCTestCase {
         let directions = app.descendants(matching: .any).matching(NSPredicate(
             format: "label == %@", "Walking directions in Maps")).firstMatch
         XCTAssertTrue(directions.waitForExistence(timeout: 8))
+    }
+
+    @MainActor
+    func testWalkResumesAtCloudGateAfterRelaunch() throws {
+        let app = XCUIApplication()
+        app.launchArguments += ["-lore-starter-guide"]
+        app.launch()
+        let walks = app.buttons["atlas.walks"]
+        let route = app.buttons["walks.route.millennium-moments"]
+        func openWalk() {
+            XCTAssertTrue(walks.waitForExistence(timeout: 15))
+            walks.tap()
+            for _ in 0..<3 where !route.isHittable { app.swipeUp() }
+            XCTAssertTrue(route.isHittable)
+            route.tap()
+        }
+        openWalk()
+        let current = app.staticTexts["walks.stopTitle"]
+        let previous = app.buttons["Previous stop"]
+        for _ in 0..<3 where current.exists && current.label != "Marina City" {
+            for _ in 0..<3 where !previous.isHittable { app.swipeUp() }
+            previous.tap()
+        }
+        XCTAssertEqual(current.label, "Marina City")
+        let next = app.buttons["walks.next"]
+        for _ in 0..<3 where !next.isHittable { app.swipeUp() }
+        next.tap()
+        XCTAssertEqual(current.label, "Cloud Gate")
+        app.terminate()
+        app.launch()
+        openWalk()
+        XCTAssertTrue(current.waitForExistence(timeout: 8))
+        XCTAssertEqual(current.label, "Cloud Gate")
     }
 }

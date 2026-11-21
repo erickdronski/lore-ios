@@ -13,6 +13,7 @@ struct OfflineExploreView: View {
     let onSaved: (() -> Void)?
     let onSearch: (() -> Void)?
     let onAccount: (() -> Void)?
+    let onInteraction: (() -> Void)?
     let onOpen: (Place) -> Void
 
     @State private var citySlug: String?
@@ -34,7 +35,7 @@ struct OfflineExploreView: View {
     init(cities: [City], places: [Place], initialCity: String,
          initialMode: OfflineExploreMode = .map, followUserOnLaunch: Bool = false,
          onWalks: (() -> Void)? = nil, onSaved: (() -> Void)? = nil,
-         onSearch: (() -> Void)? = nil, onAccount: (() -> Void)? = nil,
+         onSearch: (() -> Void)? = nil, onAccount: (() -> Void)? = nil, onInteraction: (() -> Void)? = nil,
          onOpen: @escaping (Place) -> Void) {
         self.cities = cities
         self.places = places
@@ -43,11 +44,12 @@ struct OfflineExploreView: View {
         self.onSaved = onSaved
         self.onSearch = onSearch
         self.onAccount = onAccount
+        self.onInteraction = onInteraction
         self.onOpen = onOpen
         let preferred = followUserOnLaunch ? UserDefaults.standard.string(forKey: "atlas.manualCity") : nil
         let city = cities.first { $0.slug == preferred } ?? cities.first { $0.slug == initialCity } ?? cities.first
         let center = city?.coordinate ?? CLLocationCoordinate2D(latitude: 39, longitude: -98)
-        let region = Self.region(center, meters: city == nil ? 4_000_000 : 4_300)
+        let region = Self.region(center, meters: city == nil ? 4_000_000 : 3_100)
         _visible = State(initialValue: region)
         _position = State(initialValue: .region(region))
         _citySlug = State(initialValue: city?.slug)
@@ -63,7 +65,11 @@ struct OfflineExploreView: View {
         .background(LoreColor.bone100)
         .foregroundStyle(LoreColor.ink)
         .tint(LoreColor.brass700)
+        .environment(\.colorScheme, .light)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(LoreColor.bone50, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
+        .toolbarColorScheme(.light, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .principal) {
                 Text(mode == .map ? "Lore" : "Nearby finder")
@@ -89,6 +95,8 @@ struct OfflineExploreView: View {
         .onChange(of: mode) { _, mode in
             if mode == .map { resumeLocation() } else { locator.stop() }
         }
+        .onChange(of: selection) { _, newValue in if newValue != nil { onInteraction?() } }
+        .onChange(of: showsDirectory) { _, presented in if presented { onInteraction?() } }
         .onChange(of: locator.fix) { _, fix in
             guard locator.authorized, let fix else { return }
             if awaitingFix || (centeredOnUser && fix.distance(from: center) > 450) { moveToUser(fix) }
@@ -114,9 +122,9 @@ struct OfflineExploreView: View {
     private var atlas: some View {
         VStack(spacing: 0) {
             Map(position: $position, selection: $selection) {
-                if locator.authorized { UserAnnotation() }
+                if locator.authorized && (centeredOnUser || awaitingFix) { UserAnnotation() }
                 ForEach(visiblePlaces) { place in
-                    Marker(place.name, systemImage: "building.columns.fill", coordinate: place.coordinate)
+                    Marker(place.name, systemImage: mapSymbol(for: place.kind), coordinate: place.coordinate)
                         .tint(LoreColor.brass700).tag(place.id)
                 }
                 ForEach(apple.places) { place in
@@ -130,10 +138,12 @@ struct OfflineExploreView: View {
             .onMapCameraChange(frequency: .onEnd) { context in
                 let moved = CLLocation(latitude: context.region.center.latitude, longitude: context.region.center.longitude)
                     .distance(from: center)
+                if position.positionedByUser { onInteraction?() }
                 if position.positionedByUser && moved > 150 {
                     selection = nil
                     awaitingFix = false
                     centeredOnUser = false
+                    locator.stop()
                     citySlug = nil
                     if moved > 1_000 { apple.reset() }
                 }
@@ -143,6 +153,20 @@ struct OfflineExploreView: View {
             .overlay(alignment: .topTrailing) { locateButton.padding(12) }
 
             shelf
+        }
+    }
+
+    private func mapSymbol(for kind: String) -> String {
+        switch kind {
+        case "bridge": return "road.lanes"
+        case "park", "nature": return "leaf.fill"
+        case "venue": return "ticket.fill"
+        case "statue", "monument": return "star.fill"
+        case "stadium": return "sportscourt.fill"
+        case "district", "plaza": return "square.grid.2x2.fill"
+        case "market": return "basket.fill"
+        case "infrastructure": return "gearshape.fill"
+        default: return "building.columns.fill"
         }
     }
 
@@ -166,6 +190,7 @@ struct OfflineExploreView: View {
 
     private var locateButton: some View {
         Button {
+            onInteraction?()
             if locator.denied, let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
             else {
                 awaitingFix = true
@@ -207,7 +232,7 @@ struct OfflineExploreView: View {
             }
             Divider()
             HStack {
-                shortcut("Finder", "viewfinder", id: "guide.finder") { mode = .nearby }
+                shortcut("Finder", "viewfinder", id: "guide.finder") { onInteraction?(); mode = .nearby }
                 if let onWalks { shortcut("Walks", "figure.walk", id: "atlas.walks", action: onWalks) }
                 if let onSaved { shortcut("Saved", "bookmark", id: "atlas.saved", action: onSaved) }
                 if let onSearch { shortcut("Search", "magnifyingglass", id: "atlas.search", action: onSearch) }
@@ -246,6 +271,7 @@ struct OfflineExploreView: View {
                 Button("View \(apple.places.count) places from Apple Maps") { showsDirectory = true }
             } else {
                 Button {
+                    onInteraction?()
                     let location = visible.center
                     Task { await apple.find(near: location) }
                 } label: {
@@ -312,7 +338,7 @@ struct OfflineExploreView: View {
 
     private func resumeLocation() {
         guard screenVisible, mode == .map, scenePhase == .active else { return }
-        if followUserOnLaunch || awaitingFix || centeredOnUser { locator.start() }
+        if awaitingFix || centeredOnUser { locator.start() }
     }
 
     private func moveToUser(_ fix: CLLocation) {
@@ -327,13 +353,15 @@ struct OfflineExploreView: View {
     }
 
     private func moveToCity(_ city: City) {
+        onInteraction?()
         if followUserOnLaunch { UserDefaults.standard.set(city.slug, forKey: "atlas.manualCity") }
         awaitingFix = false
         centeredOnUser = false
         citySlug = city.slug
+        locator.stop()
         selection = nil
         apple.reset()
-        let region = Self.region(city.coordinate, meters: 4_300)
+        let region = Self.region(city.coordinate, meters: 3_100)
         visible = region
         position = .region(region)
     }

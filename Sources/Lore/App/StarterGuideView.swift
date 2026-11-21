@@ -53,6 +53,7 @@ struct StarterGuideView: View {
     let checking: Bool
     let tried: Bool
     @Binding var pendingLink: URL?
+    let onInteraction: () -> Void
     let retry: () -> Void
     @State private var path: [StarterPage] = []
     @State private var query = ""
@@ -69,7 +70,8 @@ struct StarterGuideView: View {
                     OfflineExploreView(cities: catalog.cities, places: catalog.places, initialCity: Config.defaultCity,
                                        followUserOnLaunch: true,
                                        onWalks: { path.append(.walks(nil)) }, onSaved: { path.append(.saved) },
-                                       onSearch: { path.append(.guide) }, onAccount: { account = true }) {
+                                       onSearch: { path.append(.guide) }, onAccount: { account = true },
+                                       onInteraction: onInteraction) {
                         path.append(.place($0.id))
                     }
                         .navigationDestination(for: StarterPage.self) { page in
@@ -111,6 +113,8 @@ struct StarterGuideView: View {
             savedIDs = Set(UserDefaults.standard.stringArray(forKey: savesKey) ?? [])
         }
         .sheet(isPresented: $account) { StarterAccountView() }
+        .onChange(of: path) { _, _ in onInteraction() }
+        .onChange(of: account) { _, presented in if presented { onInteraction() } }
         .onChange(of: pendingLink, initial: true) { _, url in
             guard let url else { return }
             pendingLink = nil
@@ -186,14 +190,14 @@ struct StarterGuideView: View {
             }
             if term.isEmpty {
                 Section("Explore") {
-                    NavigationLink(value: StarterPage.atlas(Config.defaultCity, nearby: true)) {
+                    pageLink(.atlas(Config.defaultCity, nearby: true)) {
                         Label("Find a landmark nearby", systemImage: "viewfinder")
                     }.accessibilityIdentifier("guide.finder")
-                    NavigationLink(value: StarterPage.atlas(Config.defaultCity, nearby: false)) {
+                    pageLink(.atlas(Config.defaultCity, nearby: false)) {
                         Label("Explore the atlas", systemImage: "map")
                     }.accessibilityIdentifier("guide.atlas")
                     if !catalog.tours.isEmpty {
-                        NavigationLink(value: StarterPage.walks(nil)) { Label("Start a city walk", systemImage: "figure.walk") }
+                        pageLink(.walks(nil)) { Label("Start a city walk", systemImage: "figure.walk") }
                             .accessibilityIdentifier("guide.walks")
                     }
                     Button {
@@ -214,7 +218,7 @@ struct StarterGuideView: View {
                 Section("Cities") {
                     ForEach(cities.prefix(term.isEmpty ? 5 : 50)) { city in cityLink(city, catalog) }
                     if term.isEmpty && cities.count > 5 {
-                        NavigationLink("All \(cities.count) cities", value: StarterPage.cities)
+                        pageLink(.cities) { Text("All \(cities.count) cities") }
                     }
                 }
             }
@@ -234,8 +238,19 @@ struct StarterGuideView: View {
         }.scrollContentBackground(.hidden).background(LoreColor.bone).environment(\.colorScheme, .light)
     }
 
+    private func pageLink<Content: View>(_ page: StarterPage, @ViewBuilder label: () -> Content) -> some View {
+        Button { path.append(page) } label: {
+            HStack(spacing: 10) {
+                label()
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold)).foregroundStyle(.tertiary).accessibilityHidden(true)
+            }.contentShape(Rectangle())
+        }.buttonStyle(.plain)
+    }
+
     private func cityLink(_ city: City, _ catalog: StarterCatalog) -> some View {
-        NavigationLink(value: StarterPage.city(city.slug)) {
+        pageLink(.city(city.slug)) {
             HStack {
                 Text(city.name).font(.system(.headline, design: .serif))
                 Spacer()
@@ -250,9 +265,9 @@ struct StarterGuideView: View {
         let stories = places.filter { catalog.divesByID[$0.id] != nil }
         return List {
             Section {
-                NavigationLink("See places on the map", value: StarterPage.atlas(city.slug, nearby: false))
+                pageLink(.atlas(city.slug, nearby: false)) { Text("See places on the map") }
                 if catalog.tours.contains(where: { $0.city == city.slug }) {
-                    NavigationLink("Walk this city", value: StarterPage.walks(city.slug))
+                    pageLink(.walks(city.slug)) { Text("Walk this city") }
                 }
             }
             if !stories.isEmpty { Section("Stories to discover") { ForEach(stories) { placeLink($0) } } }
@@ -263,7 +278,7 @@ struct StarterGuideView: View {
     }
 
     private func placeLink(_ place: Place) -> some View {
-        NavigationLink(value: StarterPage.place(place.id)) {
+        pageLink(.place(place.id)) {
             VStack(alignment: .leading, spacing: 5) {
                 Text(place.name).font(.system(.headline, design: .serif))
                 if let teaser = place.teaser { Text(teaser).font(.subheadline).foregroundStyle(.secondary).lineLimit(2) }

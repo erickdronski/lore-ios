@@ -19,8 +19,8 @@ on:
         type: boolean
 
 concurrency:
-  group: ios-${{ github.workflow }}-${{ github.ref }}
-  # Cancel superseded push/PR validation runs; NEVER cancel a dispatch (TestFlight upload mid-flight)
+  # A subsequent main push must not interrupt an explicitly requested signed upload.
+  group: ios-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && inputs.upload_to_testflight && 'distribution' || 'validation' }}
   cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
 
 permissions:

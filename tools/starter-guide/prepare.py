@@ -83,7 +83,7 @@ CHECKED_PINS = {"perez-art-museum-miami": (25.7860641, -80.186286)}
 def api(host, **params):
     params.update(format="json", formatversion="2")
     request = Request(f"https://{host}/w/api.php?" + urlencode(params),
-                      headers={"User-Agent": "Lore catalog preparation (https://discoverlore.app)"})
+                      headers={"User-Agent": "Lore catalog preparation (https://lore-web-liart.vercel.app)"})
     with urlopen(request, timeout=40) as response:
         result = json.load(response)
     if "error" in result:
@@ -148,7 +148,7 @@ def refresh_routes(catalog):
         coords = ";".join(f"{p['lng']},{p['lat']}" for p in points)
         endpoint = "https://routing.openstreetmap.de/routed-foot/route/v1/driving/"
         request = Request(endpoint + coords + "?overview=false&steps=false",
-                          headers={"User-Agent": "Lore release route check (https://discoverlore.app)"})
+                          headers={"User-Agent": "Lore release route check (https://lore-web-liart.vercel.app)"})
         with urlopen(request, timeout=35) as response:
             data = json.load(response)
         route = data["routes"][0]
@@ -230,6 +230,7 @@ if __name__ == "__main__":
         temporary = Path(handle.name)
     try:
         subprocess.run([sys.executable, str(Path(__file__).with_name("validate.py")), str(temporary)], check=True)
+        temporary.chmod(0o644)
         temporary.replace(args.destination)
     finally:
         temporary.unlink(missing_ok=True)

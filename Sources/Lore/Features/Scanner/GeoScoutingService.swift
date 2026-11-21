@@ -54,7 +54,7 @@ final class GeoScoutingService {
             return
         }
         availability = .checking
-        ARGeoTrackingConfiguration.checkAvailability(at: coordinate) { available, _ in
+        ARGeoTrackingConfiguration.checkAvailability(at: coordinate) { [weak self] available, _ in
             Task { @MainActor [weak self] in
                 guard self?.activeRequestID == requestID else { return }
                 self?.availability = available ? .available : .unavailable
