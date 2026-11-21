@@ -1409,7 +1409,7 @@ struct BearingChip: View {
     }
 }
 
-private struct ScannerHeadingOrientationReader: UIViewRepresentable {
+struct ScannerHeadingOrientationReader: UIViewRepresentable {
     let onChange: (UIInterfaceOrientation) -> Void
 
     func makeUIView(context: Context) -> ScannerHeadingOrientationView {
@@ -1422,7 +1422,7 @@ private struct ScannerHeadingOrientationReader: UIViewRepresentable {
     }
 }
 
-private final class ScannerHeadingOrientationView: UIView {
+final class ScannerHeadingOrientationView: UIView {
     var onChange: (UIInterfaceOrientation) -> Void
     private var lastOrientation: UIInterfaceOrientation?
 
