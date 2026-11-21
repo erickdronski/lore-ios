@@ -32,20 +32,13 @@ This repository contains the iOS client; the backend is maintained separately.
 
 ## Screenshots
 
-Unedited simulator captures of the shipped 1.2 build. Provenance (source SHA,
-device, Xcode and SHA-256 per frame) is recorded in
-[`fastlane/promo_screenshots`](fastlane/promo_screenshots/README.md).
+Lore 1.2.1 build 50 includes a guide you can browse offline. These screenshots show its city list, Chicago landmarks and Cloud Gate story. [Screenshot details](fastlane/promo_screenshots/README.md)
 
 <table>
   <tr>
-    <td><img src="fastlane/promo_screenshots/en-US/01_map.png" width="240" alt="City map with the Discovery Deck of nearby places" /></td>
-    <td><img src="fastlane/promo_screenshots/en-US/02_dive.png" width="240" alt="Willis Tower deep dive with story, gallery and narration" /></td>
-    <td><img src="fastlane/promo_screenshots/en-US/03_tours.png" width="240" alt="Self-guided walking tours" /></td>
-  </tr>
-  <tr>
-    <td><img src="fastlane/promo_screenshots/en-US/04_culture.png" width="240" alt="Meet Chicago city culture guide" /></td>
-    <td><img src="fastlane/promo_screenshots/en-US/05_passport.png" width="240" alt="Passport with visits and milestones" /></td>
-    <td><img src="fastlane/promo_screenshots/en-US/06_profile.png" width="240" alt="Signed-out profile" /></td>
+    <td><img src="fastlane/promo_screenshots/en-US/01_starter_guide.png" width="240" alt="Starter Guide listing five cities available offline" /></td>
+    <td><img src="fastlane/promo_screenshots/en-US/02_chicago.png" width="240" alt="Four Chicago landmarks in the bundled guide" /></td>
+    <td><img src="fastlane/promo_screenshots/en-US/03_cloud_gate.png" width="240" alt="Cloud Gate story with source, directions and local save control" /></td>
   </tr>
 </table>
 
