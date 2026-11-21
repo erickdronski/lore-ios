@@ -214,7 +214,7 @@ struct OfflineExploreView: View {
             } else if let selectedApple {
                 Button { applePlace = selectedApple } label: {
                     shelfHeading(selectedApple.title, caption: "Place from Apple Maps", icon: "arrow.up.right")
-                }
+                }.accessibilityIdentifier("atlas.selectedApple")
             } else {
                 let count = nearby.count
                 Button { query = ""; showsDirectory = true } label: {
@@ -293,7 +293,7 @@ struct OfflineExploreView: View {
                             Button(item.title) {
                                 selection = item.id.uuidString
                                 showsDirectory = false
-                            }
+                            }.accessibilityIdentifier("atlas.applePlace")
                         }
                     }
                 }

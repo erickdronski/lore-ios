@@ -38,7 +38,8 @@ final class OfflineExploreUITests: XCTestCase {
         app.resetAuthorizationStatus(for: .location)
         app.launchArguments += ["-lore-starter-guide"]
         let device = XCUIDevice.shared
-        let chicago = CLLocation(latitude: 41.8827, longitude: -87.6233)
+        let chicago = CLLocation(coordinate: CLLocationCoordinate2D(latitude: 41.8827, longitude: -87.6233),
+                                 altitude: 181, horizontalAccuracy: 5, verticalAccuracy: 3, timestamp: Date())
         device.location = XCUILocation(location: chicago)
         defer { device.location = nil }
         app.launch()
@@ -57,6 +58,16 @@ final class OfflineExploreUITests: XCTestCase {
         let cloud = app.buttons["atlas.place.cloud-gate"]
         XCTAssertTrue(cloud.waitForExistence(timeout: 8))
         app.buttons["Done"].tap()
+        app.buttons["guide.finder"].tap()
+        app.buttons["atlas.finder.enable"].tap()
+        XCTAssertTrue(app.staticTexts["Nearby landmarks"].waitForExistence(timeout: 15))
+        let camera = app.buttons["Show camera view"]
+        XCTAssertTrue(camera.exists)
+        camera.tap()
+        let denyCamera = system.alerts.buttons.matching(
+            NSPredicate(format: "label IN %@", ["Don’t Allow", "Don't Allow"])).firstMatch
+        if denyCamera.waitForExistence(timeout: 4) { denyCamera.tap() }
+        XCTAssertTrue(app.staticTexts["Nearby landmarks"].exists)
 
         app.terminate()
         device.location = XCUILocation(location: CLLocation(latitude: 64.1466, longitude: -21.9426))
@@ -71,6 +82,19 @@ final class OfflineExploreUITests: XCTestCase {
             "places from Apple Maps", "Apple Maps found no places", "Apple Maps search is unavailable"
         )).firstMatch
         XCTAssertTrue(result.waitForExistence(timeout: 30))
+        let outcome = XCTAttachment(string: result.label)
+        outcome.name = "Apple Maps nearby response"
+        outcome.lifetime = .keepAlways
+        add(outcome)
+        let list = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] %@", "places from Apple Maps")).firstMatch
+        if list.exists {
+            list.tap()
+            let first = app.buttons.matching(identifier: "atlas.applePlace").firstMatch
+            XCTAssertTrue(first.waitForExistence(timeout: 8))
+            first.tap()
+            app.buttons["atlas.selectedApple"].tap()
+            XCTAssertTrue(app.buttons["Walking directions in Maps"].waitForExistence(timeout: 8))
+        }
     }
 
     @MainActor
