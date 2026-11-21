@@ -17,6 +17,7 @@ import UserNotifications
 /// its own, just the `List` and its title.
 struct SettingsView: View {
     var starterAccountOnly = false
+    @AppStorage(CatalogEntryView.preferStarterKey) private var preferStarter = false
     @Environment(StoreKitService.self) private var store
     @Environment(EntitlementStore.self) private var entitlements
     /// The same store the map's filter chips use, so a toggle here persists to
@@ -51,6 +52,11 @@ struct SettingsView: View {
             if !starterAccountOnly {
                 whatYouSeeSection
                 preferencesSection
+                Section {
+                    Button("Use on-device Starter Guide") { preferStarter = true }
+                } footer: {
+                    Text("Browse the included places without loading the full online catalog.")
+                }
                 languageSection
                 if Config.offlineCityPacksEnabled {
                     OfflinePacksSection()
@@ -100,6 +106,11 @@ struct SettingsView: View {
                 .accessibilityElement(children: .combine)
             }
 
+            if starterAccountOnly {
+                Button("Sign out on this device") {
+                    Task { await auth.signOut() }
+                }
+            }
             Button(role: .destructive) {
                 showDeleteFlow = true
             } label: {
@@ -405,6 +416,13 @@ struct SettingsView: View {
                 settingsRow("Email Lore Support", icon: "envelope.fill", tint: LoreColor.ink)
             }
             .buttonStyle(.plain)
+            if starterAccountOnly,
+               let url = ProfileSupportLinks.emailURL(
+                   subject: "Lore account deletion request",
+                   body: "Please help me delete my Lore account. My account email is: "
+               ) {
+                Link("Request account deletion by email", destination: url)
+            }
         } header: {
             Text("Privacy & support")
         } footer: {

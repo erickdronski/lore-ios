@@ -374,7 +374,9 @@ final class AuthService {
             guard let deletedUserID = session?.user.id,
                   let token = await validAccessToken(),
                   session?.user.id == deletedUserID else {
-                lastError = "Your session has expired. Sign in and try again."
+                lastError = LoreServiceAvailability.shared.isUnavailable
+                    ? "Lore account services are unavailable. Try again later or contact support to request deletion."
+                    : "Your session has expired. Sign in and try again."
                 return false
             }
 
@@ -387,12 +389,19 @@ final class AuthService {
             }
 
             guard response.statusCode == 200 else {
-                lastError = response.statusCode == 202
-                    ? "Deletion is still in progress. Your data is protected while cleanup continues. Retry to finish deleting your account."
-                    : "Couldn't delete your account. Please try again."
+                switch response.statusCode {
+                case 202:
+                    lastError = "Deletion is still in progress. Your data is protected while cleanup continues. Retry to finish deleting your account."
+                case 402:
+                    LoreServiceAvailability.shared.observeHTTPStatus(402)
+                    lastError = "Lore account services are unavailable. Try again later or contact support to request deletion."
+                default:
+                    lastError = "Couldn't delete your account. Please try again."
+                }
                 return false
             }
             AppleProfileSeedStore.clear(userID: deletedUserID)
+            UserDefaults.standard.removeObject(forKey: "lore.starter.saved." + deletedUserID)
             guard session?.user.id == deletedUserID else { return true }
             clearLocalSession()
             return true

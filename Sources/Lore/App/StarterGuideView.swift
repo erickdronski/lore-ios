@@ -21,6 +21,7 @@ private enum StarterPage: Hashable {
 struct StarterGuideView: View {
     let checking: Bool
     let tried: Bool
+    let preferred: Bool
     @Binding var pendingLink: URL?
     let retry: () -> Void
     @State private var path: [StarterPage] = []
@@ -123,11 +124,11 @@ struct StarterGuideView: View {
             if !matches.isEmpty { Section("Places") { ForEach(matches) { placeLink($0) } } }
             if cities.isEmpty && matches.isEmpty { Text("No matches in the Starter Guide.") }
             Section {
-                Button(checking ? "Checking connection…" : "Retry connection", action: retry)
+                Button(checking ? "Checking connection…" : (preferred ? "Open full catalog" : "Retry connection"), action: retry)
                     .disabled(checking)
             } footer: {
                 Text(tried ? "The full catalog is still unavailable. You can keep exploring these places." :
-                     "The full catalog and account sync are currently unavailable.")
+                     (preferred ? "You are browsing the guide stored on this device." : "The full catalog and account sync are currently unavailable."))
             }
         }.scrollContentBackground(.hidden).background(LoreColor.bone).environment(\.colorScheme, .light)
     }

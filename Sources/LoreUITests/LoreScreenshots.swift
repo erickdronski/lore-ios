@@ -60,6 +60,38 @@ final class LoreScreenshots: XCTestCase {
         XCTAssertTrue(restore.isEnabled)
     }
 
+    @MainActor
+    func testSavedStarterPlaceSurvivesRelaunch() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-lore-starter-guide"]
+        app.launch()
+        let chicago = element("starter.city.chicago", in: app)
+        XCTAssertTrue(chicago.waitForExistence(timeout: 15))
+        reveal(chicago, in: app)
+        chicago.tap()
+        let cloudGate = element("starter.place.cloud-gate", in: app)
+        reveal(cloudGate, in: app)
+        cloudGate.tap()
+        let save = app.buttons["Save place on this device"]
+        reveal(save, in: app)
+        save.tap()
+        let saved = app.buttons["Saved on this device"]
+        XCTAssertTrue(saved.waitForExistence(timeout: 5))
+
+        app.terminate()
+        app.launch()
+        XCTAssertTrue(element("starter.home", in: app).waitForExistence(timeout: 15))
+        XCTAssertTrue(cloudGate.waitForExistence(timeout: 5), "A saved place should be on the home screen after relaunch")
+        cloudGate.tap()
+        reveal(saved, in: app)
+        saved.tap()
+        XCTAssertTrue(save.waitForExistence(timeout: 5))
+        goBack(in: app)
+        XCTAssertTrue(chicago.waitForExistence(timeout: 5))
+        XCTAssertFalse(cloudGate.exists, "Removing the saved place should remove its home shortcut")
+    }
+
+    @MainActor
     private func element(_ identifier: String, in app: XCUIApplication) -> XCUIElement {
         app.descendants(matching: .any).matching(identifier: identifier).firstMatch
     }
