@@ -1,12 +1,11 @@
 # Changelog
 
-App Store releases are listed separately from work that has reached internal
-TestFlight. Dates below describe the product milestone, not the date a GitHub
+App Store releases are listed separately from work that has reached TestFlight. Dates below describe the product milestone, not the date a GitHub
 release entry was published.
 
 ## [Unreleased] — 1.2.1 maintenance
 
-The public App Store version remains **1.2**. Internal TestFlight version
+The public App Store version remains **1.2**. TestFlight version
 **1.2.1 (build 49)** was uploaded from
 [`9554c5c`](https://github.com/erickdronski/lore-ios/commit/9554c5c297d48f5c56e0a0ee50c489ff13e6ce81)
 on October 20, 2026 by the

@@ -12,10 +12,8 @@ private visit journal.
 
 **Status:** version 1.2 is [live on the App Store](https://apps.apple.com/us/app/lore-ar-city-history-guide/id6788171860)
 (released September 5, 2026); [v1.2](https://github.com/erickdronski/lore-ios/releases/tag/v1.2)
-identifies its exact source. `main` contains later maintenance work: version
-1.2.1 (build 49) reached internal TestFlight on October 20, 2026, but has not
-shipped on the App Store. That historical upload does not verify current tester
-availability. See the [changelog](CHANGELOG.md) for release evidence.
+identifies its exact source. `main` contains later maintenance work. See the
+[changelog](CHANGELOG.md) for App Store and TestFlight milestones.
 
 This repository contains the iOS client; the backend is maintained separately.
 
