@@ -3,17 +3,27 @@
 App Store releases are listed separately from work that has reached TestFlight. Dates below describe the product milestone, not the date a GitHub
 release entry was published.
 
-## [Unreleased] — 1.2.1 maintenance
+## [1.2.1] — 2026-11-21 · App Store
 
-The public App Store version remains **1.2**. TestFlight version
-**1.2.1 (build 49)** was uploaded from
+Version **1.2.1 (build 50)** shipped on the
+[App Store](https://apps.apple.com/us/app/lore-ar-city-history-guide/id6788171860)
+on November 21, 2026 from source
+[`1ea19ad`](https://github.com/erickdronski/lore-ios/commit/1ea19ad3068ae0dde3c102b4226818f2af49896f).
+The [validated upload workflow](https://github.com/erickdronski/lore-ios/actions/runs/44860326507)
+built and uploaded that exact commit as build 50, and the
+[submission run](https://github.com/erickdronski/lore-ios/actions/runs/44873620798)
+recorded build 50 attached and `VALID` for review. An earlier TestFlight build of
+the same version, **1.2.1 (build 49)**, was uploaded from
 [`9554c5c`](https://github.com/erickdronski/lore-ios/commit/9554c5c297d48f5c56e0a0ee50c489ff13e6ce81)
-on October 20, 2026 by the
-[validated upload workflow](https://github.com/erickdronski/lore-ios/actions/runs/39467341097).
-A [read-only check on October 20](https://github.com/erickdronski/lore-ios/actions/runs/39470459418)
-observed that exact TestFlight build as `VALID`. This historical verification
-does not establish current tester availability. No 1.2.1 App Store release is
-recorded here.
+on October 20, 2026 by
+[this run](https://github.com/erickdronski/lore-ios/actions/runs/39467341097).
+
+### Added
+
+- A free Starter Guide on the device for when sign-in or city services are
+  unavailable: 16 sourced landmarks in five cities, searchable by city or place,
+  with local bookmarks, directions and source links. Existing customers keep
+  Apple restore and subscription management; new purchases need online services.
 
 ### Fixed
 
@@ -27,6 +37,9 @@ recorded here.
 - Prepared the 1.2.1 TestFlight version and journal-focused release notes.
 - Updated release tooling and dependency pins, including the patched Fastlane
   bundle, and stabilized the account-deletion deadline test.
+- Published the build 50 Starter Guide screenshots for iPhone and iPad from
+  [`969ef22`](https://github.com/erickdronski/lore-ios/commit/969ef226e8ed9124b96e83c50d9862f8d5685541),
+  without changing the app source.
 
 ## [1.2] — 2026-09-05 · App Store
 
