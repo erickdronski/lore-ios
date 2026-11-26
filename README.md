@@ -32,13 +32,13 @@ This repository contains the iOS client; the backend is maintained separately.
 
 ## Screenshots
 
-Lore 1.2.1 build 50 includes a guide you can browse offline. These screenshots show its city list, Chicago landmarks and Cloud Gate story. [Screenshot details](fastlane/promo_screenshots/README.md)
+Lore 1.3 opens on a map of nearby landmarks. These iPhone previews show the Chicago map, the Space Needle stop on Seattle’s Emerald City Sampler, and the story of Cloud Gate. [Capture details and iPad screenshots](fastlane/promo_screenshots/README.md)
 
 <table>
   <tr>
-    <td><img src="fastlane/promo_screenshots/en-US/01_starter_guide.png" width="240" alt="Starter Guide listing five cities available offline" /></td>
-    <td><img src="fastlane/promo_screenshots/en-US/02_chicago.png" width="240" alt="Four Chicago landmarks in the bundled guide" /></td>
-    <td><img src="fastlane/promo_screenshots/en-US/03_cloud_gate.png" width="240" alt="Cloud Gate story with source, directions and local save control" /></td>
+    <td><img src="fastlane/promo_screenshots/en-US/01_atlas.png" width="240" alt="Chicago street map with the bundled landmarks and a location control" /></td>
+    <td><img src="fastlane/promo_screenshots/en-US/02_field_walk.png" width="240" alt="Space Needle at stop one of four on Seattle's Emerald City Sampler walk" /></td>
+    <td><img src="fastlane/promo_screenshots/en-US/03_cloud_gate.png" width="240" alt="Cloud Gate's sourced story with on-device narration and walking directions" /></td>
   </tr>
 </table>
 

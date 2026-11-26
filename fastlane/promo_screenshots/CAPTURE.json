@@ -1,10 +1,10 @@
 {
-  "source_sha": "1ea19ad3068ae0dde3c102b4226818f2af49896f",
-  "source_tree": "5684ae02d6d63b3dfc7a735b32e3c28c825d3bc0",
-  "app_version": "1.2.1",
-  "app_build": "50",
-  "capture_started_at_utc": "2026-11-21T03:19:51+00:00",
-  "last_frame_at_utc": "2026-11-21T03:25:07+00:00",
+  "source_sha": "8c406079bca0d8e8df3e28685da6457f98586ac2",
+  "source_tree": "eaabebc5d00dfaaaf58bbb3af781e33afa3af487",
+  "app_version": "1.3",
+  "app_build": "51",
+  "capture_started_at_utc": "2026-11-26T23:13:52+00:00",
+  "last_frame_at_utc": "2026-11-26T23:15:46.674000+00:00",
   "xcode_version": [
     "Xcode 27.2",
     "Build version 27B52"
@@ -16,67 +16,67 @@
   "test": "LoreUITests/LoreScreenshots/testOfflineStarterGuideJourney",
   "launch_argument": "-lore-starter-guide",
   "status_bar": "9:41, full Wi-Fi, reception and battery",
-  "edits": "Native screenshots copied byte for byte.",
   "frames": [
     {
-      "file": "Lore Starter QA 50-01StarterGuide.png",
+      "file": "iphone/01Atlas.png",
       "device": "iPhone 17 Pro Max",
-      "package_file": "en-US/01_starter_guide.png",
+      "package_file": "en-US/01_atlas.png",
       "width": 1320,
       "height": 2868,
       "png_color_type": 2,
-      "sha256": "e157f8e087a2cf4819b576d81345626badbdf37d43afd715958bddeb98094865",
-      "bytes": 196619
+      "sha256": "e6e4497e5e8161ac77eb382326705ae90e87e1b3a5a27e37be5f35e2c09134e6",
+      "bytes": 1451403
     },
     {
-      "file": "Lore Starter QA 50-02Chicago.png",
+      "file": "iphone/02FieldWalk.png",
       "device": "iPhone 17 Pro Max",
-      "package_file": "en-US/02_chicago.png",
+      "package_file": "en-US/02_field_walk.png",
       "width": 1320,
       "height": 2868,
       "png_color_type": 2,
-      "sha256": "293d8b0ecad20cff17ca44f7d14ac6edd431e6e9de837ae24798f965861de478",
-      "bytes": 181383
+      "sha256": "3e9924e07c304a432cf0000d99548f27eaa76f1452e3997a8008322f28045e92",
+      "bytes": 295667
     },
     {
-      "file": "Lore Starter QA 50-03CloudGate.png",
+      "file": "iphone/03CloudGate.png",
       "device": "iPhone 17 Pro Max",
       "package_file": "en-US/03_cloud_gate.png",
       "width": 1320,
       "height": 2868,
       "png_color_type": 2,
-      "sha256": "85cbb589f483b46575130069d53033a42c11a11e040db1e12b3d0dcb0922fa18",
-      "bytes": 206153
+      "sha256": "bd63b2748b7cbeefea78b7f453d12a9f576c98d6184eef911826145f72273598",
+      "bytes": 239989
     },
     {
-      "file": "Lore Starter iPad QA 50-01StarterGuide.png",
+      "file": "ipad/01Atlas.png",
       "device": "iPad Pro 13-inch (M5)",
-      "package_file": "en-US/ipad_01_starter_guide.png",
+      "package_file": "en-US/ipad_01_atlas.png",
       "width": 2064,
       "height": 2752,
       "png_color_type": 2,
-      "sha256": "06a6ac9064c41d02d7bca2196a2c17863f03a456148efab57fdc400578580429",
-      "bytes": 178033
+      "sha256": "465e65fecf557a515c220d58830cfca561342c0774bbb673dda45960a2212f53",
+      "bytes": 2174023
     },
     {
-      "file": "Lore Starter iPad QA 50-02Chicago.png",
+      "file": "ipad/02FieldWalk.png",
       "device": "iPad Pro 13-inch (M5)",
-      "package_file": "en-US/ipad_02_chicago.png",
+      "package_file": "en-US/ipad_02_field_walk.png",
       "width": 2064,
       "height": 2752,
       "png_color_type": 2,
-      "sha256": "8f9c14cb949cc99b4a4cc806b0b8cb6d6c9ab0510c3e05b1f337c8a18b35a2f3",
-      "bytes": 167774
+      "sha256": "9a13bb92d9a9a75eb23e95ed99297b36304b18e79d1a902da5272e24656e0b7c",
+      "bytes": 240482
     },
     {
-      "file": "Lore Starter iPad QA 50-03CloudGate.png",
+      "file": "ipad/03CloudGate.png",
       "device": "iPad Pro 13-inch (M5)",
       "package_file": "en-US/ipad_03_cloud_gate.png",
       "width": 2064,
       "height": 2752,
       "png_color_type": 2,
-      "sha256": "1f180ee99184a5f74df846a7ab8e60565fafc059cb963eb5a939b45d6b95d86b",
-      "bytes": 174196
+      "sha256": "3780ee62c2521f30e37726246f08f15a623e153283af2f000a8dd2f5ca61f1eb",
+      "bytes": 197355
     }
-  ]
+  ],
+  "edits": "Native screenshots copied byte for byte."
 }
