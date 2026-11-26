@@ -10,8 +10,8 @@ the device, then opens a sourced story, timeline, gallery and narration for the
 one you pick. Browse the map from home, follow self-guided walks, and keep a
 private visit journal.
 
-**Status:** version 1.2 is [live on the App Store](https://apps.apple.com/us/app/lore-ar-city-history-guide/id6788171860)
-(released September 5, 2026); [v1.2](https://github.com/erickdronski/lore-ios/releases/tag/v1.2)
+**Status:** version 1.2.1 is [live on the App Store](https://apps.apple.com/us/app/lore-ar-city-history-guide/id6788171860)
+(released November 21, 2026); [v1.2.1](https://github.com/erickdronski/lore-ios/releases/tag/v1.2.1)
 identifies its exact source. `main` contains later maintenance work. See the
 [changelog](CHANGELOG.md) for App Store and TestFlight milestones.
 
@@ -206,9 +206,9 @@ so cloning this repository does not create an independent backend.
 
 ## CI and release pipeline
 
-The shipped 1.2 build (48) was archived, signed, and uploaded to TestFlight by
+The shipped 1.2.1 build (50) was archived, signed, and uploaded to TestFlight by
 this repository's manual release lane from commit
-[`261d633`](https://github.com/erickdronski/lore-ios/commit/261d633d277a9940b849b108df0f10776e657f76).
+[`1ea19ad`](https://github.com/erickdronski/lore-ios/commit/1ea19ad3068ae0dde3c102b4226818f2af49896f).
 
 | Workflow | Trigger | What it does |
 | --- | --- | --- |
