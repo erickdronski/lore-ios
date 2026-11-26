@@ -148,13 +148,15 @@ final class StoreKitJourneyTests: XCTestCase {
         await service.loadProducts()
         let purchase = await service.purchase(productID: StoreKitService.ProductID.lifetime)
         XCTAssertEqual(purchase, .success(trialing: false))
-        let transaction = try XCTUnwrap(engine.allTransactions().first)
+        let receipt = try await currentTransaction(productID: StoreKitService.ProductID.lifetime)
+        XCTAssertEqual(receipt.environment, .xcode)
+        let refundID = try XCTUnwrap(UInt(exactly: receipt.id))
         service.onVerifiedTransaction = { _ in .failed }
         service.start()
         await service.refreshEntitlements(syncWithServer: false)
         XCTAssertTrue(service.hasActiveEntitlement)
 
-        try engine.refundTransaction(identifier: transaction.identifier)
+        try engine.refundTransaction(identifier: refundID)
 
         try await eventually { !self.service.hasActiveEntitlement }
         XCTAssertFalse(service.hasActiveEntitlement)

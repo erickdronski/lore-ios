@@ -83,7 +83,7 @@ struct LoreApp: App {
                 // Wire the StoreKit client path into the entitlement store and
                 // start the Transaction.updates listener once, at launch. Both
                 // are @MainActor app-lifetime singletons (docs/16 §1).
-                .task {
+                .task { [auth] in
                     #if DEBUG
                     // Hosted StoreKit tests own the transaction listener. A
                     // second app listener could finish their receipts early.

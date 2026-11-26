@@ -1,5 +1,9 @@
--- Run once per release in the project's authorized SQL editor or connector.
--- Look up only publicly visible dossiers and CC0 coordinates. No runtime API.
+-- Public release export. Run read-only in the project SQL editor as shown.
+-- Save the returned catalog object, then run prepare.py to validate references,
+-- review the routes and generate the on-device JSON. Never ship the raw export.
+-- The standalone atlas uses public-domain/CC0 coordinates, selected factual fields,
+-- original editorial text, and references. Never export source prose or media.
+-- With a new contract epoch or active withdrawal policy a new review is required.
 begin read only;
 set local role anon;
 with editorial(slug, publisher, source_url, hook, narrative, year, event_title) as (
@@ -19,29 +23,113 @@ with editorial(slug, publisher, source_url, hook, narrative, year, event_title) 
   ('coit-tower', 'San Francisco Recreation and Park Department', 'https://sfrecpark.org/facilities/facility/details/Coit-Tower-290/', 'The tower and the paintings inside it belong to two different years.', 'Coit Tower rose on Telegraph Hill in 1933. The next year, artists working for the federal Public Works of Art Project painted its base with scenes of California during the Depression. Look at the building from both distances. The column marks the skyline, while the murals tell stories at eye level.', 1934, 'Artists paint the tower murals'),
   ('space-needle', 'Space Needle', 'https://www.spaceneedle.com/history', 'The shape grew out of two very different ideas.', 'The tower was conceived for Seattle’s 1962 World’s Fair. Architect John Graham Jr. developed the flying-saucer form at the top. Victor Steinbrueck drew on a sculpture of a dancer for the narrow waist of the supporting structure. Trace the two shapes separately from the ground.', 1962, 'Seattle hosts the World’s Fair'),
   ('pike-place-market', 'Pike Place Market', 'https://www.pikeplacemarket.org/market-history/', 'The first market here gave farmers a way to sell directly.', 'Seattle created a public farmers market on Pike Place in 1907. Decades later its future was in doubt. Voters approved a historic district around the market, protecting a place where producers and shoppers could still meet in the middle of the city.', 1907, 'A public farmers market begins'),
-  ('smith-tower', 'Smith Tower', 'https://www.smithtower.com/history/', 'The first plans called for just fourteen stories.', 'Lyman Cornelius Smith bought the lot at Second and Yesler in 1899. Plans for a modest tower grew more ambitious before construction began. When Smith Tower opened on July 4, 1914, thousands of visitors rode the elevator to an observatory on the 35th floor.', 1914, 'The observatory welcomes its first visitors')
+  ('smith-tower', 'Smith Tower', 'https://www.smithtower.com/history/', 'The first plans called for just fourteen stories.', 'Lyman Cornelius Smith bought the lot at Second and Yesler in 1899. Plans for a modest tower grew more ambitious before construction began. When Smith Tower opened on July 4, 1914, thousands of visitors rode the elevator to an observatory on the 35th floor.', 1914, 'The observatory welcomes its first visitors'),
+  ('marina-city', 'Chicago Architecture Center', 'https://www.architecture.org/online-resources/buildings-of-chicago/marina-city', 'What looks like a flower from below is a floor plan.', 'Look up from the river at the round towers of Marina City. Cars occupy the open lower floors. Higher up, wedge-shaped apartments meet the air at curved balconies. Architect Bertrand Goldberg gathered homes and parking around the same central cores so people could live downtown.', null, null),
+  ('art-institute', 'Art Institute of Chicago', 'https://www.artic.edu/pdf/static/download-my-museum-tour.pdf-layout-42.pdf', 'The two bronze lions strike different poses.', 'The pair at the Michigan Avenue entrance arrived in 1894. Sculptor Edward Kemeys gave each animal a character of its own. Compare their heads, tails and front paws from the sidewalk. The lion north of the steps is on the prowl. Its southern partner stands its ground.', 1894, 'Bronze lions take their places at the entrance'),
+  ('buckingham-fountain', 'Chicago Park District', 'https://www.chicagoparkdistrict.com/parks-facilities/clarence-f-buckingham-memorial-fountain', 'Four groups of sea horses turn this basin into a map.', 'Kate Buckingham gave Chicago the fountain in memory of her brother Clarence. The great basin stands for Lake Michigan. Look for the groups of sculpted sea horses around it. Each marks one of the four states along the lake’s shore.', 1927, 'Buckingham Fountain opens'),
+  ('seattle-great-wheel', 'Seattle Great Wheel', 'https://seattlegreatwheel.com/faq', 'The wheel grew out of one pier owner’s long-running idea.', 'Hal Griffith wanted to bring a Ferris wheel to Seattle for nearly thirty years. He eventually built one on his own pier. From the waterfront, trace the circle of 42 enclosed gondolas and look for the point where the deck beneath them gives way to Elliott Bay.', null, null),
+  ('rainier-tower', 'Society of Architectural Historians', 'https://sah-archipedia.org/buildings/WA-01-033-0077', 'The office block grows narrower as it meets the ground.', 'Stand where you can see the base of Rainier Tower in profile. Minoru Yamasaki’s design places 29 office floors above an eleven-story concrete pedestal. The pedestal curves inward as it descends, leaving an open space where the edges of a conventional office tower would meet the block.', null, null),
+  ('washington-monument', 'National Park Service', 'https://www.nps.gov/wamo/faqs.htm', 'A change in the stone records an interruption in construction.', 'Look for the horizontal change in color on the monument’s shaft. Work stopped in 1854 when money ran out. The stone for the later part came from another quarry, and those blocks weathered differently. The pale bands on an apparently uniform obelisk mark two periods of work.', 1854, 'Construction halts for lack of funding'),
+  ('united-states-capitol', 'Architect of the Capitol', 'https://www.aoc.gov/explore-capitol-campus/buildings-grounds/capitol-building', 'What material would you guess supports the white dome?', 'Viewed from the Mall, the Capitol’s dome seems to grow from the masonry below. Architect Thomas U. Walter designed it in cast iron. Follow its silhouette from the wide base to the statue at the top and imagine how workers assembled the many pieces over the Rotunda.', null, null),
+  ('vietnam-veterans-memorial', 'National Park Service', 'https://www.nps.gov/places/000/vietnam-veterans-memorial.htm', 'The order of the names follows time.', 'Maya Lin set the memorial’s polished black granite walls into the ground. As the path descends, the panels rise beside it. The names follow the dates of the service members’ deaths or disappearances, making the progression of the war part of the walk.', null, null),
+  ('lincoln-memorial', 'National Park Service', 'https://www.nps.gov/linc/learn/historyculture/exterior-features.htm', 'The columns count states rather than presidents.', 'From the plaza, look beyond the front row of columns to the sides of the memorial. Thirty-six columns surround the building, one for each state in the Union at Lincoln’s death. Above them, the state names appear in the frieze.', null, null),
+  ('asheville-grove-arcade', 'Grove Arcade', 'https://grovearcade.com/history/', 'The roofline is missing a tower its architect meant to build.', 'Stand back from the Arcade and imagine another fourteen stories above it. Charles N. Parker drew a tower for E. W. Grove, who died before the building opened in 1929. The base alone held bookstalls, barbers and offices. In 1942 the federal government gave the tenants less than a month to leave and turned the building over to the military.', 1929, 'Grove Arcade opens for business'),
+  ('barton-springs-pool', 'City of Austin', 'https://www.austintexas.gov/parks/parks/joan-means-khabele-bathhouse', 'A senior picnic helped change who could swim here.', 'At her Austin High senior picnic, Joan Means Khabele and other Black students were barred from swimming at Barton Springs. She jumped in. More swimmers joined the protests that helped integrate the pool. Look for Khabele’s name at the bathhouse. Austin named it for her in 2024.', 2024, 'Austin names the pool bathhouse for Joan Means Khabele'),
+  ('boston-public-library', 'Boston Public Library', 'https://www.bpl.org/central-library-points-of-interest/', 'A donor wanted room for at least 150 readers and enough light for every one.', 'In Bates Hall, look from the green lamps on the tables to the curved ceiling 50 feet overhead. Joshua Bates, who grew up without a public library, made his gift with readers in mind. He wanted warmth, light and free access. Many of the tables and bookcases date to the library’s opening here in 1895.', 1895, 'The McKim library building opens'),
+  ('charleston-gadsden-s-wharf', 'International African American Museum', 'https://iaamuseum.org/building-and-garden/', 'The museum rises above the ground where enslaved Africans came ashore.', 'At Gadsden’s Wharf, the museum stands thirteen feet above a garden designed by Walter Hood. Beneath it, water covers and reveals human figures in a shallow pool. Their arrangement draws on a diagram of the slave ship Brookes. The memorial asks visitors to see the people who endured the Atlantic crossing on their way into enslavement.', null, null),
+  ('crrnj-terminal', 'Library of Congress', 'https://tile.loc.gov/storage-services/master/pnp/habshaer/nj/nj0100/nj0195/data/nj0195data.pdf', 'On the river side, this railroad station was also a ferry terminal.', 'The front door of this railroad station faced the Hudson. Ferries pulled into slips on the water side, where covered sheds connected the boats to the concourse. The railroad built the terminal in 1889. In 1914 it rebuilt the ferry sheds and gave the concourse two levels to carry passengers between river and rail.', 1914, 'The ferry sheds and concourse are rebuilt on two levels'),
+  ('denver-union-station', 'Denver Union Station', 'https://www.denverunionstation.com/about/our-history/', 'The first depot’s clock tower rose 180 feet above the trains.', 'Picture a tall clock tower where the station’s granite center stands today. The original depot opened in 1881, but an electrical fire destroyed the tower and central hall in 1894. Denver soon outgrew the replacement. The present station opened in 1914, and by the mid-1940s more than 50,000 people were coming through each day.', 1914, 'Denver opens its new Union Station'),
+  ('fair-park', 'Fair Park Dallas', 'https://www.fairparkdallas.com/about-fair-park', 'The fairgrounds became a portrait of Texas for visitors to a 1936 world’s fair.', 'Dallas had held its state fair here since 1886. Fifty years later, Texas marked the centennial of its republic by hosting a world’s fair on the grounds. Along the Art Deco buildings, look for sculpture and murals. Artists used them to introduce visitors to the state’s plants, animals, industries and history, even before anyone stepped inside an exhibit.', 1936, 'The Texas Centennial Exposition opens'),
+  ('fox-theatre', 'Fox Theatre Atlanta', 'https://www.foxtheatre.org/about-us/fox-history', 'Atlanta almost got a Shriners’ headquarters where it got a movie palace.', 'Look up at the domes and minarets. In 1928 Atlanta’s Shriners planned a headquarters inspired by Spain’s Alhambra and Egypt’s Temple of Karnak. When the design outran their budget, they leased it to movie impresario William Fox. The doors finally opened on Christmas Day in 1929, with audiences watching Mickey Mouse in Steamboat Willie.', 1929, 'Fox Theatre opens on Christmas Day'),
+  ('freedom-tower-miami', 'Miami Dade College', 'https://moad.mdc.edu/freedom-tower/history-of-the-freedom-tower/', 'A newspaper tower became a point of arrival for Cuban families.', 'People once came here to put out the Miami Daily News. In 1962, the tower became the Cuban Refugee Center. Families arriving from Cuba could get food, medical care and financial help inside the old newspaper building. The people it served gave it a name of their own, El Refugio.', 1962, 'The Cuban Refugee Center begins using the tower'),
+  ('frist-art-museum', 'Frist Art Museum', 'https://fristartmuseum.org/our-historic-building/', 'Before paintings hung here, postal workers sorted Nashville’s mail.', 'This building opened as Nashville’s main post office in the 1930s. Its plain marble exterior gives little hint of the decorative aluminum doors and grilles inside. The rooms where postal workers sorted mail had high ceilings and enough floor space to become some of the museum’s largest galleries.', 1934, 'Construction of Nashville’s main post office is completed'),
+  ('fort-mchenry', 'National Park Service', 'https://www.nps.gov/fomc/learn/historyculture/the-great-garrison-flag.htm', 'Fort McHenry’s flag was so large it took a brewery floor to lay it out.', 'Picture two flags above Fort McHenry. In 1813 its commander ordered a smaller one for storms and a garrison flag forty-two feet long. Flagmaker Mary Pickersgill worked with her daughter, two nieces and Grace Wisher, an indentured teenager. They spread the enormous flag across a brewery floor in Baltimore. This was the flag Francis Scott Key saw the following September.', 1813, 'Mary Pickersgill and her team finish the fort’s two flags'),
+  ('houston-freedmens-town', 'City of Houston', 'https://www.houstontx.gov/superneighborhoods/60', 'A freeway now cuts across a neighborhood that once stood at Houston’s edge.', 'After the Civil War, formerly enslaved people settled west of Houston in what became Freedmen’s Town. Black Houstonians came here from across the city for business and community life. Look east toward Interstate 45. Its construction cut through the Fourth Ward, and offices, hotels and shops later took the place of the neighborhood on the other side.', null, null),
+  ('key-west-ernest-hemingway-home-and-museum', 'The Hemingway Home & Museum', 'https://www.hemingwayhome.com/his-life', 'The stone for this house came from the ground beneath it.', 'Long before Ernest Hemingway moved in, builders quarried rock on this property to put up the house in 1851. Pauline Hemingway’s uncle bought it for the couple in 1931, and they set about restoring it. In the garden they added a pool that cost $20,000. Look for the penny embedded between the stones at its north end.', 1931, 'The Hemingways acquire the house on Whitehead Street'),
+  ('las-vegas-old-mormon-fort', 'Nevada State Parks', 'https://parks.nv.gov/learn/park-histories/old-las-vegas-mormon-fort-history', 'The creek helps explain why settlers chose this patch of desert.', 'A spring fed a creek here long before Las Vegas had a skyline. Paiute people used the oasis, and traders stopped for water on the Old Spanish Trail. In 1855 Mormon settlers, assisted by local Paiute people, began building an adobe fort beside the creek. Part of its east wall still stands.', 1855, 'Construction of the adobe fort begins beside the creek'),
+  ('newport-ri-the-breakers', 'Preservation Society of Newport County', 'https://www.newportmansions.org/mansions-and-gardens/the-breakers/history/', 'The Breakers kept its boilers underground, away from the house.', 'The columns along the façade tell only half the story of this Newport mansion. After fire destroyed their wooden summer house, Cornelius and Alice Vanderbilt asked Richard Morris Hunt to design its replacement. He used steel, brick and limestone and kept the boilers underground at a distance. Work on the new house finished in 1895.', 1895, 'The new Breakers is completed'),
+  ('orange-county-regional-history-center', 'Orange County Regional History Center', 'https://www.thehistorycenter.org/historic-courtroom-b/', 'The courtroom floor was made of cork so a late arrival wouldn’t drown out a witness.', 'Courtroom B heard cases from 1927 until 1998. Look for three clues to how people used the room. The jury box sits at an angle, the cork underfoot softened footsteps, and a raised platform gave television crews somewhere to work. When the courthouse became a museum, the room itself became one of its largest exhibits.', 1927, 'Courtroom B begins hearing cases'),
+  ('paulsdale-alice-paul', 'National Park Service', 'https://www.nps.gov/articles/000/places-of-alice-paul.htm', 'Alice Paul learned about organizing while she still lived on this farm.', 'Alice Paul was born at Paulsdale in 1885. Her mother, Tacie, took her along to meetings about women’s voting rights. When thousands marched down Pennsylvania Avenue in Washington in 1913, it was the daughter from this Mount Laurel farm who had organized their procession.', 1885, 'Alice Paul is born at Paulsdale'),
+  ('peralta-adobe', 'History San José', 'https://historysanjose.org/plan-your-visit/peralta-fallon-historic-site/luis-maria-peralta-adobe/', 'A wine merchant once widened the doorway to roll his casks inside.', 'This small house in San Pedro Square Market still occupies the corner Manuel Gonzales chose in 1797. Luis María Peralta moved in eleven years later, divided the house into two rooms and planted fruit trees to the west. After the family left, merchants stored fruit and wine here. One widened the interior doorway to make room for the casks.', 1797, 'Manuel Gonzales builds his family home'),
+  ('preservation-hall', 'Preservation Hall', 'https://www.preservationhall.com/about/', 'Jazz musicians rehearsed here while the room was still an art gallery.', 'Running a gallery on St. Peter Street left Larry Borenstein little time to hear live jazz. He invited musicians including pianist Sweet Emma Barrett to rehearse in his shop. The sessions drew such a following that Borenstein moved his art next door. The musicians kept playing in the room that became Preservation Hall.', null, null),
+  ('salem-salem-maritime-national-historic-site-derby-whar', 'National Park Service', 'https://www.nps.gov/places/derby-wharf.htm', 'The tide gave Salem’s wharf builders time to work.', 'At Derby Wharf, picture the mudflats at low tide. Richard Derby and his son Elias began the wharf in 1762. Builders set timber walls into the mud and packed the space between them with stone and earth. As the family’s trade grew, the wharf stretched farther into the harbor. By 1806 it reached 2,045 feet.', 1806, 'Derby Wharf reaches its present length'),
+  ('savannah-isaiah-davenport-house', 'Davenport House Museum', 'https://davenporthousemuseum.org/', 'Seven women bought this house to stop it becoming a parking lot.', 'In 1955 this Savannah house faced demolition. Seven women pooled their efforts, bought it and founded Historic Savannah Foundation. The house opened as a museum in 1963. Its rooms now tell the intertwined stories of the Davenport family and the enslaved people who lived and worked in the household.', 1955, 'Seven women save Davenport House'),
+  ('star-of-india-ship', 'Maritime Museum of San Diego', 'https://sdmaritime.org/visit/the-ships/star-of-india/', 'The ship at this berth circled the globe carrying emigrants to New Zealand.', 'Look at the hull beneath the masts. In 1863, shipbuilders on the Isle of Man made it from iron while most ships were still wooden. They launched her as Euterpe. Starting in 1871 she carried emigrants to New Zealand, circling the world 21 times in that service before taking the name Star of India.', 1863, 'The iron sailing ship launches as Euterpe'),
+  ('watts-towers', 'Watts Towers Arts Center', 'https://www.wattstowers.org/about-us', 'The spires are held together with wire and studded with seashells.', 'Follow one of the curves with your eye. Simon Rodia tied steel rods together, wrapped their joints in mesh and pressed mortar around them by hand. He set pieces of glass, tile and shell into the surface. The 17 sculptures took him 33 years. He named this little skyline Nuestro Pueblo, meaning Our Town.', 1954, 'Rodia finishes Nuestro Pueblo')
+), routes(slug, blurb) as (
+ values
+  ('millennium-moments', 'From the river to Grant Park, see how architects and artists put a parking garage, a skyline, two lions and a lake into four very different forms.'),
+  ('emerald-city-sampler', 'Start at the Space Needle and finish at Rainier Tower. In between, descend to the market and waterfront to see what Seattle built around the edge of Elliott Bay.'),
+  ('national-mall-postcards', 'Go east to the Capitol before crossing back toward the Lincoln Memorial. Stone, iron and polished granite tell four different stories along this long Mall walk.')
+), notes(tour_slug, seq, place_slug, note) as (
+ values
+  ('millennium-moments', 1, 'marina-city', 'Start on the river side with both towers in view. Find the floor where the open spiral of parked cars changes into rings of balconies.'),
+  ('millennium-moments', 2, 'cloud-gate', 'Before approaching the arch, pick a building in the reflected skyline. Take a few steps to one side and see whether you can keep track of it.'),
+  ('millennium-moments', 3, 'art-institute', 'At the Michigan Avenue steps, compare the two lions from the sidewalk. Which one looks ready to move? Look at the forepaws before you decide.'),
+  ('millennium-moments', 4, 'buckingham-fountain', 'Finish at the basin in Grant Park. Walk part of its rim to spot the separate groups of sea horses that stand for the states around Lake Michigan.'),
+  ('emerald-city-sampler', 1, 'space-needle', 'Begin at Seattle Center. Trace the legs as they narrow at the waist and widen again to support the saucer.'),
+  ('emerald-city-sampler', 2, 'pike-place-market', 'At the market, look at how the stalls meet the street. Imagine a farmer bringing produce here in 1907 to sell directly to neighbors.'),
+  ('emerald-city-sampler', 3, 'seattle-great-wheel', 'Down on the waterfront, stand back far enough to see both the wheel and its pier. Look for the point on the rim that extends over the water.'),
+  ('emerald-city-sampler', 4, 'rainier-tower', 'Head inland for the final stop. Look up from across the street and trace the outline of the tower down to its narrow concrete base.'),
+  ('national-mall-postcards', 1, 'washington-monument', 'Begin near the obelisk. Shade your eyes and scan the stone for the line where the marble changes shade.'),
+  ('national-mall-postcards', 2, 'united-states-capitol', 'Head east along the Mall. As the dome grows larger, look for the change from the straight lines of the building to the curves of the cast-iron dome.'),
+  ('national-mall-postcards', 3, 'vietnam-veterans-memorial', 'Return west to the memorial. Follow the path quietly as the ground slopes down and the walls fill more of your field of view.'),
+  ('national-mall-postcards', 4, 'lincoln-memorial', 'Finish at the Lincoln Memorial. From the plaza, pick out the rows of columns on the sides before looking back along the Mall.')
 ), available as (
- select e.id, e.slug, e.name, e.kind, e.lat, e.lng, e.city, e.emoji,
-        t.publisher, t.source_url, t.hook, t.narrative, t.year, t.event_title
- from editorial t
- join public.place_explore e using (slug)
- join public.place p on p.id=e.id and p.geom_license='cc0' and p.deleted_at is null
+ select e.id, e.slug, e.name, e.kind, e.lat, e.lng, e.city, e.emoji, p.geom_license,
+        t.hook, t.publisher, t.narrative, t.year, t.event_title,
+        coalesce(t.source_url, d.links->>'wikipedia_url') as source_url,
+        case when p.layer1_licenses::text = '{cc0}' then
+          nullif(jsonb_strip_nulls(jsonb_build_object(
+            'architect', case when jsonb_typeof(e.layer1->'architect') = 'string'
+               and length(trim(e.layer1->>'architect')) between 1 and 160 then trim(e.layer1->>'architect') end,
+            'style', case when jsonb_typeof(e.layer1->'style') = 'string'
+               and length(trim(e.layer1->>'style')) between 1 and 100 then trim(e.layer1->>'style') end,
+            'year_built', case when jsonb_typeof(e.layer1->'year_built') = 'number'
+               and e.layer1->>'year_built' ~ '^[1-2][0-9]{3}$' then e.layer1->'year_built' end
+          )), '{}'::jsonb)
+        end as facts
+ from public.place_explore e
+ join public.place p on p.id=e.id and p.geom_license in ('cc0','public_domain') and p.deleted_at is null
+ join public.city c on c.slug=e.city and c.status='live' and c.country='US'
  join public.dive d on d.place_id=e.id
- join public.city c on c.slug=e.city and c.status='live'
+ left join editorial t on t.slug=e.slug
+ where (t.source_url is not null or d.links->>'wikipedia_url' ~ '^https://en[.]wikipedia[.]org/wiki/[^?#[:cntrl:] ]+$')
+   and abs(e.lat-c.lat) < 0.7 and abs(e.lng-c.lng) < 1
+), published_walks as (
+ select t.id, t.slug, t.city, t.title, r.blurb, t.emoji, t.duration_min, t.distance_km,
+        t.travel_mode, t.distance_kind, t.route_source, t.route_checked_at, t.route_note, t.is_premium,
+        (select jsonb_agg(jsonb_build_object('tour_id',s.tour_id,'place_id',s.place_id,'seq',s.seq,'note',n.note)
+                          order by s.seq)
+         from public.tour_stop s
+         join available a on a.id=s.place_id and a.city=t.city and a.narrative is not null
+         join notes n on n.tour_slug=t.slug and n.seq=s.seq and n.place_slug=a.slug
+         where s.tour_id=t.id) as tour_stop
+ from routes r join public.tour t on t.slug=r.slug
+ where not t.is_premium and t.travel_mode='walking' and t.distance_kind='walking_route'
+   and t.route_checked_at is not null
+), catalog as (
+ select jsonb_build_object(
+   'schema_version', 2, 'review_epoch', contract.review_epoch,
+   'cities', (select jsonb_agg(to_jsonb(c) order by c.sort,c.slug)
+     from (select slug,name,country,emoji,lat,lng,zoom,status,sort from public.city
+           where slug in (select city from available) and status='live') c),
+   'places', (select jsonb_agg(jsonb_strip_nulls(jsonb_build_object(
+     'id',id,'slug',slug,'name',name,'kind',kind,'lat',lat,'lng',lng,'city',city,'emoji',emoji,
+     'hook_text',hook,'tags','[]'::jsonb,'source_name',coalesce(publisher,'Wikipedia'),
+     'source_url',source_url,'geom_license',geom_license,'layer1',facts)) order by city,name,id)
+     from available),
+   'dives', (select jsonb_agg(jsonb_build_object('place_id',id,'narrative',narrative,'source',publisher,
+     'links',jsonb_build_object('source_url',source_url),'media','{}'::jsonb,
+     'timeline',case when year is null then '[]'::jsonb else jsonb_build_array(
+       jsonb_build_object('year',year,'title',event_title)) end) order by city,name,id)
+     from available where narrative is not null),
+   'tours', (select jsonb_agg(to_jsonb(w) order by city,slug) from published_walks w
+     where jsonb_array_length(w.tour_stop)=(select count(*) from public.tour_stop s where s.tour_id=w.id)
+       and jsonb_array_length(w.tour_stop)=(select count(*) from notes n where n.tour_slug=w.slug))
+ ) as catalog
+ from public.content_contract contract where contract.contract_version=2
+   and contract.review_epoch=2026090501 and not contract.enforcement_enabled
 )
-select jsonb_build_object(
- 'schema_version', 1,
- 'cities', (select jsonb_agg(to_jsonb(c) order by c.sort,c.slug)
-   from (select slug,name,country,emoji,lat,lng,zoom,status,sort from public.city
-         where slug in (select city from available) and status='live') c),
- 'places', (select jsonb_agg(jsonb_build_object('id',id,'slug',slug,'name',name,'kind',kind,
-           'lat',lat,'lng',lng,'city',city,'emoji',emoji,'hook_text',hook,'tags','[]'::jsonb)
-           order by city,name) from available),
- 'dives', (select jsonb_agg(jsonb_build_object('place_id',id,'narrative',narrative,'source',publisher,
-          'links',jsonb_build_object('source_url',source_url),'media','{}'::jsonb,
-          'timeline',case when year is null then '[]'::jsonb else jsonb_build_array(
-              jsonb_build_object('year',year,'title',event_title)) end)
-          order by city,name) from available),
- 'tours', '[]'::jsonb
-) as catalog;
+select catalog from catalog;
 rollback;

@@ -12,26 +12,37 @@ final class LoreScreenshots: XCTestCase {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication()
         setupSnapshot(app)
+        app.resetAuthorizationStatus(for: .location)
         app.launchArguments += ["-lore-starter-guide"]
         app.launch()
 
+        let atlas = element("atlas.directory", in: app)
+        XCTAssertTrue(atlas.waitForExistence(timeout: 15))
+        capture("01Atlas")
+        app.buttons["atlas.walks"].tap()
+        let walk = element("walks.route.emerald-city-sampler", in: app)
+        reveal(walk, in: app)
+        walk.tap()
+        XCTAssertTrue(element("walks.stopTitle", in: app).waitForExistence(timeout: 8))
+        capture("02FieldWalk")
+        goBack(in: app)
+        goBack(in: app)
+        app.buttons["atlas.search"].tap()
         let home = element("starter.home", in: app)
         let chicago = element("starter.city.chicago", in: app)
         XCTAssertTrue(home.waitForExistence(timeout: 15))
         XCTAssertTrue(chicago.waitForExistence(timeout: 5))
-        snapshot("01StarterGuide", timeWaitingForIdle: 0)
 
         reveal(chicago, in: app)
         chicago.tap()
         let cloudGate = element("starter.place.cloud-gate", in: app)
         XCTAssertTrue(cloudGate.waitForExistence(timeout: 5))
-        snapshot("02Chicago", timeWaitingForIdle: 0)
 
         reveal(cloudGate, in: app)
         cloudGate.tap()
         let source = element("starter.sources", in: app)
         XCTAssertTrue(source.waitForExistence(timeout: 5))
-        snapshot("03CloudGate", timeWaitingForIdle: 0)
+        capture("03CloudGate")
         reveal(source, in: app)
         XCTAssertTrue(source.isEnabled)
 
@@ -52,6 +63,7 @@ final class LoreScreenshots: XCTestCase {
         XCTAssertTrue(places.firstMatch.waitForExistence(timeout: 5))
         goBack(in: app)
 
+        goBack(in: app)
         let account = element("starter.account", in: app)
         XCTAssertTrue(account.waitForExistence(timeout: 5))
         account.tap()
@@ -65,6 +77,9 @@ final class LoreScreenshots: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-lore-starter-guide"]
         app.launch()
+        let search = app.buttons["atlas.search"]
+        XCTAssertTrue(search.waitForExistence(timeout: 15))
+        search.tap()
         let chicago = element("starter.city.chicago", in: app)
         XCTAssertTrue(chicago.waitForExistence(timeout: 15))
         reveal(chicago, in: app)
@@ -73,22 +88,33 @@ final class LoreScreenshots: XCTestCase {
         reveal(cloudGate, in: app)
         cloudGate.tap()
         let save = app.buttons["Save place on this device"]
+        let saved = app.buttons["Saved on this device"]
+        if saved.exists { reveal(saved, in: app); saved.tap() }
         reveal(save, in: app)
         save.tap()
-        let saved = app.buttons["Saved on this device"]
         XCTAssertTrue(saved.waitForExistence(timeout: 5))
 
         app.terminate()
         app.launch()
-        XCTAssertTrue(element("starter.home", in: app).waitForExistence(timeout: 15))
-        XCTAssertTrue(cloudGate.waitForExistence(timeout: 5), "A saved place should be on the home screen after relaunch")
+        let saves = app.buttons["atlas.saved"]
+        XCTAssertTrue(saves.waitForExistence(timeout: 15))
+        saves.tap()
+        XCTAssertTrue(cloudGate.waitForExistence(timeout: 5), "The saved place should survive relaunch")
         cloudGate.tap()
         reveal(saved, in: app)
         saved.tap()
         XCTAssertTrue(save.waitForExistence(timeout: 5))
         goBack(in: app)
-        XCTAssertTrue(chicago.waitForExistence(timeout: 5))
-        XCTAssertFalse(cloudGate.exists, "Removing the saved place should remove its home shortcut")
+        XCTAssertFalse(cloudGate.exists, "Removing the saved place should remove it from Saved")
+    }
+
+    @MainActor
+    private func capture(_ name: String) {
+        snapshot(name, timeWaitingForIdle: 0)
+        let frame = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        frame.name = name
+        frame.lifetime = .keepAlways
+        add(frame)
     }
 
     @MainActor
