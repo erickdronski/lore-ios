@@ -34,6 +34,7 @@ assert len(places) == len(catalog["places"]) == len({place["slug"] for place in 
 assert len(dives) == len(catalog["dives"]) and dives.keys() <= places.keys()
 coverage = Counter(place["city"] for place in places.values())
 assert coverage.keys() == cities.keys() and min(coverage.values()) >= 3, coverage
+assert {places[place_id]["city"] for place_id in dives} == cities.keys(), "Each city needs an offline story"
 assert len(cities) >= 25 and len(places) >= 500 and len(dives) >= 25, "Unexpected release coverage change"
 for city in cities.values():
     assert city["status"] == "live" and city["name"] and city["country"] == "US"

@@ -22,6 +22,7 @@ struct OfflineExploreView: View {
     @State private var visible: MKCoordinateRegion
     @State private var selection: String?
     @State private var showsDirectory = false
+    @State private var storiesOnly = false
     @State private var query = ""
     @State private var applePlace: AtlasMapPlace?
     @State private var locator = AtlasLocation()
@@ -124,7 +125,8 @@ struct OfflineExploreView: View {
             Map(position: $position, selection: $selection) {
                 if locator.authorized && (centeredOnUser || awaitingFix) { UserAnnotation() }
                 ForEach(visiblePlaces) { place in
-                    Marker(place.name, systemImage: mapSymbol(for: place.kind), coordinate: place.coordinate)
+                    Marker(place.name, systemImage: place.hookText == nil ? mapSymbol(for: place.kind) : "book.fill",
+                           coordinate: place.coordinate)
                         .tint(LoreColor.brass700).tag(place.id)
                 }
                 ForEach(apple.places) { place in
@@ -217,7 +219,7 @@ struct OfflineExploreView: View {
                 }.accessibilityIdentifier("atlas.selectedApple")
             } else {
                 let count = nearby.count
-                Button { query = ""; showsDirectory = true } label: {
+                Button { query = ""; storiesOnly = false; showsDirectory = true } label: {
                     shelfHeading(areaName, caption: count == 0 ? "Browse this area" :
                         "\(count) \(count == 1 ? "landmark" : "landmarks") in the field guide", icon: "list.bullet")
                 }.accessibilityIdentifier("atlas.directory")
@@ -285,7 +287,9 @@ struct OfflineExploreView: View {
     }
 
     private var directory: some View {
-        NavigationStack {
+        let landmarks = nearby
+        let stories = landmarks.filter { $0.hookText != nil }
+        return NavigationStack {
             List {
                 if !apple.places.isEmpty {
                     Section("Apple Maps") {
@@ -298,7 +302,14 @@ struct OfflineExploreView: View {
                     }
                 }
                 Section("Lore landmarks") {
-                    let shown = nearby.filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) }
+                    if !stories.isEmpty {
+                        Toggle(isOn: $storiesOnly) {
+                            Label("Only places with stories", systemImage: "book.fill")
+                        }.accessibilityIdentifier("atlas.onlyStories")
+                    }
+                    let shown = (storiesOnly ? stories : landmarks).filter {
+                        query.isEmpty || $0.name.localizedCaseInsensitiveContains(query)
+                    }
                     ForEach(shown) { place in
                         Button {
                             selection = place.id

@@ -20,7 +20,9 @@ final class StarterCatalogTests: XCTestCase {
 
     func testNarrativesAndWalksResolveToMapPins() throws {
         let catalog = try XCTUnwrap(StarterCatalog.bundled)
-        XCTAssertFalse(catalog.dives.isEmpty)
+        let storyPlaces = catalog.places.filter { $0.hookText != nil }
+        XCTAssertEqual(Set(storyPlaces.map(\.id)), Set(catalog.divesByID.keys))
+        XCTAssertEqual(Set(storyPlaces.map(\.city)), Set(catalog.cities.map(\.slug)))
         XCTAssertEqual(catalog.divesByID.count, catalog.dives.count)
         for dive in catalog.dives {
             XCTAssertNotNil(catalog.placesByID[dive.placeID])

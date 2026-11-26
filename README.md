@@ -51,7 +51,7 @@ Lore 1.2.1 build 50 includes a guide you can browse offline. These screenshots s
 - **Map and Discovery Deck.** MapKit city map, category filters, city switcher,
   search, and an "Around you right now" rail of nearby places.
 - **Map on first launch.** The bundled atlas plots 585 sourced landmarks in 29
-  U.S. cities, with 25 historical stories and three self-guided walks. Visitors
+  U.S. cities, with 48 historical stories and three self-guided walks. Visitors
   can center on their location, tap a pin, or browse another city. Place details
   and walk progress stay available during a service outage. An optional nearby
   search uses Apple Maps when connected.

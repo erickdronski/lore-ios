@@ -201,7 +201,10 @@ def prepare(catalog):
                 if distance_km(p["lat"], p["lng"], coords["lat"], coords["lon"]) > limit:
                     continue
         if slug in NAMES:
-            p["name"], p["source_name"], p["source_url"] = NAMES[slug]
+            name, publisher, url = NAMES[slug]
+            p["name"] = name
+            if p["id"] not in edited:
+                p.update(source_name=publisher, source_url=url)
         elif slug in LABELS:
             p["name"] = LABELS[slug]
         retained.append(p)
