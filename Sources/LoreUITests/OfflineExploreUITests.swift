@@ -98,6 +98,40 @@ final class OfflineExploreUITests: XCTestCase {
     }
 
     @MainActor
+    func testMountLaurelStoryFilterOpensPaulsdaleWithPrimarySource() throws {
+        let app = XCUIApplication()
+        app.resetAuthorizationStatus(for: .location)
+        // Override the last-browsed city for this launch without changing other journeys.
+        app.launchArguments += ["-lore-starter-guide", "-atlas.manualCity", "mount-laurel"]
+        app.launch()
+
+        let directory = app.buttons["atlas.directory"]
+        XCTAssertTrue(directory.waitForExistence(timeout: 15))
+        XCTAssertTrue(directory.label.contains("Mount Laurel"))
+        directory.tap()
+
+        let ordinaryPin = app.buttons["atlas.place.mount-laurel-nfl-films"]
+        XCTAssertTrue(ordinaryPin.waitForExistence(timeout: 8))
+        let storyFilter = app.switches["atlas.onlyStories"].firstMatch
+        XCTAssertTrue(storyFilter.waitForExistence(timeout: 8))
+        XCTAssertEqual(storyFilter.value as? String, "0")
+        storyFilter.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.5)).tap()
+        let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "1"),
+                                                object: storyFilter)
+        XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 5), .completed)
+
+        let story = app.buttons["atlas.place.paulsdale-alice-paul"]
+        XCTAssertTrue(story.waitForExistence(timeout: 8))
+        let hidden = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"),
+                                               object: ordinaryPin)
+        XCTAssertEqual(XCTWaiter.wait(for: [hidden], timeout: 5), .completed)
+        story.tap()
+        let source = app.descendants(matching: .any).matching(identifier: "starter.sources").firstMatch
+        XCTAssertTrue(source.waitForExistence(timeout: 8))
+        XCTAssertEqual(source.label, "National Park Service")
+    }
+
+    @MainActor
     func testVisibleMapPinOpensBundledDetail() throws {
         let app = XCUIApplication()
         app.resetAuthorizationStatus(for: .location)

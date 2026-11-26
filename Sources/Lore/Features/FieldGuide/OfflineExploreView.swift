@@ -307,7 +307,7 @@ struct OfflineExploreView: View {
                             Label("Only places with stories", systemImage: "book.fill")
                         }.accessibilityIdentifier("atlas.onlyStories")
                     }
-                    let shown = (storiesOnly ? stories : landmarks).filter {
+                    let shown = (storiesOnly && !stories.isEmpty ? stories : landmarks).filter {
                         query.isEmpty || $0.name.localizedCaseInsensitiveContains(query)
                     }
                     ForEach(shown) { place in
